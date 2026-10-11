@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VRM2Skyrim — フォロワー制作</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><a class="brand" href="/">VRM<span>2</span>Skyrim</a><span class="local">● このPC内で変換</span></header>
+<div class="layout">
+  <aside><p class="eyebrow">FOLLOWER CREATOR</p><h1>あなたのアバターを、<br>旅の仲間に。</h1>
+    <p class="intro">元の姿を保ったまま、<br>スカイリムの世界へ。</p>
+    <ol id="steps"><li class="active">VRMと制作環境</li><li>名前とボイス</li><li>戦闘と能力</li><li>Perkと魔法</li><li>確認して変換</li></ol>
+    <div class="destination"><span>待ち合わせ場所</span><strong>ホワイトラン<br>キナレス聖堂</strong><small>話しかけて、冒険へ誘えます。</small></div>
+    <small class="version" id="version"></small>
+  </aside>
+  <main>
+    <div id="error" role="alert" hidden></div>
+    <form id="wizard" novalidate>
+      <section data-step="0">
+        <p class="eyebrow">STEP 01</p><h2>連れていくアバターを選ぶ</h2><p class="lead">人型のVRM 0 / 1に対応。元の衣装でフォロワーを作ります。</p>
+        <label class="dropzone" for="source"><svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 8v22m-8-14 8-8 8 8M10 29v11h28V29" stroke="currentColor" stroke-width="2"/></svg><strong>VRMファイルを選択</strong><span>クリック、またはここへドラッグ</span><input id="source" type="file" accept=".vrm" aria-label="VRMファイル"></label>
+        <p id="source-status" class="source-status" aria-live="polite">まだ選択されていません</p>
+        <div class="environment"><h3>制作環境</h3><label>Skyrim Special Editionのフォルダ<input id="game" type="text" placeholder="…/steamapps/common/Skyrim Special Edition" required></label><label>Blender 4.5 LTSの実行ファイル<input id="blender" type="text" placeholder="…/blender.exe" required></label><p class="hint">見つかった環境を自動入力します。初回準備は同梱の <code>Setup.cmd</code> を実行してください。</p><div id="checks" class="checks"></div></div>
+        <div class="import-row"><label class="link-button">保存した設定を読み込む<input type="file" id="import-settings" accept=".json" hidden></label><span id="import-status"></span></div>
+      </section>
+      <section data-step="1" hidden>
+        <p class="eyebrow">STEP 02</p><h2>名前と声を決める</h2><p class="lead">ゲーム内の名前と、フォロワーとして話す声を設定します。</p>
+        <div class="grid"><label>NPC名<input id="npc_name" required maxlength="128"></label><label>MOD名<input id="mod_name" required maxlength="128"></label><label>MOD ID<input id="mod_id" required pattern="[A-Za-z][A-Za-z0-9_]{0,63}"><small>英数字と_。ほかのMODと異なるIDにしてください。</small></label><label>作者名<input id="author" maxlength="128" placeholder="任意"></label><label>性別<select id="sex"><option value="female">女性</option><option value="male">男性</option></select></label><label>ボイス<select id="voice"></select><small>標準のフォロワー会話を持つボイスから選択。</small></label></div>
+        <div class="note">ボイスはゲームに入っている音声を使います。NPC名・MOD名は日本語も使えます。</div>
+      </section>
+      <section data-step="2" hidden>
+        <p class="eyebrow">STEP 03</p><h2>冒険での役割を決める</h2><p class="lead">プリセットから始めて、好みに合わせて調整できます。</p>
+        <label>戦闘プリセット<select id="preset"><option value="warrior">片手武器の戦士</option><option value="twohand">両手武器の戦士</option><option value="archer">弓使い</option><option value="mage">破壊魔法の使い手</option><option value="conjurer">召喚魔法の使い手</option><option value="custom">個別に設定</option></select></label>
+        <div class="grid"><label>クラス<select id="combat_class"></select></label><label>戦闘スタイル<select id="combat_style"></select></label><label>開始武器<select id="weapon"></select></label><label>矢・弾（100本）<select id="ammunition"></select></label><label>レベル<select id="level_mode"><option value="player">プレイヤーのレベルに追従</option><option value="fixed">固定レベル</option></select></label><label id="fixed-level">固定レベル<input id="level" type="number" min="1" max="1000"></label><label id="mult-level">追従倍率<input id="level_multiplier" type="number" min=".1" max="10" step=".1"></label><label>最低レベル<input id="min_level" type="number" min="1" max="1000"></label><label>能力の計算<select id="auto_calculate"><option value="true">クラスとレベルから自動成長</option><option value="false">個別スキルを手動指定</option></select></label><label>最高レベル<input id="max_level" type="number" min="1" max="1000"></label></div>
+        <div class="grid three"><label>基礎体力<input id="health" type="number" min="1" max="32000"></label><label>基礎マジカ<input id="magicka" type="number" min="0" max="32000"></label><label>基礎スタミナ<input id="stamina" type="number" min="0" max="32000"></label></div><p class="hint" id="stat-hint">成長前の基礎値を指定します。レベル追従または自動計算を有効にすると、クラスとレベルに応じた成長分が加わります。</p>
+        <details><summary>生存・性格・サイズ・配置を調整</summary><div class="grid"><label>死亡ルール<select id="protection"><option value="protected">保護：プレイヤー以外には倒されない</option><option value="essential">不死：誰にも倒されない</option><option value="mortal">通常：死亡する</option></select></label><label>勇敢さ<select id="confidence"><option value="4">恐れ知らず</option><option value="3">勇敢</option><option value="2">普通</option><option value="1">慎重</option><option value="0">臆病</option></select></label><label>攻撃性<select id="aggression"><option value="0">自分や仲間を守る</option><option value="1">敵対者を攻撃する</option><option value="2">中立の相手にも攻撃する</option></select></label><label>犯罪への対応<select id="morality"><option value="3">犯罪をしない</option><option value="2">盗みを許容する</option><option value="1">敵への暴力を許容する</option><option value="0">制限しない</option></select></label><label>全体の大きさ<input id="height_scale" type="number" min=".25" max="3" step=".05"><small>体型の比率を保つ一様な倍率。</small></label><label class="checkbox"><input id="marriage" type="checkbox">結婚候補にする</label><label>聖堂内の左右オフセット<input id="spawn_offset_x" type="number" min="-200" max="200" step="8"></label><label>聖堂内の前後オフセット<input id="spawn_offset_y" type="number" min="-200" max="200" step="8"></label></div></details>
+        <details id="manual-skills" hidden><summary>個別スキル（0〜100）</summary><div id="skills" class="grid three"></div></details>
+      </section>
+      <section data-step="3" hidden>
+        <p class="eyebrow">STEP 04</p><h2>得意技を加える</h2><p class="lead">Perkと魔法は任意。ゲーム内のレコードから検索して選べます。</p>
+        <div class="grid"><div><h3>Perk <span id="perk-count" class="count">0</span></h3><input id="perk-search" type="search" placeholder="名前・IDで検索" aria-label="Perkを検索"><div id="perks" class="choice-list"></div><div id="selected-perks" class="selected"></div></div><div><h3>魔法 <span id="spell-count" class="count">0</span></h3><input id="spell-search" type="search" placeholder="名前・IDで検索" aria-label="魔法を検索"><div id="spells" class="choice-list"></div><div id="selected-spells" class="selected"></div></div></div>
+      </section>
+      <section data-step="4" hidden>
+        <p class="eyebrow">STEP 05</p><h2>旅立ちの準備ができました</h2><p class="lead">この内容で、導入できるフォロワーMODのZIPを作ります。</p>
+        <div id="summary" class="review"></div>
+        <label class="checkbox"><input id="render_previews" type="checkbox" checked>出力モデルの静止・歩行・剣動作のプレビューを作る</label>
+        <button type="button" id="export-settings" class="secondary">設定JSONを保存</button>
+        <div class="note">元VRMとゲームのDataは変更しません。衣装は元VRMのまま固定です。</div>
+      </section>
+      <nav id="navigation"><button id="back" type="button" class="secondary" hidden>戻る</button><span></span><button id="next" type="button" class="primary">次へ →</button><button id="create" type="button" class="primary" hidden>フォロワーMODを作る</button></nav>
+    </form>
+    <section id="progress" hidden><p class="eyebrow">CONVERTING</p><h2>世界への入口を作っています</h2><p id="stage" aria-live="polite"></p><div class="progress-bar"><div></div></div><ol id="events"></ol><pre id="failure" hidden></pre></section>
+    <section id="result" hidden><p class="eyebrow">READY TO INSTALL</p><h2 id="result-title"></h2><p class="lead">フォロワーMODのZIPを作成しました。</p><a id="download" class="primary" download>MOD ZIPを保存</a><div class="install"><h3>ゲームへ迎える</h3><ol><li>ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行。</li><li><code id="plugin-name"></code>を有効にして、Skyrimを起動し直す。</li><li>ホワイトランのキナレス聖堂で話しかけて仲間にする。</li></ol><p>待機・解散などは標準のフォロワー会話を使います。</p></div><div id="previews" class="preview-grid"></div><p class="hint">画像は出力ファイルを読み戻したプレビューです。新しい設定での勧誘・ゲーム内動作は導入後に確認してください。転倒時の物理と防具の外観交換は未対応です。</p><button id="again" type="button" class="secondary">もう一体作る</button><p id="output-folder" class="hint"></p></section>
+  </main>
+</div>
+<script src="wizard.js"></script>
+</body></html>

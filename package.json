@@ -1,0 +1,6 @@
+{
+  "name": "vrm2skyrim-ui-tests",
+  "private": true,
+  "scripts": {"test:ui": "node tests/browser-e2e.cjs"},
+  "devDependencies": {"playwright": "1.62.1"}
+}
