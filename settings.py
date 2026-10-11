@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import re
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 
 def identifier(name):
@@ -49,6 +49,9 @@ class FollowerSettings:
     spawn_offset_x: float = 0.0
     spawn_offset_y: float = 0.0
     render_previews: bool = True
+    armor_support: bool = False
+    appearance_source_sha256: str = ""
+    appearance_parts: dict = field(default_factory=dict)
 
     def __post_init__(self):
         if not isinstance(self.mod_id, str) or not isinstance(self.author, str):
@@ -90,9 +93,16 @@ class FollowerSettings:
                 raise ValueError("Perks require editor_id and a zero-based integer rank")
         if any(not isinstance(spell, str) for spell in self.spells):
             raise ValueError("Spell IDs must be strings")
-        for name in ("auto_calculate", "marriage", "render_previews"):
+        for name in ("auto_calculate", "marriage", "render_previews", "armor_support"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be true or false")
+        if not isinstance(self.appearance_parts, dict) or not isinstance(self.appearance_source_sha256, str):
+            raise ValueError("Invalid appearance classification")
+        if self.armor_support:
+            from wardrobe import validate_parts
+            validate_parts(self.appearance_parts)
+            if not re.fullmatch(r"[0-9a-f]{64}", self.appearance_source_sha256):
+                raise ValueError("衣服の分類を入力VRMに結び付けてください")
 
     @property
     def prefix(self):

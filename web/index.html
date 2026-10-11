@@ -20,6 +20,17 @@
         <p class="eyebrow">STEP 01</p><h2>連れていくアバターを選ぶ</h2><p class="lead">人型のVRM 0 / 1に対応。元の衣装でフォロワーを作ります。</p>
         <label class="dropzone" for="source"><svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 8v22m-8-14 8-8 8 8M10 29v11h28V29" stroke="currentColor" stroke-width="2"/></svg><strong>VRMファイルを選択</strong><span>クリック、またはここへドラッグ</span><input id="source" type="file" accept=".vrm" aria-label="VRMファイル"></label>
         <p id="source-status" class="source-status" aria-live="polite">まだ選択されていません</p>
+        <label>衣服・防具の扱い<select id="armor_support"><option value="false">対応なし：元の外観を固定</option><option value="true">対応あり：身体・下着・衣服を分けて着脱</option></select></label>
+        <div id="wardrobe-editor" hidden>
+          <h3>身体と衣服を分類する</h3><p class="hint">名前から分類候補を出しています。身体、下着、顔・髪などの常時表示、着脱する衣服を確認してください。身体と服が一体のメッシュは、この画面では切断しません。</p>
+          <p class="hint">この版は元VRMの服の着脱に対応します。Skyrimの既存鎧を体型へ合わせる処理は開発予定です。</p>
+          <p id="wardrobe-warning" role="status"></p>
+          <div class="wardrobe-actions"><button type="button" id="wardrobe-reset" class="secondary">分類候補へ戻す</button><button type="button" id="wardrobe-combine" class="secondary">衣服を一品にまとめる</button><button type="button" id="wardrobe-split" class="secondary">衣服を個別に分ける</button><button type="button" id="wardrobe-add" class="secondary">装備グループを追加</button></div>
+          <div id="wardrobe-parts" class="wardrobe-parts"></div>
+          <h3>生成する衣服</h3><div id="wardrobe-garments"></div>
+          <label>分類の確認画像<select id="wardrobe-preview-state"><option value="all">全ての服を着る</option><option value="underwear">服を外す（身体と下着）</option></select></label><button type="button" id="wardrobe-preview" class="secondary">この分類をプレビュー</button>
+          <p id="wardrobe-preview-status" class="hint" aria-live="polite"></p><div id="wardrobe-preview-images" class="preview-grid"></div>
+        </div>
         <div class="environment"><h3>制作環境</h3><label>Skyrim Special Editionのフォルダ<input id="game" type="text" placeholder="…/steamapps/common/Skyrim Special Edition" required></label><label>Blender 4.5 LTSの実行ファイル<input id="blender" type="text" placeholder="…/blender.exe" required></label><p class="hint">見つかった環境を自動入力します。初回準備は同梱の <code>Setup.cmd</code> を実行してください。</p><div id="checks" class="checks"></div></div>
         <div class="import-row"><label class="link-button">保存した設定を読み込む<input type="file" id="import-settings" accept=".json" hidden></label><span id="import-status"></span></div>
       </section>
@@ -45,13 +56,13 @@
         <div id="summary" class="review"></div>
         <label class="checkbox"><input id="render_previews" type="checkbox" checked>出力モデルの静止・歩行・剣動作のプレビューを作る</label>
         <button type="button" id="export-settings" class="secondary">設定JSONを保存</button>
-        <div class="note">元VRMとゲームのDataは変更しません。衣装は元VRMのまま固定です。</div>
+        <div class="note">元VRMとゲームのDataは変更しません。衣服対応を有効にすると、分類した元衣装を着脱する装備として出力します。</div>
       </section>
       <nav id="navigation"><button id="back" type="button" class="secondary" hidden>戻る</button><span></span><button id="next" type="button" class="primary">次へ →</button><button id="create" type="button" class="primary" hidden>フォロワーMODを作る</button></nav>
     </form>
     <section id="progress" hidden><p class="eyebrow">CONVERTING</p><h2>世界への入口を作っています</h2><p id="stage" aria-live="polite"></p><div class="progress-bar"><div></div></div><ol id="events"></ol><pre id="failure" hidden></pre></section>
-    <section id="result" hidden><p class="eyebrow">READY TO INSTALL</p><h2 id="result-title"></h2><p class="lead">フォロワーMODのZIPを作成しました。</p><a id="download" class="primary" download>MOD ZIPを保存</a><div class="install"><h3>ゲームへ迎える</h3><ol><li>ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行。</li><li><code id="plugin-name"></code>を有効にして、Skyrimを起動し直す。</li><li>ホワイトランのキナレス聖堂で話しかけて仲間にする。</li></ol><p>待機・解散などは標準のフォロワー会話を使います。</p></div><div id="previews" class="preview-grid"></div><p class="hint">画像は出力ファイルを読み戻したプレビューです。新しい設定での勧誘・ゲーム内動作は導入後に確認してください。転倒時の物理と防具の外観交換は未対応です。</p><button id="again" type="button" class="secondary">もう一体作る</button><p id="output-folder" class="hint"></p></section>
+    <section id="result" hidden><p class="eyebrow">READY TO INSTALL</p><h2 id="result-title"></h2><p class="lead">フォロワーMODのZIPを作成しました。</p><a id="download" class="primary" download>MOD ZIPを保存</a><div class="install"><h3>ゲームへ迎える</h3><ol><li>ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行。</li><li><code id="plugin-name"></code>を有効にして、Skyrimを起動し直す。</li><li>ホワイトランのキナレス聖堂で話しかけて仲間にする。</li></ol><p>待機・解散などは標準のフォロワー会話を使います。元衣装の着脱確認コマンドはZIP内のREADME.txtにあります。</p></div><div id="previews" class="preview-grid"></div><p class="hint">画像は出力ファイルを読み戻したプレビューです。勧誘・衣服の着脱・再起動後の装備状態は導入後に確認してください。転倒時の物理と既存の鎧の体型合わせは未対応です。</p><button id="again" type="button" class="secondary">もう一体作る</button><p id="output-folder" class="hint"></p></section>
   </main>
 </div>
-<script src="wizard.js"></script>
+<script src="wardrobe.js"></script><script src="wizard.js"></script>
 </body></html>

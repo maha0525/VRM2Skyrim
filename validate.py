@@ -1,4 +1,5 @@
 """Validate the delivered NIF, textures and plugin, and decode DDS for rendering."""
+
 import argparse
 import json
 import logging
@@ -13,6 +14,7 @@ from scipy.spatial import cKDTree
 from plugin import records
 from settings import load_settings
 from build_npc import NPC_ID, RACE_ID
+from wardrobe import components
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "dependencies/io_scene_nifly"))
@@ -29,64 +31,199 @@ def validate(output, skeleton=None):
     shapes = []
     textures = set()
     delivered_points = []
-    with NifFile(str(mod / "meshes" / settings.asset_dir / "avatar.nif")) as nif:
-        if nif.game != "SKYRIMSE":
-            raise ValueError(f"Wrong NIF target: {nif.game}")
-        for shape in nif.shapes:
-            if len(shape.verts) > 65535 or not shape.bone_names:
-                raise ValueError(f"Invalid skinned shape: {shape.name}")
-            if set(shape.bone_names) - bone_set:
-                raise ValueError(f"Bones missing from the NPC skeleton: {set(shape.bone_names) - bone_set}")
-            delivered_points.append(np.array(shape.verts))
-            sums = [0.0] * len(shape.verts)
-            counts = [0] * len(shape.verts)
-            for _, pairs in shape.bone_weights.items():
-                for vertex, weight in pairs:
-                    sums[vertex] += weight
-                    counts[vertex] += 1
-            if any(count == 0 or count > 4 for count in counts):
-                raise ValueError(f"Invalid bone influence count: {shape.name}")
-            if max(abs(value - 1.0) for value in sums) > 0.015:
-                raise ValueError(f"Unnormalized weights: {shape.name}")
-            texture_paths = list(shape.shader.textures.values())
-            if not shape.shader.textures.get("Diffuse") or not shape.shader.textures.get("Normal"):
-                raise ValueError(f"Missing diffuse or normal texture: {shape.name}")
-            for texture in texture_paths:
-                relative = texture.replace("\\", "/")
-                path = (mod / relative).resolve()
-                if not path.is_relative_to(mod.resolve()) or not path.exists():
-                    raise ValueError(f"Missing or external texture: {texture}")
-                textures.add(path)
-            shapes.append({"name": shape.name, "vertices": len(shape.verts),
-                           "triangles": len(shape.tris), "bones": shape.bone_names,
-                           "max_influences": max(counts), "textures": shape.shader.textures,
-                           "alpha_flags": shape.alpha_property.properties.flags if shape.has_alpha_property else None})
+    manifest = (
+        json.loads((output / "appearance.json").read_text(encoding="utf8"))
+        if (output / "appearance.json").exists()
+        else {"components": components(settings)}
+    )
+    component_reports = []
+    baseline = np.load(output / "source-posed-vertices.npz")
+    for part in manifest["components"]:
+        part_points, part_shapes = [], []
+        with NifFile(str(mod / "meshes" / settings.asset_dir / part["file"])) as nif:
+            if nif.game != "SKYRIMSE":
+                raise ValueError(f"Wrong NIF target: {nif.game}")
+            for shape in nif.shapes:
+                if len(shape.verts) > 65535 or not shape.bone_names:
+                    raise ValueError(f"Invalid skinned shape: {shape.name}")
+                if set(shape.bone_names) - bone_set:
+                    raise ValueError(
+                        f"Bones missing from the NPC skeleton: {set(shape.bone_names) - bone_set}"
+                    )
+                delivered_points.append(np.array(shape.verts))
+                part_points.append(np.array(shape.verts))
+                if settings.armor_support and {
+                    partition.id for partition in shape.partitions
+                } != {part["slot"]}:
+                    raise ValueError(
+                        f"NIF partition does not match component slot: {shape.name}"
+                    )
+                sums = [0.0] * len(shape.verts)
+                counts = [0] * len(shape.verts)
+                for _, pairs in shape.bone_weights.items():
+                    for vertex, weight in pairs:
+                        sums[vertex] += weight
+                        counts[vertex] += 1
+                if any(count == 0 or count > 4 for count in counts):
+                    raise ValueError(f"Invalid bone influence count: {shape.name}")
+                if max(abs(value - 1.0) for value in sums) > 0.015:
+                    raise ValueError(f"Unnormalized weights: {shape.name}")
+                texture_paths = list(shape.shader.textures.values())
+                if not shape.shader.textures.get(
+                    "Diffuse"
+                ) or not shape.shader.textures.get("Normal"):
+                    raise ValueError(f"Missing diffuse or normal texture: {shape.name}")
+                for texture in texture_paths:
+                    relative = texture.replace("\\", "/")
+                    path = (mod / relative).resolve()
+                    if not path.is_relative_to(mod.resolve()) or not path.exists():
+                        raise ValueError(f"Missing or external texture: {texture}")
+                    textures.add(path)
+                shapes.append(
+                    {
+                        "name": shape.name,
+                        "vertices": len(shape.verts),
+                        "component": part["id"],
+                        "triangles": len(shape.tris),
+                        "bones": shape.bone_names,
+                        "max_influences": max(counts),
+                        "textures": shape.shader.textures,
+                        "alpha_flags": shape.alpha_property.properties.flags
+                        if shape.has_alpha_property
+                        else None,
+                    }
+                )
+                part_shapes.append(shapes[-1])
+        if settings.armor_support:
+            expected = np.concatenate(
+                [baseline[f"VRMNode_{node:05}"] for node in part["nodes"]]
+            )
+            observed = np.concatenate(part_points)
+            error = float(
+                max(
+                    cKDTree(expected).query(observed)[0].max(),
+                    cKDTree(observed).query(expected)[0].max(),
+                )
+            )
+            if error > 0.001:
+                raise ValueError(
+                    f"Separated component differs from its source nodes: {part['id']}: {error}"
+                )
+            component_reports.append(
+                {
+                    "id": part["id"],
+                    "slot": part["slot"],
+                    "source_pose_max_vertex_distance": error,
+                    "shapes": len(part_shapes),
+                    "triangles": sum(s["triangles"] for s in part_shapes),
+                }
+            )
     generated = list(records(mod / settings.plugin_name))
-    local_ids = {record.form_id for record in generated if record.kind not in (b"TES4", b"CELL")}
-    if len(local_ids) != 7:
-        raise ValueError("Expected seven private follower records")
+    local_ids = {
+        record.form_id for record in generated if record.kind not in (b"TES4", b"CELL")
+    }
+    expected_records = (
+        7
+        if not settings.armor_support
+        else 6
+        + len([p for p in components(settings) if p["role"] != "garment"])
+        + 2 * len(settings.appearance_parts["garments"])
+    )
+    if len(local_ids) != expected_records:
+        raise ValueError(f"Expected {expected_records} private follower records")
     if any(form_id >> 24 != 1 for form_id in local_ids):
         raise ValueError("Plugin overrides an existing record")
     for record in generated:
         for tag, payload in record.fields:
-            if tag in (b"DOFT", b"MODL", b"INAM", b"RNAM", b"WNAM") and len(payload) == 4:
-                value = struct.unpack("<I", payload)[0]
-                if value >> 24 == 1 and value not in local_ids:
-                    raise ValueError("Dangling local record reference")
+            reference_tags = {b"ARMO": {b"MODL", b"RNAM"}, b"ARMA": {b"RNAM", b"MODL"},
+                              b"NPC_": {b"DOFT", b"RNAM", b"WNAM", b"CNTO"},
+                              b"RACE": {b"WNAM"}, b"OTFT": {b"INAM"}}
+            if tag in reference_tags.get(record.kind, set()):
+                if (tag == b"CNTO" and len(payload) != 8) or (tag != b"CNTO" and len(payload) % 4):
+                    raise ValueError("Malformed plugin reference field")
+                refs = (
+                    [payload[:4]]
+                    if tag == b"CNTO"
+                    else [payload[i : i + 4] for i in range(0, len(payload), 4)]
+                )
+                for ref in refs:
+                    value = struct.unpack("<I", ref)[0]
+                    if value >> 24 == 1 and value not in local_ids:
+                        raise ValueError("Dangling local record reference")
     by_name = {record.editor_id: record for record in generated}
     race = by_name[settings.prefix + "Race"]
-    for name in (settings.prefix + "NPC", settings.prefix + "Appearance", settings.prefix + "AppearanceAA"):
+    for name in (settings.prefix + "NPC", settings.prefix + "Appearance"):
         if by_name[name].values(b"RNAM") != [struct.pack("<I", race.form_id)]:
             raise ValueError(f"NPC/appearance does not reference private race: {name}")
-    if race.values(b"ANAM") != [(settings.asset_dir.replace("/", "\\") + "\\skeleton.nif\0").encode()] * 2:
+    addons = [r for r in generated if r.kind == b"ARMA"]
+    for addon in addons:
+        if addon.values(b"RNAM") != [struct.pack("<I", RACE_ID)]:
+            raise ValueError("Appearance addon uses another race")
+        for tag in (b"MOD2", b"MOD3"):
+            path = (
+                mod
+                / "meshes"
+                / addon.values(tag)[0].rstrip(b"\0").decode("utf8").replace("\\", "/")
+            )
+            if not path.is_file():
+                raise ValueError("Appearance addon mesh is missing")
+    if settings.armor_support:
+        by_id = {r.form_id: r for r in generated}
+        skin = by_name[settings.prefix + "Appearance"]
+        skin_components = [p for p in components(settings) if p["role"] != "garment"]
+        if len(skin.values(b"MODL")) != len(skin_components):
+            raise ValueError(
+                "Skin does not contain all permanent appearance components"
+            )
+        for ref in skin.values(b"MODL"):
+            if by_id[struct.unpack("<I", ref)[0]].kind != b"ARMA":
+                raise ValueError("Skin references a non-addon")
+        outfit_ids = set(
+            struct.unpack(
+                "<"
+                + "I"
+                * (len(by_name[settings.prefix + "Outfit"].values(b"INAM")[0]) // 4),
+                by_name[settings.prefix + "Outfit"].values(b"INAM")[0],
+            )
+        )
+        expected_outfit = set()
+        for index, garment in enumerate(settings.appearance_parts["garments"]):
+            item = by_name[settings.prefix + "Garment_" + garment["id"]]
+            if item.flags & 4 or item.values(b"FULL") != [
+                garment["name"].encode("utf8") + b"\0"
+            ]:
+                raise ValueError("Garment is not a named wearable item")
+            mask, kind = struct.unpack("<II", item.values(b"BOD2")[0])
+            if (
+                mask != 1 << (garment["slot"] - 30)
+                or kind
+                != {"light": 0, "heavy": 1, "clothing": 2}[garment["armor_type"]]
+            ):
+                raise ValueError("Garment slot/type mismatch")
+            if struct.unpack("<i", item.values(b"DNAM")[0])[0] != round(
+                garment["armor_rating"] * 100
+            ):
+                raise ValueError("Garment armor rating mismatch")
+            if garment["equipped"]:
+                expected_outfit.add(item.form_id)
+        if outfit_ids != expected_outfit or skin.form_id in outfit_ids:
+            raise ValueError(
+                "Initial outfit differs from selected garments or contains the skin"
+            )
+    if (
+        race.values(b"ANAM")
+        != [(settings.asset_dir.replace("/", "\\") + "\\skeleton.nif\0").encode()] * 2
+    ):
         raise ValueError("Private race references the wrong skeleton")
     npc = by_name[settings.prefix + "NPC"]
     if npc.form_id != NPC_ID or race.form_id != RACE_ID:
         raise ValueError("Wrong follower/race IDs")
     if npc.values(b"FULL") != [settings.npc_name.encode("utf8") + b"\0"]:
         raise ValueError("NPC name was not written to the plugin")
-    factions = {struct.unpack_from("<I", value)[0]: struct.unpack_from("<b", value, 4)[0]
-                for value in npc.values(b"SNAM")}
+    factions = {
+        struct.unpack_from("<I", value)[0]: struct.unpack_from("<b", value, 4)[0]
+        for value in npc.values(b"SNAM")
+    }
     if factions.get(0x5C84D) != 0 or factions.get(0x5C84E) != -1:
         raise ValueError("Follower recruitment factions/ranks missing")
     relation = by_name[settings.prefix + "PlayerRelationship"]
@@ -95,33 +232,58 @@ def validate(output, skeleton=None):
     actor = by_name[settings.prefix + "FollowerREF"]
     if actor.values(b"NAME") != [struct.pack("<I", NPC_ID)] or not actor.flags & 0x400:
         raise ValueError("Persistent placed follower missing")
-    if actor.groups[-2:] != ((struct.pack("<I", 0x165A7), 6), (struct.pack("<I", 0x165A7), 8)):
+    if actor.groups[-2:] != (
+        (struct.pack("<I", 0x165A7), 6),
+        (struct.pack("<I", 0x165A7), 8),
+    ):
         raise ValueError("Follower is outside the Temple of Kynareth")
     if {record.form_id for record in generated if record.kind == b"CELL"} != {0x165A7}:
         raise ValueError("Unexpected existing cell override")
-    baseline = np.load(output / "source-posed-vertices.npz")
     original = np.concatenate([baseline[name] for name in baseline.files])
     delivered = np.concatenate(delivered_points)
     forward = cKDTree(original).query(delivered)[0]
     reverse = cKDTree(delivered).query(original)[0]
     error = float(max(forward.max(), reverse.max()))
     if error > 0.001:
-        raise ValueError(f"Delivered NIF differs from the original VRM posed without stretch: {error}")
+        raise ValueError(
+            f"Delivered NIF differs from the original VRM posed without stretch: {error}"
+        )
     preview = output / "dds-preview"
     preview.mkdir(exist_ok=True)
     for texture in sorted(textures):
-        command = [str(ROOT / "dependencies/texconv.exe"), "-nologo", "-y", "-ft", "png",
-                   "-o", str(preview), str(texture)]
+        command = [
+            str(ROOT / "dependencies/texconv.exe"),
+            "-nologo",
+            "-y",
+            "-ft",
+            "png",
+            "-o",
+            str(preview),
+            str(texture),
+        ]
         result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode:
             raise RuntimeError(result.stdout + result.stderr)
-    report = {"nif_shapes": shapes, "total_triangles": sum(shape["triangles"] for shape in shapes),
-              "textures_resolved": len(textures), "new_plugin_records": len(local_ids),
-              "source_pose_max_vertex_distance": error, "private_skeleton_nodes": len(bone_set),
-              "game_verified": False}
-    (output / "validation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-    logging.info("Validated: %s NIF shapes, %s triangles, %s textures, %s new records",
-                 len(shapes), report["total_triangles"], len(textures), len(local_ids))
+    report = {
+        "nif_shapes": shapes,
+        "total_triangles": sum(shape["triangles"] for shape in shapes),
+        "textures_resolved": len(textures),
+        "new_plugin_records": len(local_ids),
+        "source_pose_max_vertex_distance": error,
+        "private_skeleton_nodes": len(bone_set),
+        "components": component_reports,
+        "game_verified": False,
+    }
+    (output / "validation.json").write_text(
+        json.dumps(report, indent=2), encoding="utf-8"
+    )
+    logging.info(
+        "Validated: %s NIF shapes, %s triangles, %s textures, %s new records",
+        len(shapes),
+        report["total_triangles"],
+        len(textures),
+        len(local_ids),
+    )
     return report
 
 

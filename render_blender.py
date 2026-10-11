@@ -4,6 +4,7 @@ import json
 import logging
 from pathlib import Path
 import sys
+import numpy as np
 
 import bpy
 from mathutils import Matrix, Vector
@@ -23,6 +24,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--animation", choices=("original", "rest", "walk", "attack"), default="rest")
+    parser.add_argument("--wardrobe", default="initial", help="initial, all, underwear, without:<garment-id>")
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
     output = args.output.resolve()
     settings = load_settings(output)
@@ -32,11 +34,41 @@ def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.preferences.addon_enable(module="io_scene_nifly")
     skel = output / "mod/meshes" / settings.asset_dir / "skeleton.nif"
-    nif = output / "mod/meshes" / settings.asset_dir / "avatar.nif"
-    bpy.ops.import_scene.pynifly(filepath=str(nif), rename_bones=False, create_bones=True,
-                               reference_skel=str(skel), import_animations=False,
-                               import_shapekeys=False, import_collisions=False)
-    rig = next(obj for obj in bpy.context.scene.objects if obj.type == "ARMATURE")
+    from wardrobe import components
+    parts = components(settings)
+    wardrobe = args.wardrobe
+    if wardrobe not in ("initial", "all", "underwear") and not any(wardrobe == "without:" + p["id"] for p in parts if p["role"] == "garment"):
+        raise ValueError("Unknown wardrobe state")
+    nifs, rig = [], None
+    for part in parts:
+        if settings.armor_support and part["role"] == "garment":
+            if wardrobe == "underwear" or wardrobe == "without:" + part["id"] or (wardrobe == "initial" and not part["equipped"]):
+                continue
+        nif = output / "mod/meshes" / settings.asset_dir / part["file"]
+        nifs.append(str(nif))
+        existing = set(bpy.context.scene.objects)
+        bpy.ops.object.select_all(action="DESELECT")
+        bpy.context.view_layer.objects.active = None
+        bpy.ops.import_scene.pynifly(filepath=str(nif), rename_bones=False, create_bones=True,
+                                   reference_skel=str(skel), import_animations=False,
+                                   import_shapekeys=False, import_collisions=False)
+        imported = [obj for obj in bpy.context.scene.objects if obj not in existing]
+        new_rig = next(obj for obj in imported if obj.type == "ARMATURE")
+        if rig is None:
+            rig = new_rig
+        else:
+            for bone in new_rig.data.bones:
+                if bone.name not in rig.data.bones or not np.allclose(np.array(bone.matrix_local), np.array(rig.data.bones[bone.name].matrix_local), atol=.001):
+                    raise ValueError(f"Separated appearance uses inconsistent bone rest pose: {bone.name}")
+            for obj in imported:
+                world = obj.matrix_world.copy()
+                if obj.parent == new_rig:
+                    obj.parent = rig
+                    obj.matrix_world = world
+                for modifier in obj.modifiers:
+                    if modifier.type == "ARMATURE" and modifier.object == new_rig:
+                        modifier.object = rig
+            bpy.data.objects.remove(new_rig, do_unlink=True)
     meshes = [obj for obj in bpy.context.scene.objects if obj.type == "MESH"
               and any(mod.type == "ARMATURE" and mod.object == rig for mod in obj.modifiers)]
     # These PNGs were decoded from the delivered DDS, not copied from the VRM.
@@ -137,6 +169,7 @@ def main():
         light.data.shape = "DISK"
         light.data.size = size
         aim(light, (0, 0, 0.8))
+    prefix = args.animation if wardrobe == "initial" else "wardrobe-" + wardrobe.replace(":", "-") + "-" + args.animation
     for frame in frames:
         scene.frame_set(frame)
         if weapon is not None:
@@ -146,7 +179,7 @@ def main():
             weapon.matrix_world = (rig.matrix_world @ hand.matrix
                                    @ hand.bone.matrix_local.inverted() @ weapon_rest)
             bpy.context.view_layer.update()
-        scene.render.filepath = str(previews / f"{args.animation}-{frame:02}.png")
+        scene.render.filepath = str(previews / f"{prefix}-{frame:02}.png")
         bpy.ops.render.render(write_still=True)
     if weapon is not None:
         scene.frame_set(10)
@@ -158,16 +191,16 @@ def main():
         camera.location = center + Vector((.5, 1.0, .35))
         camera.data.ortho_scale = .32
         aim(camera, center)
-        scene.render.filepath = str(previews / "attack-hand-10.png")
+        scene.render.filepath = str(previews / ("attack-hand-10.png" if wardrobe == "initial" else prefix + "-hand-10.png"))
         bpy.ops.render.render(write_still=True)
-    (previews / f"{args.animation}.json").write_text(json.dumps({
-        "nif": str(nif), "animation": args.animation, "frames": frames,
+    (previews / f"{prefix}.json").write_text(json.dumps({
+        "nifs": nifs, "animation": args.animation, "frames": frames, "wardrobe": wardrobe,
         "meshes": [obj.name for obj in meshes], "game_verified": False,
         "steel_sword_geometry": weapon is not None,
         "weapon_attachment": "WEAPON" if weapon else None,
         "weapon_material": "neutral metal preview" if weapon else None,
     }, indent=2), encoding="utf-8")
-    bpy.ops.wm.save_as_mainfile(filepath=str(output / f"preview-{args.animation}.blend"))
+    bpy.ops.wm.save_as_mainfile(filepath=str(output / f"preview-{prefix}.blend"))
 
 
 if __name__ == "__main__":

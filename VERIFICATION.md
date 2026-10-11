@@ -1,4 +1,58 @@
-# VRM2Skyrim 0.3.0 verification
+# VRM2Skyrim verification
+
+## 0.4.0 wardrobe verification (2026-10-11)
+
+Nineteen Python tests pass locally, including source-hash binding, exact mesh
+coverage, duplicate/reserved/conflicting slot rejection, independent skin and
+garment records, stats/default-outfit/inventory linkage, and secondary-rig
+matching by name, rest position, limb direction and uniqueness. Ruff passes.
+
+A real local humanoid VRM with separate body, underwear, face/hair and clothing
+was exercised through the actual wizard in a dedicated headless Chrome profile:
+
+- Enable wardrobe mode, review roles, split/combine garments and edit item stats.
+- Render front/back source classification previews with garments removed.
+- Navigate back, export settings, import those settings through the file input.
+- Start actual conversion from the button, load output previews and save the ZIP.
+- Check desktop and 390-pixel mobile layouts, with no horizontal overflow or
+  browser JavaScript error.
+
+The fixed-appearance Sophie journey also passed through real conversion,
+output previews and ZIP download with wardrobe mode disabled. The 0.3 results
+below remain historical evidence rather than new game acceptance.
+
+The wardrobe output is read back component by component. Each NIF is compared
+against its own source nodes, not only the assembled point cloud. Partitions
+match the assigned slot; all components use the delivered skeleton; triangle
+totals, texture paths, weight limits, private record references, permanent skin
+and initial clothing are checked. Source materials are copied for the independent
+comparison so NIF shader normalization cannot destroy source alpha graphs.
+The exported opaque shaders use alpha 1 regardless of an ignored glTF factor.
+
+The actual output NIFs and decoded DDS are rendered clothed and in underwear,
+with vanilla walk/attack clips and individual garment-removal states. Secondary
+clothing/hair bones are matched against the primary humanoid using actual rest
+geometry, retaining their offsets. Ambiguous matches are rejected; unrelated
+accessory rigs are not assumed to be humanoid copies. The assembled renders
+are inspected before handoff.
+
+Private avatar names, node layouts, hashes, model-specific results and images
+remain local in ignored build/audit directories. They are not published as test
+fixtures or documents. The public test accepts a user-supplied local VRM.
+
+### Remaining game checks for 0.4
+
+Install the generated ZIP on a test save, enable the ESP and restart Skyrim.
+Check placement/recruitment, then remove/re-equip each original garment using
+the generated README's FormID commands. Check that body/underwear/face/hair remain.
+Verify default outfit behavior, normal follower inventory dialogue, dismissal,
+and save/reload. The offline previews do not verify these runtime transitions.
+
+Existing Skyrim armor fitting and independent cloth/hair physics are not
+implemented. Inventory/dropped-item models use the base game's generic clothing
+model; worn models use the converted VRM garment meshes.
+
+## 0.3.0 verification history
 
 Checked on 2026-10-11, Windows, Python 3.11, Blender 4.5.12, local Skyrim SE assets.
 
@@ -87,7 +141,7 @@ follower behavior. The following 0.3 checks are still required in Skyrim:
 3. Recruit, follow, wait, dismiss, then recruit again.
 4. Check behavior/stats/spells with the chosen profile and the installed mod set.
 
-Ragdoll fitting, facial animation, hair physics and armor appearance replacement
+Ragdoll fitting, facial animation, hair physics and existing Skyrim armor fitting
 are not implemented. The temple CELL retains master metadata and can need a
 load-order compatibility patch with other mods that edit that cell.
 `game_verified` stays false for new follower builds until the relevant game

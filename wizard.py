@@ -13,11 +13,12 @@ from urllib.parse import parse_qs, unquote, urlparse
 import uuid
 import webbrowser
 
-from converter import ROOT, convert, doctor
+from converter import ROOT, convert, doctor, run_blender
 from environment import find_blender, find_game
 from game_catalog import GameCatalog
 from inspect_vrm import inspect
 from settings import FollowerSettings, VERSION
+from wardrobe import validate_source
 
 
 class WizardApplication:
@@ -25,6 +26,7 @@ class WizardApplication:
         self.workspace = Path(workspace or ROOT / "build/wizard")
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.sources = {}
+        self.source_reports = {}
         self.jobs = {}
         self.catalogs = {}
         self.lock = threading.Lock()
@@ -46,8 +48,10 @@ class WizardApplication:
         path.write_bytes(blob)
         report = inspect(path)
         self.sources[source_id] = path
+        self.source_reports[source_id] = report
         return {"source_id": source_id, "filename": Path(name).name,
-                "triangles": report["total_triangles"], "mesh_count": len(report["meshes"]),
+                "triangles": report["total_triangles"], "mesh_count": len(report["parts"]),
+                "parts": report["parts"], "sha256": report["sha256"],
                 "suggested_name": report.get("vrm_meta", {}).get("name") or report.get("vrm_meta", {}).get("title") or Path(name).stem,
                 "has_morphs": any(mesh["morphs"] for mesh in report["meshes"])}
 
@@ -56,6 +60,7 @@ class WizardApplication:
         if source is None:
             raise ValueError("先にVRMを選択してください")
         settings = FollowerSettings.from_dict(request["settings"])
+        validate_source(settings, self.source_reports[request["source_id"]])
         game, blender = Path(request["game"]), Path(request["blender"])
         self.catalog(game).validate_settings(settings)
         checks = doctor(game, blender)
@@ -68,9 +73,51 @@ class WizardApplication:
             output = self.workspace / f"{settings.mod_id}_{datetime.now():%Y%m%d_%H%M%S}_{job_id[:8]}"
             job = {"id": job_id, "status": "queued", "stage": "準備中", "output": str(output),
                    "npc_name": settings.npc_name, "plugin_name": settings.plugin_name, "events": []}
+            job["armor_support"] = settings.armor_support
+            job["garments"] = [{"id": g["id"], "name": g["name"]} for g in settings.appearance_parts.get("garments", [])] if settings.armor_support else []
             self.jobs[job_id] = job
         self.executor.submit(self._run, job, source, game, blender, output, settings)
         return {"job_id": job_id}
+
+    def start_preview(self, request):
+        source_id = request.get("source_id")
+        source = self.sources.get(source_id)
+        if source is None:
+            raise ValueError("先にVRMを選択してください")
+        settings = FollowerSettings.from_dict(request["settings"])
+        if not settings.armor_support:
+            raise ValueError("衣服の分離を有効にしてください")
+        validate_source(settings, self.source_reports[source_id])
+        blender = Path(request["blender"])
+        if not blender.is_file():
+            raise ValueError("Blenderの実行ファイルを確認してください")
+        wardrobe = request.get("wardrobe", "all")
+        valid = {"all", "underwear"} | {"without:" + g["id"] for g in settings.appearance_parts["garments"]}
+        if wardrobe not in valid:
+            raise ValueError("Unknown preview wardrobe")
+        with self.lock:
+            if any(job["status"] in ("queued", "running") for job in self.jobs.values()):
+                raise ValueError("変換・プレビューの完了を待ってください")
+            job_id = uuid.uuid4().hex
+            output = self.workspace / "classification" / job_id
+            job = {"id": job_id, "kind": "source_preview", "status": "queued", "output": str(output),
+                   "stage": "分類を描画中", "events": []}
+            self.jobs[job_id] = job
+        self.executor.submit(self._run_preview, job, source, blender, output, settings, wardrobe)
+        return {"job_id": job_id}
+
+    def _run_preview(self, job, source, blender, output, settings, wardrobe):
+        job["status"] = "running"
+        try:
+            output.mkdir(parents=True)
+            settings.save(output / "settings.json")
+            run_blender(blender, "render_source.py", ["--source", source, "--output", output, "--wardrobe", wardrobe], output, "Source classification")
+            with self.lock:
+                job.update(status="complete", previews=["front.png", "back.png"])
+        except Exception as error:
+            logging.exception("Classification preview failed")
+            with self.lock:
+                job.update(status="failed", error=str(error))
 
     def _run(self, job, source, game, blender, output, settings):
         job["status"] = "running"
@@ -180,10 +227,17 @@ def handler_for(app):
                     return self.reply({"choices": catalog.json_choices(), "checks": doctor(request["game"], request["blender"])})
                 if self.path == "/api/validate":
                     settings = FollowerSettings.from_dict(request["settings"])
+                    if settings.armor_support:
+                        source_id = request.get("source_id")
+                        if source_id not in app.source_reports:
+                            raise ValueError("先にVRMを選択してください")
+                        validate_source(settings, app.source_reports[source_id])
                     app.catalog(request["game"]).validate_settings(settings)
                     return self.reply({"settings": asdict(settings)})
                 if self.path == "/api/jobs":
                     return self.reply(app.start(request), 202)
+                if self.path == "/api/appearance-preview":
+                    return self.reply(app.start_preview(request), 202)
                 raise ValueError("Unknown API")
             except (ValueError, OSError, KeyError, TypeError, IndexError) as error:
                 logging.info("Wizard request rejected: %s", error)

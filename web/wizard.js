@@ -1,6 +1,6 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const state = {step:0, source:null, choices:null, defaults:null, job:null, imported:null, perks:new Map(), spells:new Set(), nameDirty:false, idDirty:false};
+const state = {step:0, source:null, choices:null, defaults:null, job:null, imported:null, importPending:false, perks:new Map(), spells:new Set(), nameDirty:false, idDirty:false};
 const skills = ["OneHanded","TwoHanded","Marksman","Block","Smithing","HeavyArmor","LightArmor","Pickpocket","Lockpicking","Sneak","Alchemy","Speechcraft","Alteration","Conjuration","Destruction","Illusion","Restoration","Enchanting"];
 const skillLabels = ["片手武器","両手武器","弓術","防御","鍛冶","重装","軽装","スリ","開錠","隠密","錬金術","話術","変性","召喚","破壊","幻惑","回復","付呪"];
 const integers = new Set(["level","min_level","max_level","health","magicka","stamina","confidence","aggression","morality"]);
@@ -15,6 +15,7 @@ function applySettings(settings) {
   for(const [key,value] of Object.entries(settings)) {const input=$(key); if(!input)continue; if(input.type==='checkbox') input.checked=value; else input.value=String(value);}
   state.perks=new Map((settings.perks||[]).map(item=>[item.editor_id,item.rank])); state.spells=new Set(settings.spells||[]);
   for(const key of skills) $('skill-'+key).value=settings.skills?.[key]??20;
+  if(state.source)wardrobeLoad(state.source,settings);
   updateLevel(); updateMarriage(); renderChoices();
 }
 function collect() {
@@ -24,7 +25,7 @@ function collect() {
     settings[key]=input.type==='checkbox'?input.checked:integers.has(key)?Number.parseInt(input.value,10):floats.has(key)?Number(input.value):typeof value==='boolean'?input.value==='true':input.value.trim();
   }
   settings.perks=[...state.perks].map(([editor_id,rank])=>({editor_id,rank})); settings.spells=[...state.spells];
-  settings.skills=settings.auto_calculate?{}:Object.fromEntries(skills.map(key=>[key,Number($('skill-'+key).value)])); return settings;
+  settings.skills=settings.auto_calculate?{}:Object.fromEntries(skills.map(key=>[key,Number($('skill-'+key).value)])); Object.assign(settings,wardrobeCollect()); return settings;
 }
 async function updateId() {
   if(state.idDirty)return;
@@ -38,6 +39,7 @@ async function upload(file) {
   try {
     const response=await fetch('/api/source',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Filename':encodeURIComponent(file.name)},body:file});
     const result=await response.json(); if(!response.ok)throw new Error(result.error); state.source=result;
+    wardrobeLoad(result,state.imported);
     $('source-status').textContent=`${result.filename} · ${result.mesh_count}メッシュ · ${result.triangles.toLocaleString()}三角形`;
     if(!state.nameDirty&&!state.imported){$('npc_name').value=result.suggested_name; $('mod_name').value=result.suggested_name+'Follower'; await updateId();}
   }catch(e){state.source=null; error(e.message); $('source-status').textContent='読み込めませんでした';}
@@ -52,7 +54,7 @@ function fillSelect(id, choices, allowNone=false) {
 function setupChoices(choices) {
   state.choices=choices;
   for(const [id,key] of [['voice','voices'],['combat_class','classes'],['combat_style','styles'],['weapon','weapons'],['ammunition','ammunition']])fillSelect(id,choices[key],['weapon','ammunition'].includes(id));
-  if(state.imported)applySettings(state.imported);
+  if(state.imported&&state.importPending){applySettings(state.imported);state.importPending=false;}
   updateMarriage();
   renderChoices();
 }
@@ -84,6 +86,7 @@ function showStep(step) {
 function summarize(settings) {
   const voice=state.choices.voices.find(item=>item.id===settings.voice);
   const rows=[['アバター',state.source.filename],['NPC名',settings.npc_name],['MOD',settings.mod_name+' / '+settings.mod_id+'.esp'],['ボイス',voice?.label||settings.voice],['戦闘',settings.combat_class+' / '+settings.combat_style],['レベル',settings.level_mode==='player'?`プレイヤー×${settings.level_multiplier}（${settings.min_level}〜${settings.max_level}）`:String(settings.level)],['生存',{'protected':'保護','essential':'不死','mortal':'通常'}[settings.protection]],['体力 / マジカ / スタミナ',`${settings.health} / ${settings.magicka} / ${settings.stamina}${settings.auto_calculate?'（自動成長の補正に使用）':''}`],['Perk / 魔法',`${settings.perks.length} / ${settings.spells.length}`],['初期配置','ホワイトラン · キナレス聖堂']];
+  rows.push(['衣服',settings.armor_support?`${settings.appearance_parts.garments.length}品を着脱可能（初期装備${settings.appearance_parts.garments.filter(g=>g.equipped).length}品）`:'元の外観を固定']);
   const dl=document.createElement('dl');for(const [title,value]of rows){const dt=document.createElement('dt');dt.textContent=title;const dd=document.createElement('dd');dd.textContent=value;dl.append(dt,dd);}$('summary').replaceChildren(dl);
 }
 async function next() {
@@ -92,7 +95,7 @@ async function next() {
   $('next').disabled=true;
   try {
     if(state.step===0){if(!state.source)throw new Error('VRMファイルを選択してください');const result=await api('/api/catalog',{game:$('game').value,blender:$('blender').value});$('checks').replaceChildren();for(const [key,value]of Object.entries(result.checks)){const badge=document.createElement('span');badge.textContent=key+(value?' ✓':' 未準備');badge.className=value?'':'missing';$('checks').append(badge);}if(Object.values(result.checks).some(value=>!value))throw new Error('環境が未準備です。パスを確認し、初回はSetup.cmdを実行してください。');setupChoices(result.choices);}
-    if(state.step>=1){const result=await api('/api/validate',{game:$('game').value,settings:collect()});if(state.step===3)summarize(result.settings);}
+    const result=await api('/api/validate',{source_id:state.source.source_id,game:$('game').value,settings:collect()});if(state.step===3)summarize(result.settings);
     showStep(state.step+1);
   }catch(e){error(e.message);}finally{$('next').disabled=false;}
 }
@@ -101,6 +104,7 @@ function showResult(job) {
   $('progress').hidden=true;$('result').hidden=false;$('result-title').textContent=job.npc_name+'を、スカイリムへ。';$('download').href=fileURL(job.id,job.archive);$('download').download=job.archive;$('plugin-name').textContent=job.plugin_name;$('output-folder').textContent='出力フォルダ: '+job.output;
   const names=['original-01.png','rest-01.png','walk-08.png','attack-10.png','attack-hand-10.png']; const labels=['元VRM（姿勢合わせ）','出力NIF','標準歩行','標準の剣攻撃','手と剣の近接確認'];$('previews').replaceChildren();
   for(let i=0;i<names.length;i++){const path=job.previews.find(path=>path.endsWith('/'+names[i]));if(!path)continue;const figure=document.createElement('figure');const image=document.createElement('img');image.src=fileURL(job.id,path);image.alt=labels[i];const caption=document.createElement('figcaption');caption.textContent=labels[i];figure.append(image,caption);$('previews').append(figure);}
+  if(job.armor_support){const extra=[['wardrobe-underwear-rest-01.png','服を外した状態'],['wardrobe-underwear-walk-08.png','下着状態で歩行'],['wardrobe-underwear-attack-10.png','下着状態で剣攻撃'],...(job.garments||[]).map(g=>['wardrobe-without-'+g.id+'-rest-01.png',g.name+'だけ外した状態'])];for(const [name,label]of extra){const path=job.previews.find(p=>p.endsWith('/'+name));if(!path)continue;const figure=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption');img.src=fileURL(job.id,path);img.alt=label;caption.textContent=label;figure.append(img,caption);$('previews').append(figure);}}
 }
 async function poll() {
   try {const job=await api('/api/jobs/'+state.job);$('stage').textContent=job.stage;$('events').replaceChildren(...job.events.map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));
@@ -122,13 +126,14 @@ function preset() {
 async function init() {
   for(let i=0;i<skills.length;i++){const label=document.createElement('label');label.textContent=skillLabels[i];const input=document.createElement('input');input.id='skill-'+skills[i];input.type='number';input.min='0';input.max='100';input.value='20';label.append(input);$('skills').append(label);}
   const env=await api('/api/environment');state.defaults=env.defaults;$('version').textContent='VRM2Skyrim '+env.version;$('game').value=env.game;$('blender').value=env.blender;applySettings(env.defaults);
+  initWardrobe();
   $('source').onchange=()=>upload($('source').files[0]);const zone=document.querySelector('.dropzone');zone.ondragover=e=>{e.preventDefault();zone.classList.add('drag');};zone.ondragleave=()=>zone.classList.remove('drag');zone.ondrop=e=>{e.preventDefault();zone.classList.remove('drag');upload(e.dataTransfer.files[0]);};
   $('next').onclick=next;$('back').onclick=()=>showStep(state.step-1);$('create').onclick=create;$('level_mode').onchange=updateLevel;$('auto_calculate').onchange=updateLevel;$('preset').onchange=preset;
   $('mod_name').oninput=()=>{state.nameDirty=true;updateId();};$('npc_name').oninput=()=>state.nameDirty=true;$('mod_id').oninput=()=>state.idDirty=true;
   $('sex').onchange=()=>{$('voice').value=$('sex').value==='male'?'MaleNord':'FemaleEvenToned';updateMarriage();};$('voice').onchange=updateMarriage;
   $('perk-search').oninput=renderChoices;$('spell-search').oninput=renderChoices;
   $('export-settings').onclick=()=>download($('mod_id').value+'-settings.json',collect());
-  $('import-settings').onchange=async()=>{try{state.imported=JSON.parse(await $('import-settings').files[0].text());applySettings(state.imported);state.nameDirty=true;state.idDirty=true;$('import-status').textContent='設定を読み込みました';}catch(e){error(e.message);}};
-  $('again').onclick=()=>{$('result').hidden=true;$('wizard').hidden=false;state.source=null;state.imported=null;state.nameDirty=false;state.idDirty=false;$('source').value='';$('source-status').textContent='次のVRMを選択してください';showStep(0);};
+  $('import-settings').onchange=async()=>{try{state.imported=JSON.parse(await $('import-settings').files[0].text());state.importPending=!state.choices;applySettings(state.imported);state.nameDirty=true;state.idDirty=true;$('import-status').textContent='設定を読み込みました';}catch(e){error(e.message);}};
+  $('again').onclick=()=>{$('result').hidden=true;$('wizard').hidden=false;state.source=null;state.imported=null;state.nameDirty=false;state.idDirty=false;$('source').value='';$('source-status').textContent='次のVRMを選択してください';wardrobeLoad(null);showStep(0);};
 }
 init().catch(e=>error(e.message));

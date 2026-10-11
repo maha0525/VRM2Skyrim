@@ -9,6 +9,7 @@ import struct
 from game_catalog import GameCatalog
 from plugin import Record, records, write_plugin
 from settings import SKILLS, load_settings
+from wardrobe import components
 
 NPC_ID = 0x01000800
 ARMOR_ID = 0x01000801
@@ -37,6 +38,66 @@ def before(record, tag, additions):
 def after(record, tag, additions):
     index = next(i for i, (key, _) in enumerate(record.fields) if key == tag)
     record.fields[index + 1:index + 1] = additions
+
+
+def appearance_records(settings, catalog):
+    """Build either the original fixed appearance or independent skin/clothes."""
+    path = settings.asset_dir.replace("/", "\\")
+    if not settings.armor_support:
+        addon = Record(b"ARMA", ADDON_ID, 0, [
+            (b"EDID", text(settings.prefix + "AppearanceAA")),
+            (b"BOD2", struct.pack("<II", SLOT_MASK, 2)), (b"RNAM", uint(RACE_ID)),
+            (b"DNAM", bytes((10, 10, 0, 0, 2, 0, 0, 0)) + struct.pack("<f", 0.)),
+            (b"MOD2", text(path + "\\avatar.nif")), (b"MOD3", text(path + "\\avatar.nif"))])
+        armor = Record(b"ARMO", ARMOR_ID, 4, [
+            (b"EDID", text(settings.prefix + "Appearance")), (b"OBND", bytes(12)),
+            (b"FULL", text(settings.npc_name + " - Original Appearance")),
+            (b"BOD2", struct.pack("<II", SLOT_MASK, 2)), (b"RNAM", uint(RACE_ID)),
+            (b"MODL", uint(ADDON_ID)), (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<i", 0))])
+        outfit = Record(b"OTFT", OUTFIT_ID, 0, [(b"EDID", text(settings.prefix + "Outfit")), (b"INAM", uint(ARMOR_ID))])
+        return [addon, armor, outfit], []
+    skin_ids = {"body": ADDON_ID, "underwear": 0x01000807, "fixed": 0x01000808}
+    clothing_template = catalog.require("ClothesFarmClothes01", b"ARMO")
+    inventory_fields = [(tag, data) for tag, data in clothing_template.fields if tag in {b"MOD2", b"MOD4", b"YNAM", b"ZNAM", b"ETYP"}]
+    result, skin_addons, skin_mask, outfit_ids, inventory = [], [], 0, [], []
+    garment_index = 0
+    for part in components(settings):
+        wearable = part["role"] == "garment"
+        addon_id = 0x01000810 + garment_index * 2 if wearable else skin_ids[part["role"]]
+        armor_id = addon_id + 1
+        item_name = settings.prefix + ("Garment_" + part["id"] if wearable else part["role"].title())
+        mask = 1 << (part["slot"] - 30)
+        armor_type = {"light": 0, "heavy": 1, "clothing": 2}[part.get("armor_type", "clothing")]
+        result.append(Record(b"ARMA", addon_id, 0, [
+            (b"EDID", text(item_name + "AA")), (b"BOD2", struct.pack("<II", mask, armor_type)),
+            (b"RNAM", uint(RACE_ID)), (b"DNAM", bytes((0, 0, 0, 0, 2, 0, 0, 0)) + struct.pack("<f", 0.)),
+            (b"MOD2", text(path + "\\" + part["file"])), (b"MOD3", text(path + "\\" + part["file"]))]))
+        if not wearable:
+            skin_addons.append(addon_id)
+            skin_mask |= mask
+            continue
+        keyword = catalog.require({"clothing": "ArmorClothing", "light": "ArmorLight", "heavy": "ArmorHeavy"}[part["armor_type"]], b"KYWD")
+        result.append(Record(b"ARMO", armor_id, 0, [
+            (b"EDID", text(item_name)), (b"OBND", bytes(12)), (b"FULL", text(part["name"])),
+            *inventory_fields,
+            (b"BOD2", struct.pack("<II", mask, armor_type)), (b"RNAM", uint(RACE_ID)),
+            (b"KSIZ", uint(1)), (b"KWDA", uint(keyword.form_id)), (b"MODL", uint(addon_id)),
+            (b"DATA", struct.pack("<If", part["value"], part["weight"])),
+            (b"DNAM", struct.pack("<i", round(part["armor_rating"] * 100)))]))
+        if part["equipped"]:
+            outfit_ids.append(armor_id)
+        else:
+            inventory.append((b"CNTO", uint(armor_id) + struct.pack("<i", 1)))
+        garment_index += 1
+    result.append(Record(b"ARMO", ARMOR_ID, 4, [
+        (b"EDID", text(settings.prefix + "Appearance")), (b"OBND", bytes(12)),
+        (b"FULL", text(settings.npc_name + " - Base Appearance")),
+        (b"BOD2", struct.pack("<II", skin_mask, 2)), (b"RNAM", uint(RACE_ID)),
+        *[(b"MODL", uint(form_id)) for form_id in skin_addons],
+        (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<i", 0))]))
+    result.append(Record(b"OTFT", OUTFIT_ID, 0, [(b"EDID", text(settings.prefix + "Outfit")),
+                                              (b"INAM", b"".join(uint(form_id) for form_id in outfit_ids))]))
+    return result, inventory
 
 
 def configure_actor(npc, settings, catalog, base_stats):
@@ -121,22 +182,16 @@ def build_npc(game_data, output, settings=None, catalog=None):
     struct.pack_into("<I", data, 32, struct.unpack_from("<I", data, 32)[0] & ~1)
     struct.pack_into("<ff", data, 16, 1., 1.)
     race.replace(b"DATA", bytes(data))
-    addon = Record(b"ARMA", ADDON_ID, 0, [
-        (b"EDID", text(settings.prefix + "AppearanceAA")),
-        (b"BOD2", struct.pack("<II", SLOT_MASK, 2)), (b"RNAM", uint(RACE_ID)),
-        (b"DNAM", bytes((10, 10, 0, 0, 2, 0, 0, 0)) + struct.pack("<f", 0.)),
-        (b"MOD2", text(path + "\\avatar.nif")), (b"MOD3", text(path + "\\avatar.nif"))])
-    armor = Record(b"ARMO", ARMOR_ID, 4, [
-        (b"EDID", text(settings.prefix + "Appearance")), (b"OBND", bytes(12)),
-        (b"FULL", text(settings.npc_name + " - Original Appearance")),
-        (b"BOD2", struct.pack("<II", SLOT_MASK, 2)), (b"RNAM", uint(RACE_ID)),
-        (b"MODL", uint(ADDON_ID)), (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<f", 0.))])
-    outfit = Record(b"OTFT", OUTFIT_ID, 0, [(b"EDID", text(settings.prefix + "Outfit")), (b"INAM", uint(ARMOR_ID))])
+    appearance, inventory = appearance_records(settings, catalog)
     template = "HousecarlWhiterun" if settings.sex == "female" else "HousecarlWindhelm"
     npc = copy.deepcopy(catalog.require(template, b"NPC_"))
     npc.form_id, npc.flags = NPC_ID, 0
     base_stats = struct.unpack_from("<fff", race.values(b"DATA")[0], 36)
     factions = configure_actor(npc, settings, catalog, base_stats)
+    if inventory:
+        existing = npc.values(b"CNTO")
+        npc.remove(b"COCT")
+        before(npc, b"AIDT", [(b"COCT", uint(len(existing) + len(inventory))), *inventory])
     player = catalog.require("Player", b"NPC_")
     # RELA rank is an enum (Ally=1), not Papyrus's signed relationship rank.
     relation = Record(b"RELA", RELATIONSHIP_ID, 0, [
@@ -151,17 +206,19 @@ def build_npc(game_data, output, settings=None, catalog=None):
         (b"EDID", text(settings.prefix + "FollowerREF")), (b"NAME", uint(NPC_ID)),
         (b"DATA", struct.pack("<6f", *location))])
     plugin_path = output / "mod" / settings.plugin_name
-    write_plugin(plugin_path, [race, addon, armor, outfit, npc, relation], author=settings.author or "VRM2Skyrim",
+    items = [race, *appearance, npc, relation]
+    write_plugin(plugin_path, items, author=settings.author or "VRM2Skyrim",
                  placement=(cell, actor))
     generated = list(records(plugin_path))
-    if len(generated) != 9 or len({r.form_id for r in generated}) != 9:
+    if len(generated) != len(items) + 3 or len({r.form_id for r in generated}) != len(generated):
         raise RuntimeError("Follower plugin record count mismatch")
     reference = next(r for r in generated if r.kind == b"ACHR")
     if (uint(cell.form_id), 6) not in reference.groups or reference.groups[-1] != (uint(cell.form_id), 8):
         raise RuntimeError("Placed follower is not in the temple's persistent reference group")
     report = {"plugin": str(plugin_path), "npc_editor_id": settings.prefix + "NPC", "npc_local_form_id": "000800",
               "reference_editor_id": settings.prefix + "FollowerREF", "reference_local_form_id": "000806",
-              "covered_slots": SLOTS, "factions": factions, "relationship": "Ally", "voice": settings.voice,
+              "covered_slots": SLOTS if not settings.armor_support else [part["slot"] for part in components(settings)],
+              "armor_support": settings.armor_support, "factions": factions, "relationship": "Ally", "voice": settings.voice,
               "spawn_cell": cell.editor_id, "spawn_cell_form_id": hex(cell.form_id), "spawn_position": location,
               "spawn_source": marker.editor_id, "custom_race": settings.prefix + "Race",
               "skeleton": settings.asset_dir + "/skeleton.nif",

@@ -71,7 +71,8 @@ def save_images(meshes, output, settings, source_materials):
         material.pyn_shader.Shader_Flags_2 = (("ZBUFFER_WRITE | " if zwrite else "")
                                              + "DOUBLE_SIDED | VERTEX_COLORS")
         material.pyn_shader.Spec_Color = (0.0, 0.0, 0.0)
-        material.pyn_shader.Alpha = info.get("pbrMetallicRoughness", {}).get("baseColorFactor", [1, 1, 1, 1])[3]
+        material.pyn_shader.Alpha = (1. if info.get("alphaMode", "OPAQUE") == "OPAQUE" else
+                                     info.get("pbrMetallicRoughness", {}).get("baseColorFactor", [1, 1, 1, 1])[3])
         shader.inputs["Roughness"].default_value = 0.85
         shader.inputs["Specular IOR Level"].default_value = 0.1
         for node in material.node_tree.nodes:
@@ -125,6 +126,11 @@ def main():
     document, binary = read_glb(args.source)
     humanoid = humanoid_map(document)
     original_names = {index: node.get("name", "") for index, node in enumerate(document["nodes"])}
+    from wardrobe import components, validate_source
+    from inspect_vrm import inspect
+    validate_source(settings, inspect(args.source))
+    output_parts = components(settings)
+    node_parts = {node: part for part in output_parts for node in (part["nodes"] or [])}
     node_parents = {child: index for index, node in enumerate(document["nodes"]) for child in node.get("children", [])}
     # Blender truncates/renames duplicate or long bone names; use deterministic
     # names on a temporary copy and keep the original file intact.
@@ -153,6 +159,10 @@ def main():
     custom_shapes = {bone.custom_shape for rig in source_rigs for bone in rig.pose.bones if bone.custom_shape}
     LOG.info("Imported meshes: %s", [(obj.name, obj.hide_render, obj in custom_shapes) for obj in meshes])
     meshes = [obj for obj in meshes if obj not in custom_shapes]
+    for obj in meshes:
+        node = int(obj.name.split("_")[-1].split(".")[0])
+        obj["v2s_source_node"] = node
+        obj["v2s_part"] = node_parts[node]["id"] if settings.armor_support else "appearance"
     default_material = bpy.data.materials.new("V2S_DefaultMaterial")
     default_material.use_nodes = True
     source_materials[default_material.name] = {}
@@ -199,6 +209,12 @@ def main():
                         for rig in source_rigs for bone in rig.data.bones}
     bone_names = {key: document["nodes"][index]["name"] for key, index in humanoid.items()}
     direct = {bone_names[key]: target for key, target in CORE.items() if key in bone_names}
+    from parallel_rigs import follower_links, propagate_pose
+    source_owners = {bone.name: rig.name for rig in source_rigs for bone in rig.data.bones}
+    source_labels = {bone.name: original_names[int(bone.name.split("_")[-1])] for rig in source_rigs for bone in rig.data.bones}
+    secondary_links, secondary_report = follower_links(source_positions, source_labels, source_owners,
+                                                       {key: name for key, name in bone_names.items() if key in CORE})
+    direct.update({secondary: direct[primary] for secondary, primary in secondary_links.items()})
     bpy.ops.object.select_all(action="DESELECT")
     bpy.context.view_layer.objects.active = None
     bpy.ops.import_scene.pynifly(filepath=str(args.skeleton), rename_bones=False, create_bones=False,
@@ -223,6 +239,7 @@ def main():
                       for bone in source_bones.values()}
     transforms, custom_positions, segment_stats = preserved_transforms(
         source_positions, bone_names, source_parents, target_positions, CORE)
+    propagate_pose(transforms, source_parents, source_owners, secondary_links)
     custom_path = output / "mod/meshes" / settings.asset_dir / "skeleton.nif"
     skeleton_report = create_skeleton(args.skeleton, custom_path, custom_positions)
     save_report(skeleton_report, output)
@@ -251,11 +268,19 @@ def main():
     reference = bpy.data.collections.new("OriginalPoseReference")
     bpy.context.scene.collection.children.link(reference)
     expected = {}
+    reference_materials = {}
     depsgraph = bpy.context.evaluated_depsgraph_get()
     for obj in meshes:
         evaluated = obj.evaluated_get(depsgraph)
         mesh = bpy.data.meshes.new_from_object(evaluated)
         mesh.transform(orient @ obj.matrix_world)
+        # The source comparison retains its glTF alpha/unlit graph. Exporter
+        # shader normalization owns only the delivered mesh's materials.
+        for index, material in enumerate(mesh.materials):
+            if material.name not in reference_materials:
+                reference_materials[material.name] = material.copy()
+                reference_materials[material.name].name = "Original_" + material.name
+            mesh.materials[index] = reference_materials[material.name]
         copy = bpy.data.objects.new("Original_" + obj.name, mesh)
         reference.objects.link(copy)
         values = np.empty(len(mesh.vertices) * 3)
@@ -315,7 +340,8 @@ def main():
                 if name not in groups:
                     groups[name] = obj.vertex_groups.new(name=name)
                 groups[name].add([index], weight / total, "REPLACE")
-        obj.vertex_groups.new(name="SBP_32_BODY").add(list(range(len(points))), 1.0, "REPLACE")
+        slot = node_parts[obj["v2s_source_node"]]["slot"] if settings.armor_support else 32
+        obj.vertex_groups.new(name=f"SBP_{slot}_" + ("BODY" if slot == 32 else "BODYADDON")).add(list(range(len(points))), 1.0, "REPLACE")
         armature = obj.modifiers.new("Skyrim Skin", "ARMATURE")
         armature.object = target_rig
         obj.data.update()
@@ -337,23 +363,33 @@ def main():
         if len(obj.data.vertices) > 60000:
             raise ValueError(f"Mesh exceeds safe NIF shape vertex limit: {obj.name}")
     save_images(meshes, output, settings, source_materials)
-    nif_path = output / "mod/meshes" / settings.asset_dir / "avatar.nif"
-    nif_path.parent.mkdir(parents=True, exist_ok=True)
-    select_only(meshes + [target_rig], target_rig)
-    bpy.ops.export_scene.pynifly(filepath=str(nif_path), target_game="SKYRIMSE", rename_bones=False,
-                               blender_xf=False, preserve_hierarchy=True, export_modifiers=False,
-                               export_animations=False, export_colors=True, intuit_defaults=False)
     from nif_materials import apply_alpha
-    apply_alpha(nif_path, {obj.name: source_materials[obj.material_slots[0].material.name] for obj in meshes})
+    manifest = []
+    for part in output_parts:
+        selected = [obj for obj in meshes if obj["v2s_part"] == part["id"]]
+        if not selected:
+            raise ValueError(f"Appearance component has no output geometry: {part['id']}")
+        nif_path = output / "mod/meshes" / settings.asset_dir / part["file"]
+        nif_path.parent.mkdir(parents=True, exist_ok=True)
+        select_only(selected + [target_rig], target_rig)
+        bpy.ops.export_scene.pynifly(filepath=str(nif_path), target_game="SKYRIMSE", rename_bones=False,
+                                   blender_xf=False, preserve_hierarchy=True, export_modifiers=False,
+                                   export_animations=False, export_colors=True, intuit_defaults=False)
+        apply_alpha(nif_path, {obj.name: source_materials[obj.material_slots[0].material.name] for obj in selected})
+        manifest.append({**part, "nif": nif_path.relative_to(output / "mod").as_posix(),
+                         "shapes": [{"name": obj.name, "source_node": obj["v2s_source_node"]} for obj in selected]})
+        LOG.info("Exported component %s: %s shapes, slot %s", part["id"], len(selected), part["slot"])
+    (output / "appearance.json").write_text(json.dumps({"components": manifest}, ensure_ascii=False, indent=2), encoding="utf8")
     bpy.ops.wm.save_as_mainfile(filepath=str(output / "converted.blend"))
     if hashlib.sha256(args.source.read_bytes()).hexdigest() != source_hash:
         raise RuntimeError("Source VRM changed during conversion")
     (output / "conversion.json").write_text(json.dumps({
         "source_sha256": source_hash, "bone_mapping": mapping, "preserved_segment_lengths": segment_stats,
         "source_node_names": original_names,
+        "secondary_rigs": secondary_report, "secondary_bone_links": secondary_links,
         "pose_changes_are_rigid": True,
         "mesh_parts": [{"name": obj.name, "vertices": len(obj.data.vertices)} for obj in meshes],
-        "unweighted_vertices": unweighted, "nif": str(nif_path),
+        "unweighted_vertices": unweighted, "nifs": [part["nif"] for part in manifest],
     }, indent=2), encoding="utf-8")
     LOG.info("CONVERSION COMPLETE: %s", nif_path)
 

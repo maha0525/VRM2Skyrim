@@ -97,11 +97,25 @@ def inspect(path):
     total_triangles = sum(primitive_triangles(document, primitive) for index in active
                           if "mesh" in document["nodes"][index]
                           for primitive in document["meshes"][document["nodes"][index]["mesh"]]["primitives"])
+    from wardrobe import suggest_role
+    parts = []
+    for index in sorted(active):
+        node = document["nodes"][index]
+        if "mesh" not in node:
+            continue
+        mesh = document["meshes"][node["mesh"]]
+        materials = [document["materials"][primitive["material"]].get("name", "")
+                     for primitive in mesh["primitives"] if "material" in primitive]
+        name = node.get("name", str(index))
+        parts.append({"node": index, "name": name, "materials": materials,
+                      "triangles": sum(primitive_triangles(document, primitive) for primitive in mesh["primitives"]),
+                      "suggested_role": suggest_role(name, materials)})
     return {
         "source": str(Path(path).resolve()),
         "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest(),
         "generator": document.get("asset", {}).get("generator"),
         "total_triangles": total_triangles,
+        "parts": parts,
         "humanoid": {key: document["nodes"][index].get("name", str(index))
                      for key, index in humanoid_map(document).items()},
         "meshes": [{"name": mesh.get("name"),

@@ -51,3 +51,28 @@ reproduced. Existing expression defaults are baked into the fixed appearance.
 Native tool dependencies: [PyNifly](https://github.com/BadDogSkyrim/PyNifly) V29.1.0
 (GPL-3.0) and [DirectXTex](https://github.com/microsoft/DirectXTex) may2026 (MIT).
 The bootstrap checks the pinned download hashes and installs them locally.
+
+## Wardrobe mode (0.4)
+
+`appearance.json` lists each NIF's source node indices, role, slot and output
+shapes. Body, permanent underwear and fixed face/hair use separate Skin ARMA
+records at slots 32, 52 and 60. Wearable original garments use distinct layer
+slots 44–49/53–59. Each garment gets ARMO/ARMA records, a name, clothing/light/heavy
+type, integer hundredths of armor rating, weight and value. Initial garments go
+into OTFT; other garments go into NPC CNTO. All records use the same private race
+and all geometry uses the same delivered skeleton. Inventory/dropped models
+reference the master game's generic farm-clothing model; its assets are not copied.
+
+Primary humanoid joints and secondary rig candidates are compared in model
+space, after all original parent transforms. Candidate names alone are not
+enough: rest distances, limb directions, distinct rig ownership and uniqueness
+are checked. The primary world-space pose delta is applied to secondary joints,
+retaining their original rest offset. Descendants inherit their matched anchor.
+This is static retargeting into a shared game skeleton, not cloth/hair simulation.
+
+Source comparison materials are independent copies of the imported glTF graph.
+NIF shader normalization must not make transparent source detail planes opaque.
+OPAQUE ignores the glTF base-color alpha factor; BLEND/MASK retain the applicable
+alpha behavior. Component validation compares against the corresponding source
+node vertex cloud and requires each shape's NIF partition to equal its assigned
+slot. The source hash binds saved classification to the actual input VRM.
