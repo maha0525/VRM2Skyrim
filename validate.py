@@ -52,9 +52,9 @@ def validate(output, skeleton=None):
                     )
                 delivered_points.append(np.array(shape.verts))
                 part_points.append(np.array(shape.verts))
-                if settings.armor_support and {
+                if settings.armor_support and not {
                     partition.id for partition in shape.partitions
-                } != {part["slot"]}:
+                }.issubset(set(part.get("slots", [part["slot"]]))):
                     raise ValueError(
                         f"NIF partition does not match component slot: {shape.name}"
                     )
@@ -99,12 +99,9 @@ def validate(output, skeleton=None):
                 [baseline[f"VRMNode_{node:05}"] for node in part["nodes"]]
             )
             observed = np.concatenate(part_points)
-            error = float(
-                max(
-                    cKDTree(expected).query(observed)[0].max(),
-                    cKDTree(observed).query(expected)[0].max(),
-                )
-            )
+            error = float(cKDTree(expected).query(observed)[0].max())
+            if not part.get("partial_source"):
+                error = max(error, float(cKDTree(observed).query(expected)[0].max()))
             if error > 0.001:
                 raise ValueError(
                     f"Separated component differs from its source nodes: {part['id']}: {error}"
@@ -128,6 +125,7 @@ def validate(output, skeleton=None):
         else 6
         + len([p for p in components(settings) if p["role"] != "garment"])
         + 2 * len(settings.appearance_parts["garments"])
+        + len(settings.fit_armors)
     )
     if len(local_ids) != expected_records:
         raise ValueError(f"Expected {expected_records} private follower records")

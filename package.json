@@ -1,6 +1,6 @@
 {
   "name": "vrm2skyrim-ui-tests",
   "private": true,
-  "scripts": {"test:ui": "node tests/browser-e2e.cjs", "test:wardrobe": "node tests/browser-wardrobe.cjs"},
+  "scripts": {"test:ui": "node tests/browser-e2e.cjs", "test:wardrobe": "node tests/browser-wardrobe.cjs", "test:fitting": "node tests/browser-fitting.cjs", "test:fitting-combine": "node tests/browser-fitting-combine.cjs"},
   "devDependencies": {"playwright": "1.62.1"}
 }

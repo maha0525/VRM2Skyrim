@@ -1,5 +1,40 @@
 # VRM2Skyrim verification
 
+## 0.5.0 selected equipment fitting (2026-10-12)
+
+Twenty-three Python tests and Ruff pass. Synthetic geometry checks require the
+equipment field to change equipment while leaving its read-only target skin
+untouched, including repeated auxiliary-bone contributions. A local master test
+combines two follower masters, retains both private addons and all original item
+stats/addons, resolves localized names correctly, and rejects duplicate profiles.
+
+A private local separable VRM was converted through actual headless Chrome
+operations: wardrobe classification, equipment checkbox/selection, settings
+download/import, conversion, output image loading, follower ZIP download, and the
+combined-patch button/ZIP download. Desktop and mobile pages are visually checked.
+The exact final output is used for subsequent readback and render checks.
+
+The reference skin is split into torso, hands and feet without moving target skin
+vertices. Readback verifies complete original triangle coverage and winding, UVs
+and normals, with seam/coincident-corner matching. A development output with wrong
+shading normals is rejected by the new check. Face smoothing is configured before
+custom-normal encoding; comparison renders retain the previous skin shading.
+
+Banded iron cuirass and iron boots are rendered from final exported NIF/DDS in
+rest, walk and sword-attack states, with separate body-only/boots-only states.
+Iron gauntlets are also converted in an isolated copy and rendered in actual
+sword-attack frames, including the hand/sword close-up. Equipment has valid
+partitions, private skeleton bones, up to four normalized skin weights, private
+texture paths and identical low/high weight variants. Embedded source skin is
+removed and exposed target skin is checked against the original target body.
+
+These checks do not establish universal fit quality for every avatar/equipment
+combination. Individual input previews and game equip/remove behavior remain
+distinct checks. The generated README explains removing original VRM wardrobe
+layers before wearing game equipment and installing the separate armor patch.
+Physics, first-person/player-race use and helmet/other-master inputs are outside
+this fitting implementation.
+
 ## 0.4.1 package coexistence (2026-10-11)
 
 The shared root settings JSON caused a file conflict when two generated followers
@@ -152,8 +187,9 @@ follower was OK. This is retained as user-confirmed acceptance of that follower,
 in addition to the earlier 0.2 appearance confirmation. It does not establish
 acceptance of other profiles or the 0.4 wardrobe behavior.
 
-Ragdoll fitting, facial animation, hair physics and existing Skyrim armor fitting
-are not implemented. The temple CELL retains master metadata and can need a
+Ragdoll fitting, facial animation and hair physics are not implemented.
+Selected equipment fitting is described in the 0.5 section above. The temple
+CELL retains master metadata and can need a
 load-order compatibility patch with other mods that edit that cell.
 `game_verified` stays false for new follower builds until the relevant game
 journey is confirmed.

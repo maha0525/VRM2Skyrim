@@ -29,6 +29,7 @@ class WizardApplication:
         self.source_reports = {}
         self.jobs = {}
         self.catalogs = {}
+        self.fitting_profiles = {}
         self.lock = threading.Lock()
         self.executor = ThreadPoolExecutor(max_workers=1)
 
@@ -38,6 +39,42 @@ class WizardApplication:
         if key not in self.catalogs:
             self.catalogs[key] = GameCatalog(path)
         return self.catalogs[key]
+
+    def fitted_profiles(self, game):
+        """Only trusted local output/installed metadata, never client file paths."""
+        data = Path(game).resolve() / "Data"
+        paths = [Path(job["output"]) / "armor-fitting.json" for job in reversed(list(self.jobs.values()))
+                 if job["status"] == "complete"]
+        paths += sorted(data.glob("vrm2skyrim/*/armor-fitting.json"))
+        profiles, seen = [], set()
+        for path in paths:
+            if not path.is_file():
+                continue
+            value = json.loads(path.read_text(encoding="utf8"))
+            plugin = value["plugin"]
+            if plugin.casefold() in seen:
+                continue
+            seen.add(plugin.casefold())
+            handle = uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())).hex
+            self.fitting_profiles[handle] = path
+            profiles.append({"id": handle, "plugin": plugin})
+        return profiles
+
+    def make_armor_patch(self, request):
+        available = {p["id"] for p in self.fitted_profiles(request["game"])}
+        ids = request.get("profiles")
+        if not isinstance(ids, list) or not ids or len(ids) > 64 or len(ids) != len(set(ids)):
+            raise ValueError("防具互換パッチに含めるフォロワーを選んでください")
+        if set(ids) - available:
+            raise ValueError("フォロワーの候補が更新されました。結果画面を読み込み直してください")
+        paths = [self.fitting_profiles[key] for key in ids]
+        job_id = uuid.uuid4().hex
+        output = self.workspace / ("armor_patch_" + job_id)
+        from armor_patch import build_patch
+        archive = build_patch(Path(request["game"]) / "Data", paths, output)
+        with self.lock:
+            self.jobs[job_id] = {"id": job_id, "status": "complete", "output": str(output), "archive": archive.name}
+        return {"job_id": job_id, "archive": archive.name}
 
     def upload(self, name, blob):
         if Path(name).suffix.lower() != ".vrm":
@@ -133,6 +170,9 @@ class WizardApplication:
                 job.update(status="complete", archive=archive.name,
                            previews=sorted(path.relative_to(output).as_posix() for path in (output / "previews").glob("*.png")),
                            game_verified=False)
+                if settings.fit_armors:
+                    job["armor_patch"] = "armor-patch/VRM2SkyrimArmorPatch.zip"
+                    job["fit_armors"] = settings.fit_armors
         except Exception as error:
             logging.exception("Wizard conversion failed")
             with self.lock:
@@ -189,6 +229,9 @@ def handler_for(app):
                 if url.path == "/api/environment":
                     return self.reply({"game": str(find_game() or ""), "blender": str(find_blender() or ""),
                                        "defaults": asdict(FollowerSettings()), "version": VERSION})
+                if url.path == "/api/fitted-followers":
+                    game = parse_qs(url.query).get("game", [""])[0]
+                    return self.reply({"profiles": app.fitted_profiles(game)})
                 if url.path.startswith("/api/jobs/"):
                     job_id = url.path.split("/")[3]
                     job = app.snapshot(job_id)
@@ -238,6 +281,8 @@ def handler_for(app):
                     return self.reply(app.start(request), 202)
                 if self.path == "/api/appearance-preview":
                     return self.reply(app.start_preview(request), 202)
+                if self.path == "/api/armor-patch":
+                    return self.reply(app.make_armor_patch(request))
                 raise ValueError("Unknown API")
             except (ValueError, OSError, KeyError, TypeError, IndexError) as error:
                 logging.info("Wizard request rejected: %s", error)

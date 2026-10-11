@@ -37,12 +37,41 @@ def main():
     from wardrobe import components
     parts = components(settings)
     wardrobe = args.wardrobe
-    if wardrobe not in ("initial", "all", "underwear") and not any(wardrobe == "without:" + p["id"] for p in parts if p["role"] == "garment"):
+    if wardrobe.startswith("armor:"):
+        fitting = json.loads((output / "armor-fitting.json").read_text())
+        chosen = wardrobe[6:]
+        selected = [p for p in fitting["equipment"] if chosen == "all" or p["editor_id"] == chosen]
+        if not selected:
+            raise ValueError("Unknown fitted armor")
+        if chosen == "all":
+            # Conversion can include many alternatives at the same equip slot.
+            # Show one compatible representative per primary slot, as the game
+            # cannot wear two cuirasses (or two pairs of boots) simultaneously.
+            compatible = {}
+            for item in selected:
+                compatible.setdefault(item["slots"][0], item)
+            selected = list(compatible.values())
+        parts += [{**p, "role": "equipment", "slot": p["slots"][0]} for p in selected]
+    elif wardrobe not in ("initial", "all", "underwear") and not any(wardrobe == "without:" + p["id"] for p in parts if p["role"] == "garment"):
         raise ValueError("Unknown wardrobe state")
+    slot_priority = {}
+    for part in parts:
+        for slot in part.get("slots", [part["slot"]]):
+            slot_priority[slot] = max(slot_priority.get(slot, 0), part.get("priority", 0))
     nifs, rig = [], None
+    if settings.fit_armors:
+        # Use the complete original skin's import as the common preview rig.
+        # Importers orient unweighted helper bones differently after partitioning.
+        bpy.ops.import_scene.pynifly(filepath=str(output / "armor-source/body.nif"), rename_bones=False,
+                                   create_bones=True, reference_skel=str(skel), import_animations=False,
+                                   import_shapekeys=False, import_collisions=False)
+        rig = next(obj for obj in bpy.context.scene.objects if obj.type == "ARMATURE")
+        for obj in list(bpy.context.scene.objects):
+            if obj.type == "MESH":
+                bpy.data.objects.remove(obj, do_unlink=True)
     for part in parts:
         if settings.armor_support and part["role"] == "garment":
-            if wardrobe == "underwear" or wardrobe == "without:" + part["id"] or (wardrobe == "initial" and not part["equipped"]):
+            if wardrobe.startswith("armor:") or wardrobe == "underwear" or wardrobe == "without:" + part["id"] or (wardrobe == "initial" and not part["equipped"]):
                 continue
         nif = output / "mod/meshes" / settings.asset_dir / part["file"]
         nifs.append(str(nif))
@@ -53,11 +82,24 @@ def main():
                                    reference_skel=str(skel), import_animations=False,
                                    import_shapekeys=False, import_collisions=False)
         imported = [obj for obj in bpy.context.scene.objects if obj not in existing]
+        if wardrobe.startswith("armor:"):
+            import re
+            for obj in imported:
+                if obj.type != "MESH":
+                    continue
+                slots = {int(m.group(1)) for g in obj.vertex_groups
+                         if (m := re.match(r"SBP_(\d+)_", g.name))}
+                if slots and all(slot_priority.get(s, 0) > part.get("priority", 0) for s in slots):
+                    obj.hide_render = True
         new_rig = next(obj for obj in imported if obj.type == "ARMATURE")
         if rig is None:
             rig = new_rig
         else:
+            weighted = {group.name for obj in imported if obj.type == "MESH" for group in obj.vertex_groups
+                        if not group.name.startswith("SBP_")}
             for bone in new_rig.data.bones:
+                if settings.fit_armors and bone.name not in weighted:
+                    continue
                 if bone.name not in rig.data.bones or not np.allclose(np.array(bone.matrix_local), np.array(rig.data.bones[bone.name].matrix_local), atol=.001):
                     raise ValueError(f"Separated appearance uses inconsistent bone rest pose: {bone.name}")
             for obj in imported:
@@ -69,7 +111,7 @@ def main():
                     if modifier.type == "ARMATURE" and modifier.object == new_rig:
                         modifier.object = rig
             bpy.data.objects.remove(new_rig, do_unlink=True)
-    meshes = [obj for obj in bpy.context.scene.objects if obj.type == "MESH"
+    meshes = [obj for obj in bpy.context.scene.objects if obj.type == "MESH" and not obj.hide_render
               and any(mod.type == "ARMATURE" and mod.object == rig for mod in obj.modifiers)]
     # These PNGs were decoded from the delivered DDS, not copied from the VRM.
     for image in bpy.data.images:

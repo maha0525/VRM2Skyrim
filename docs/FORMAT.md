@@ -82,3 +82,37 @@ OPAQUE ignores the glTF base-color alpha factor; BLEND/MASK retain the applicabl
 alpha behavior. Component validation compares against the corresponding source
 node vertex cloud and requires each shape's NIF partition to equal its assigned
 slot. The source hash binds saved classification to the actual input VRM.
+
+## Selected equipment fitting (0.5)
+
+`fit_armors` is a list of up to 64 distinct Skyrim.esm ARMO Editor IDs. It requires
+wardrobe mode and a complete independent body. The source is the game's original
+BSA mesh/texture, with a humanoid ARMA at body, hands or feet. Reference-skeleton
+hierarchy takes precedence over flattened skin-bone lists in mesh NIFs. A weighted
+bone-segment field aligns equipment to target lengths and widths, followed by a
+local body-surface correction. Target skin is not deformed by this field.
+
+Original skin triangles are partitioned by the conformed reference body's regions:
+torso=32/34/38, hands=33, feet=37. Original triangle coverage is read back exactly;
+split vertices retain positions, UVs, normals and weights. Embedded vanilla skin
+is removed from equipment. Original target skin is included at exposed regions.
+Native equipment priorities preserve calf/forearm hiding when combining pieces.
+Auxiliary armor bones without a humanoid ancestor use the source skin's nearest
+weights; exported equipment receives the target body's weights. Both weight
+variants retain the same target geometry. Output skin and fitted NIFs share the
+original custom skeleton and their textures use private per-MOD paths.
+
+Private fitted ARMA records start at local 0x880. The follower ESP does not override
+the original ARMO. `vrm2skyrim/<mod_id>/armor-fitting.json` publishes the local
+manifest to the user's installed Data folder. The separate combined armor patch
+has Skyrim.esm and the chosen follower ESPs as masters, appends their ARMA FormIDs
+to original ARMO Armature lists, and retains stats and original addons. Localized
+names/descriptions are resolved into inline strings for the unlocalized patch.
+Only one combined patch should be active. Installed metadata and completed wizard
+outputs provide trusted candidates; the API accepts handles, not file paths.
+
+The preview renderer uses the complete original skin as its common import rig:
+unweighted helper-bone orientation can vary between independently imported parts.
+Weighted bone rest poses are checked before all components animate on that rig.
+Game equip/remove behavior and compatibility with other armor overrides remain
+separate from offline geometry/binary/render verification.

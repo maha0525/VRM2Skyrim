@@ -88,12 +88,18 @@ def validate_source(settings, report):
                  *(len(settings.appearance_parts[role]) for role in ROLES), len(settings.appearance_parts["garments"]))
 
 
-def components(settings):
+def components(settings, fitting=True):
     if not settings.armor_support:
         return [{"id": "appearance", "file": "avatar.nif", "nodes": None, "slot": 32, "role": "fixed"}]
     parts = settings.appearance_parts
     result = [{"id": role, "file": role + ".nif", "nodes": parts[role], "slot": slot, "role": role}
               for role, slot in zip(ROLES, (BODY_SLOT, UNDERWEAR_SLOT, FIXED_SLOT)) if parts[role]]
+    if settings.fit_armors and fitting:
+        result[0]["slots"] = [32, 34, 38]
+        result[0]["partial_source"] = True
+        result += [{"id": role, "file": role + ".nif", "nodes": parts["body"], "slot": slot,
+                    "role": "body", "slots": [slot], "partial_source": True}
+                   for role, slot in (("hands", 33), ("feet", 37))]
     result += [{**garment, "file": "garment_" + garment["id"].lower() + ".nif", "role": "garment"}
                for garment in parts["garments"]]
     return result

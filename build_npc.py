@@ -56,17 +56,18 @@ def appearance_records(settings, catalog):
             (b"MODL", uint(ADDON_ID)), (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<i", 0))])
         outfit = Record(b"OTFT", OUTFIT_ID, 0, [(b"EDID", text(settings.prefix + "Outfit")), (b"INAM", uint(ARMOR_ID))])
         return [addon, armor, outfit], []
-    skin_ids = {"body": ADDON_ID, "underwear": 0x01000807, "fixed": 0x01000808}
+    skin_ids = {"body": ADDON_ID, "underwear": 0x01000807, "fixed": 0x01000808,
+                "hands": 0x01000809, "feet": 0x0100080A}
     clothing_template = catalog.require("ClothesFarmClothes01", b"ARMO")
     inventory_fields = [(tag, data) for tag, data in clothing_template.fields if tag in {b"MOD2", b"MOD4", b"YNAM", b"ZNAM", b"ETYP"}]
     result, skin_addons, skin_mask, outfit_ids, inventory = [], [], 0, [], []
     garment_index = 0
     for part in components(settings):
         wearable = part["role"] == "garment"
-        addon_id = 0x01000810 + garment_index * 2 if wearable else skin_ids[part["role"]]
+        addon_id = 0x01000810 + garment_index * 2 if wearable else skin_ids[part["id"]]
         armor_id = addon_id + 1
-        item_name = settings.prefix + ("Garment_" + part["id"] if wearable else part["role"].title())
-        mask = 1 << (part["slot"] - 30)
+        item_name = settings.prefix + ("Garment_" + part["id"] if wearable else part["id"].title())
+        mask = sum(1 << (slot - 30) for slot in part.get("slots", [part["slot"]]))
         armor_type = {"light": 0, "heavy": 1, "clothing": 2}[part.get("armor_type", "clothing")]
         result.append(Record(b"ARMA", addon_id, 0, [
             (b"EDID", text(item_name + "AA")), (b"BOD2", struct.pack("<II", mask, armor_type)),
@@ -183,6 +184,16 @@ def build_npc(game_data, output, settings=None, catalog=None):
     struct.pack_into("<ff", data, 16, 1., 1.)
     race.replace(b"DATA", bytes(data))
     appearance, inventory = appearance_records(settings, catalog)
+    if settings.fit_armors:
+        fitting = json.loads((output / "armor-fitting.json").read_text())
+        for item in fitting["equipment"]:
+            appearance.append(Record(b"ARMA", 0x01000000 | item["addon_local_id"], 0, [
+                (b"EDID", text(settings.prefix + "Fitted_" + item["editor_id"])),
+                (b"BOD2", struct.pack("<II", sum(1 << (s - 30) for s in item["slots"]), 2)),
+                (b"RNAM", uint(RACE_ID)),
+                (b"DNAM", bytes((item["priority"], item["priority"], 2, 2, 0, 0, 0, 0)) + struct.pack("<f", 0.)),
+                (b"MOD2", text(path + "\\" + item["file"])),
+                (b"MOD3", text(path + "\\" + item["file"]))]))
     template = "HousecarlWhiterun" if settings.sex == "female" else "HousecarlWindhelm"
     npc = copy.deepcopy(catalog.require(template, b"NPC_"))
     npc.form_id, npc.flags = NPC_ID, 0

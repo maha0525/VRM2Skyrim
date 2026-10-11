@@ -6,7 +6,7 @@
 
 初期配置は**ホワイトランのキナレス聖堂内**。標準フォロワーの派閥・プレイヤーとの友好関係・勧誘用ボイス・永続参照を設定し、会話から仲間にできる構成を作ります。
 
-現在のバージョンは **0.4.1**。固定外観と、元衣装を着脱する装備へ分けるモードを選べます。0.3のソフィー版フォロワーはSkyrim内でユーザー確認OK。衣服の着脱モードは生成／オフライン検証を実装し、ゲーム内確認はこれからです。[検証範囲](VERIFICATION.md)
+現在のバージョンは **0.5.0**。固定外観、元衣装の分離装備、既存装備の体型合わせを選べます。0.3のソフィー版フォロワーはSkyrim内でユーザー確認OK。衣服の着脱と新しい装備の体型合わせは、生成／オフライン検証とゲーム内確認を分けて記録します。[検証範囲](VERIFICATION.md)
 
 ## 起動する
 
@@ -77,11 +77,17 @@ MOD IDからESP名・Editor ID・メッシュ/テクスチャの専用パスを�
 - OPAQUE / MASK / BLEND材質とDDSのアルファ。表情モーフの初期値は固定外観へ焼き込みます。
 - 出力NIF/DDSの読み戻し、元VRMとの同一姿勢の頂点比較、標準歩行/片手剣アニメーションの検査と画像。
 
-対応ありでは、分類した元衣装を着脱できます。**Skyrimの既存の鎧をVRMの体型へ合わせる処理、口パク・まばたき、髪/衣装の物理は未対応**。MToonの陰影と輪郭線も再現しません。指ボーンがないモデルの指は手へ固定します。転倒・死亡時のラグドール寸法/拘束は標準由来で、アバターへの調整・検証が残ります。
+対応ありでは、分類した元衣装を着脱できます。独立した身体のあるモデルでは「既存装備をこの身体に合わせる」を選び、本体ゲームの胴・手・足装備を64品まで指定できます。鎧側を変形し、元の肌の頂点・面を保ち、鎧の露出部分へ元の肌を含めます。最初の候補はバンデッド鉄の鎧と鉄のブーツです。ヘルメット・盾・DLC・他MODの装備はこの入力形式の対象外です。
+
+フォロワーZIPに加え、結果画面から**防具互換パッチZIP**も導入します。フォロワーESPの後で`VRM2SkyrimArmorPatch.esp`を有効にし、Vortexではデプロイしてからゲームを再起動してください。元衣装を外してから、変換した本体ゲームの装備を渡します。元衣装の追加枠は自動管理しないため、元衣装を着たまま鎧を重ねないでください。確認用のFormIDとコマンドは生成READMEへ入ります。
+
+体型合わせを使うフォロワーが複数いる場合、結果画面で対象を選び、一つの防具パッチへまとめます。インストール済み、またはこのウィザードで変換済みのフォロワーが候補になります。有効な互換パッチは一つにし、対象を追加・削除したら作り直します。元の装備の数値・表示名・元種族のAddonを保持しますが、同じ装備を上書きする他MODとはロード順や追加パッチの調整が必要な場合があります。
+
+口パク・まばたき、髪/衣装の物理は未対応です。MToonの陰影と輪郭線も再現しません。指ボーンがないモデルの指は手へ固定します。転倒・死亡時のラグドール寸法/拘束は標準由来で、アバターへの調整・検証が残ります。
 
 聖堂への配置のため、聖堂のCELLレコードは本体の内容を保ったコピーとして含まれます。同じCELLの照明などを変更するMODと併用する場合は、通常のロード順/互換パッチで調整してください。
 
-原VRM、ゲームの基準資産、依存ツールは生成ZIPへ入れません。専用に変換した骨格と外観は入ります。モデルを使う/生成MODを配布する際は、そのモデルの作者の利用条件に従ってください。
+原VRM、作業用の基準メッシュ、依存ツールは生成ZIPへ入れません。専用に変換した骨格・外観・装備と、それらが使うテクスチャは入ります。モデルを使う/生成MODを配布する際は、そのモデルの作者の利用条件に従ってください。
 
 ## CLIと再変換
 
@@ -99,7 +105,7 @@ python wizard.py --no-browser --port 8768
 ## 開発・検証
 
 ```powershell
-python -m unittest test_converter tests.test_follower tests.test_wardrobe tests.test_package
+python -m unittest test_converter tests.test_follower tests.test_wardrobe tests.test_package tests.test_armor
 python -m ruff check --exclude dependencies,build,reference .
 ```
 
@@ -115,6 +121,9 @@ $env:VRM2SKYRIM_TEST_VRM='C:\path\test-avatar.vrm'
 npm run test:ui
 # 身体・下着・複数の服が分かれたテスト用VRMでは:
 npm run test:wardrobe
+# 同じ操作に装備選択と防具パッチ作成を含める:
+$env:VRM2SKYRIM_TEST_FIT='true'
+npm run test:fitting
 ```
 
 既存のChromeを専用ヘッドレスプロセスとして使う場合は`VRM2SKYRIM_TEST_BROWSER=chrome`。サーバーURLは`VRM2SKYRIM_TEST_URL`で指定できます。
@@ -127,4 +136,4 @@ VRM2Skyrim creates fixed-appearance Skyrim SE follower MODs from humanoid VRM 0/
 
 On Windows, install Python 3.11/3.12 and Blender 4.5 LTS, then run `Setup.cmd` and `Launch.cmd`. Select the VRM, configure the follower through the local wizard, and install its ZIP through Vortex/MO2. Names, voice type, combat class/style, leveling, stats, skills, perks, spells and initial equipment are configurable. Optional wardrobe mode classifies body, permanent underwear, face/hair and removable original garments. Garments can be grouped or split into separate items with configurable slots and stats. The interface is currently Japanese.
 
-The converter keeps the original proportions and generates isolated asset paths for each MOD ID. Fitting existing Skyrim armor, facial animation and physics fitting are not implemented yet. The new follower's in-game recruitment, wardrobe and lifecycle still require verification. See [VERIFICATION.md](VERIFICATION.md) for the exact tested scope, and [wardrobe design](docs/intent/armor-support.md) for component ownership.
+The converter keeps original proportions and private asset paths per MOD ID. With an independent body, select original-game body/hand/foot equipment for fitting. Install both the follower ZIP and its separate armor-patch ZIP; enable the patch after the follower ESP. Remove original VRM wardrobe layers before wearing game equipment. The result page can combine several fitted followers into one patch. Facial animation and physics fitting remain unimplemented. New wardrobe/equipment behavior still requires in-game verification; the earlier Sophie follower was user-confirmed. See [VERIFICATION.md](VERIFICATION.md), [wardrobe design](docs/intent/armor-support.md) and [equipment fitting](docs/intent/armor-fitting.md).

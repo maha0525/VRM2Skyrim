@@ -94,6 +94,11 @@ class GameCatalog:
                 raise ValueError(f"Perk rank exceeds available ranks: {perk['editor_id']} (0–{ranks - 1})")
         for spell in settings.spells:
             self.require(spell, b"SPEL")
+        if settings.fit_armors:
+            from armor_catalog import equipment_choices
+            allowed = {r.editor_id for r in equipment_choices(self)}
+            if set(settings.fit_armors) - allowed:
+                raise ValueError("体型合わせできる本体ゲームの胴・手・足装備を選んでください")
 
     def json_choices(self):
         result = {}
@@ -104,4 +109,6 @@ class GameCatalog:
                            for r in self.choices(kind)
                            if kind != b"VTYP" or r.form_id in self.follower_voice_ids]
         result["marriage_voices"] = [r.editor_id for r in self.choices(b"VTYP") if r.form_id in self.marriage_voice_ids]
+        from armor_catalog import equipment_choices
+        result["armors"] = [{"id": r.editor_id, "label": self.label(r)} for r in equipment_choices(self)]
         return result

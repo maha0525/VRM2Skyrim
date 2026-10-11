@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import re
 
-VERSION = "0.4.1"
+VERSION = "0.5.0"
 
 
 def identifier(name):
@@ -52,6 +52,7 @@ class FollowerSettings:
     armor_support: bool = False
     appearance_source_sha256: str = ""
     appearance_parts: dict = field(default_factory=dict)
+    fit_armors: list = field(default_factory=list)
 
     def __post_init__(self):
         if not isinstance(self.mod_id, str) or not isinstance(self.author, str):
@@ -103,6 +104,12 @@ class FollowerSettings:
             validate_parts(self.appearance_parts)
             if not re.fullmatch(r"[0-9a-f]{64}", self.appearance_source_sha256):
                 raise ValueError("衣服の分類を入力VRMに結び付けてください")
+        if not isinstance(self.fit_armors, list) or len(self.fit_armors) > 64 or any(
+                not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", name)
+                for name in self.fit_armors) or len(self.fit_armors) != len(set(self.fit_armors)):
+            raise ValueError("体型合わせの装備は重複しないEditor IDを64品まで指定してください")
+        if self.fit_armors and not self.armor_support:
+            raise ValueError("体型合わせには身体・下着・衣服の分類が必要です")
 
     @property
     def prefix(self):

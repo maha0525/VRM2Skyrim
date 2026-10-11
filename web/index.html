@@ -23,7 +23,9 @@
         <label>衣服・防具の扱い<select id="armor_support"><option value="false">対応なし：元の外観を固定</option><option value="true">対応あり：身体・下着・衣服を分けて着脱</option></select></label>
         <div id="wardrobe-editor" hidden>
           <h3>身体と衣服を分類する</h3><p class="hint">名前から分類候補を出しています。身体、下着、顔・髪などの常時表示、着脱する衣服を確認してください。身体と服が一体のメッシュは、この画面では切断しません。</p>
-          <p class="hint">この版は元VRMの服の着脱に対応します。Skyrimの既存鎧を体型へ合わせる処理は開発予定です。</p>
+          <p class="hint">元VRMの服を着脱する装備にできます。身体が独立しているモデルでは、本体ゲームの鎧・手袋・靴を体型へ合わせることもできます。</p>
+          <label class="checkbox"><input id="fit-enabled" type="checkbox">既存装備をこの身体に合わせる</label>
+          <div id="fit-panel" hidden><label>変換する装備（複数選択、64品まで）<select id="fit-armors" multiple size="8"></select></label><p class="hint">候補はゲーム本体から読み込みます。最初は鉄の鎧とブーツを選びます。ヘルメット・盾・DLC・他MODの装備はこの入力形式では対象外です。元衣装を外してから着替えてください。互換パッチはフォロワーMODとは別のZIPになります。</p></div>
           <p id="wardrobe-warning" role="status"></p>
           <div class="wardrobe-actions"><button type="button" id="wardrobe-reset" class="secondary">分類候補へ戻す</button><button type="button" id="wardrobe-combine" class="secondary">衣服を一品にまとめる</button><button type="button" id="wardrobe-split" class="secondary">衣服を個別に分ける</button><button type="button" id="wardrobe-add" class="secondary">装備グループを追加</button></div>
           <div id="wardrobe-parts" class="wardrobe-parts"></div>
@@ -61,7 +63,7 @@
       <nav id="navigation"><button id="back" type="button" class="secondary" hidden>戻る</button><span></span><button id="next" type="button" class="primary">次へ →</button><button id="create" type="button" class="primary" hidden>フォロワーMODを作る</button></nav>
     </form>
     <section id="progress" hidden><p class="eyebrow">CONVERTING</p><h2>世界への入口を作っています</h2><p id="stage" aria-live="polite"></p><div class="progress-bar"><div></div></div><ol id="events"></ol><pre id="failure" hidden></pre></section>
-    <section id="result" hidden><p class="eyebrow">READY TO INSTALL</p><h2 id="result-title"></h2><p class="lead">フォロワーMODのZIPを作成しました。</p><a id="download" class="primary" download>MOD ZIPを保存</a><div class="install"><h3>ゲームへ迎える</h3><ol><li>ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行。</li><li><code id="plugin-name"></code>を有効にして、Skyrimを起動し直す。</li><li>ホワイトランのキナレス聖堂で話しかけて仲間にする。</li></ol><p>待機・解散などは標準のフォロワー会話を使います。元衣装の着脱確認コマンドはZIP内のREADME.txtにあります。</p></div><div id="previews" class="preview-grid"></div><p class="hint">画像は出力ファイルを読み戻したプレビューです。勧誘・衣服の着脱・再起動後の装備状態は導入後に確認してください。転倒時の物理と既存の鎧の体型合わせは未対応です。</p><button id="again" type="button" class="secondary">もう一体作る</button><p id="output-folder" class="hint"></p></section>
+    <section id="result" hidden><p class="eyebrow">READY TO INSTALL</p><h2 id="result-title"></h2><p class="lead">フォロワーMODのZIPを作成しました。</p><a id="download" class="primary" download>MOD ZIPを保存</a><div id="armor-patch-result" hidden><h3>装備の互換パッチ</h3><a id="armor-patch-download" class="secondary" download>防具互換パッチZIPを保存</a><p class="hint">このフォロワーとパッチの両方を導入し、フォロワーESPの後でVRM2SkyrimArmorPatch.espを有効化します。元衣装を外してから、変換した元ゲームの装備を渡してください。</p><div id="fitted-followers"></div><button id="merge-armor-patch" type="button" class="secondary">選択したフォロワー分を一つのパッチにまとめる</button><p id="armor-patch-status" role="status"></p><p class="hint">体型合わせを使うフォロワーを追加・削除したらパッチを更新してください。インストール済み、またはこのウィザードで変換済みのフォロワーを選べます。有効な互換パッチは一つにします。</p></div><div class="install"><h3>ゲームへ迎える</h3><ol><li>ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行。</li><li><code id="plugin-name"></code>を有効にして、Skyrimを起動し直す。</li><li>ホワイトランのキナレス聖堂で話しかけて仲間にする。</li></ol><p>待機・解散などは標準のフォロワー会話を使います。元衣装の着脱確認コマンドはZIP内のvrm2skyrim/&lt;MOD ID&gt;/README.txtにあります。</p></div><div id="previews" class="preview-grid"></div><p class="hint">画像は出力ファイルを読み戻したプレビューです。勧誘・衣服の着脱・装備交換・再起動後の状態は導入後に確認してください。転倒時の物理は未対応です。</p><button id="again" type="button" class="secondary">もう一体作る</button><p id="output-folder" class="hint"></p></section>
   </main>
 </div>
 <script src="wardrobe.js"></script><script src="wizard.js"></script>

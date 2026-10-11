@@ -14,6 +14,7 @@ function download(name, value) {const url=URL.createObjectURL(new Blob([JSON.str
 function applySettings(settings) {
   for(const [key,value] of Object.entries(settings)) {const input=$(key); if(!input)continue; if(input.type==='checkbox') input.checked=value; else input.value=String(value);}
   state.perks=new Map((settings.perks||[]).map(item=>[item.editor_id,item.rank])); state.spells=new Set(settings.spells||[]);
+  state.fitArmors=new Set(settings.fit_armors||[]); $('fit-enabled').checked=state.fitArmors.size>0; setupFitting();
   for(const key of skills) $('skill-'+key).value=settings.skills?.[key]??20;
   if(state.source)wardrobeLoad(state.source,settings);
   updateLevel(); updateMarriage(); renderChoices();
@@ -25,7 +26,9 @@ function collect() {
     settings[key]=input.type==='checkbox'?input.checked:integers.has(key)?Number.parseInt(input.value,10):floats.has(key)?Number(input.value):typeof value==='boolean'?input.value==='true':input.value.trim();
   }
   settings.perks=[...state.perks].map(([editor_id,rank])=>({editor_id,rank})); settings.spells=[...state.spells];
-  settings.skills=settings.auto_calculate?{}:Object.fromEntries(skills.map(key=>[key,Number($('skill-'+key).value)])); Object.assign(settings,wardrobeCollect()); return settings;
+  settings.skills=settings.auto_calculate?{}:Object.fromEntries(skills.map(key=>[key,Number($('skill-'+key).value)])); Object.assign(settings,wardrobeCollect());
+  settings.fit_armors=settings.armor_support&&$('fit-enabled').checked?[...$('fit-armors').selectedOptions].map(o=>o.value):[];
+  if(settings.armor_support&&$('fit-enabled').checked&&!settings.fit_armors.length)throw new Error('体型合わせする装備を選んでください'); return settings;
 }
 async function updateId() {
   if(state.idDirty)return;
@@ -57,6 +60,19 @@ function setupChoices(choices) {
   if(state.imported&&state.importPending){applySettings(state.imported);state.importPending=false;}
   updateMarriage();
   renderChoices();
+  setupFitting();
+}
+function setupFitting() {
+  const selected=state.fitArmors||new Set(); $('fit-armors').replaceChildren();
+  for(const item of state.choices?.armors||[]){const option=new Option(`${item.label} (${item.id})`,item.id);option.selected=selected.has(item.id);$('fit-armors').add(option);}
+  $('fit-panel').hidden=!$('fit-enabled').checked;
+  if($('fit-enabled').checked&&!$('fit-armors').selectedOptions.length){for(const option of $('fit-armors').options)option.selected=['ArmorIronBandedCuirass','ArmorIronBoots'].includes(option.value);}
+}
+async function showArmorPatch(job) {
+  $('armor-patch-result').hidden=!job.armor_patch; if(!job.armor_patch)return;
+  $('armor-patch-download').href=fileURL(job.id,job.armor_patch);$('armor-patch-download').download='VRM2SkyrimArmorPatch.zip';
+  const result=await api('/api/fitted-followers?game='+encodeURIComponent($('game').value));$('fitted-followers').replaceChildren();
+  for(const profile of result.profiles){const label=document.createElement('label'),input=document.createElement('input');label.className='checkbox';input.type='checkbox';input.value=profile.id;input.checked=profile.plugin===job.plugin_name;label.append(input,document.createTextNode(profile.plugin));$('fitted-followers').append(label);}
 }
 function selectedTags(kind) {
   const selected=kind==='perks'?state.perks.keys():state.spells; const target=$('selected-'+kind); target.replaceChildren();
@@ -87,6 +103,7 @@ function summarize(settings) {
   const voice=state.choices.voices.find(item=>item.id===settings.voice);
   const rows=[['アバター',state.source.filename],['NPC名',settings.npc_name],['MOD',settings.mod_name+' / '+settings.mod_id+'.esp'],['ボイス',voice?.label||settings.voice],['戦闘',settings.combat_class+' / '+settings.combat_style],['レベル',settings.level_mode==='player'?`プレイヤー×${settings.level_multiplier}（${settings.min_level}〜${settings.max_level}）`:String(settings.level)],['生存',{'protected':'保護','essential':'不死','mortal':'通常'}[settings.protection]],['体力 / マジカ / スタミナ',`${settings.health} / ${settings.magicka} / ${settings.stamina}${settings.auto_calculate?'（自動成長の補正に使用）':''}`],['Perk / 魔法',`${settings.perks.length} / ${settings.spells.length}`],['初期配置','ホワイトラン · キナレス聖堂']];
   rows.push(['衣服',settings.armor_support?`${settings.appearance_parts.garments.length}品を着脱可能（初期装備${settings.appearance_parts.garments.filter(g=>g.equipped).length}品）`:'元の外観を固定']);
+  rows.push(['既存装備の体型合わせ',settings.fit_armors.length?settings.fit_armors.join('、'):'なし']);
   const dl=document.createElement('dl');for(const [title,value]of rows){const dt=document.createElement('dt');dt.textContent=title;const dd=document.createElement('dd');dd.textContent=value;dl.append(dt,dd);}$('summary').replaceChildren(dl);
 }
 async function next() {
@@ -101,10 +118,12 @@ async function next() {
 }
 function fileURL(job,name){return `/api/jobs/${job}/file?name=${encodeURIComponent(name)}`;}
 function showResult(job) {
+  showArmorPatch(job).catch(e=>error(e.message));
   $('progress').hidden=true;$('result').hidden=false;$('result-title').textContent=job.npc_name+'を、スカイリムへ。';$('download').href=fileURL(job.id,job.archive);$('download').download=job.archive;$('plugin-name').textContent=job.plugin_name;$('output-folder').textContent='出力フォルダ: '+job.output;
   const names=['original-01.png','rest-01.png','walk-08.png','attack-10.png','attack-hand-10.png']; const labels=['元VRM（姿勢合わせ）','出力NIF','標準歩行','標準の剣攻撃','手と剣の近接確認'];$('previews').replaceChildren();
   for(let i=0;i<names.length;i++){const path=job.previews.find(path=>path.endsWith('/'+names[i]));if(!path)continue;const figure=document.createElement('figure');const image=document.createElement('img');image.src=fileURL(job.id,path);image.alt=labels[i];const caption=document.createElement('figcaption');caption.textContent=labels[i];figure.append(image,caption);$('previews').append(figure);}
   if(job.armor_support){const extra=[['wardrobe-underwear-rest-01.png','服を外した状態'],['wardrobe-underwear-walk-08.png','下着状態で歩行'],['wardrobe-underwear-attack-10.png','下着状態で剣攻撃'],...(job.garments||[]).map(g=>['wardrobe-without-'+g.id+'-rest-01.png',g.name+'だけ外した状態'])];for(const [name,label]of extra){const path=job.previews.find(p=>p.endsWith('/'+name));if(!path)continue;const figure=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption');img.src=fileURL(job.id,path);img.alt=label;caption.textContent=label;figure.append(img,caption);$('previews').append(figure);}}
+  if(job.fit_armors?.length){for(const [name,label] of [['wardrobe-armor-all-rest-01.png','体型を合わせた装備'],['wardrobe-armor-all-walk-08.png','装備して歩行'],['wardrobe-armor-all-attack-10.png','装備して剣攻撃']]){const path=job.previews.find(p=>p.endsWith('/'+name));if(!path)continue;const figure=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption');img.src=fileURL(job.id,path);img.alt=label;caption.textContent=label;figure.append(img,caption);$('previews').append(figure);}}
 }
 async function poll() {
   try {const job=await api('/api/jobs/'+state.job);$('stage').textContent=job.stage;$('events').replaceChildren(...job.events.map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));
@@ -127,6 +146,9 @@ async function init() {
   for(let i=0;i<skills.length;i++){const label=document.createElement('label');label.textContent=skillLabels[i];const input=document.createElement('input');input.id='skill-'+skills[i];input.type='number';input.min='0';input.max='100';input.value='20';label.append(input);$('skills').append(label);}
   const env=await api('/api/environment');state.defaults=env.defaults;$('version').textContent='VRM2Skyrim '+env.version;$('game').value=env.game;$('blender').value=env.blender;applySettings(env.defaults);
   initWardrobe();
+  $('fit-enabled').onchange=async()=>{if($('fit-enabled').checked&&!state.choices){$('next').disabled=true;try{const result=await api('/api/catalog',{game:$('game').value,blender:$('blender').value});setupChoices(result.choices);}catch(e){error(e.message);$('fit-enabled').checked=false;}finally{$('next').disabled=false;}}setupFitting();};
+  $('fit-armors').onchange=()=>{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));};
+  $('merge-armor-patch').onclick=async()=>{const button=$('merge-armor-patch');button.disabled=true;$('armor-patch-status').textContent='互換パッチを作成しています…';try{const result=await api('/api/armor-patch',{game:$('game').value,profiles:[...$('fitted-followers').querySelectorAll('input:checked')].map(input=>input.value)});$('armor-patch-download').href=fileURL(result.job_id,result.archive);$('armor-patch-status').textContent='選択したフォロワー分のパッチを作成しました。このZIPに差し替えてください。';}catch(e){$('armor-patch-status').textContent=e.message;}finally{button.disabled=false;}};
   $('source').onchange=()=>upload($('source').files[0]);const zone=document.querySelector('.dropzone');zone.ondragover=e=>{e.preventDefault();zone.classList.add('drag');};zone.ondragleave=()=>zone.classList.remove('drag');zone.ondrop=e=>{e.preventDefault();zone.classList.remove('drag');upload(e.dataTransfer.files[0]);};
   $('next').onclick=next;$('back').onclick=()=>showStep(state.step-1);$('create').onclick=create;$('level_mode').onchange=updateLevel;$('auto_calculate').onchange=updateLevel;$('preset').onchange=preset;
   $('mod_name').oninput=()=>{state.nameDirty=true;updateId();};$('npc_name').oninput=()=>state.nameDirty=true;$('mod_id').oninput=()=>state.idDirty=true;

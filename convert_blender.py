@@ -129,7 +129,7 @@ def main():
     from wardrobe import components, validate_source
     from inspect_vrm import inspect
     validate_source(settings, inspect(args.source))
-    output_parts = components(settings)
+    output_parts = components(settings, fitting=False)
     node_parts = {node: part for part in output_parts for node in (part["nodes"] or [])}
     node_parents = {child: index for index, node in enumerate(document["nodes"]) for child in node.get("children", [])}
     # Blender truncates/renames duplicate or long bone names; use deterministic

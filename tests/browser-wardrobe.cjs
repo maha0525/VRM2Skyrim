@@ -7,7 +7,8 @@ const assert = require('node:assert/strict');
 (async()=>{
   const source=process.env.VRM2SKYRIM_TEST_VRM;
   if(!source)throw new Error('Set VRM2SKYRIM_TEST_VRM to a separable humanoid VRM');
-  const out=path.resolve(__dirname,'..','build','ui-wardrobe');fs.mkdirSync(out,{recursive:true});
+  const fitting=process.env.VRM2SKYRIM_TEST_FIT==='true';
+  const out=path.resolve(__dirname,'..','build',fitting?'ui-fitting':'ui-wardrobe');fs.mkdirSync(out,{recursive:true});
   const browser=await chromium.launch({headless:true,...(process.env.VRM2SKYRIM_TEST_BROWSER?{channel:process.env.VRM2SKYRIM_TEST_BROWSER}:{})});
   try{
     const page=await browser.newPage({viewport:{width:1440,height:1120},acceptDownloads:true});
@@ -18,6 +19,7 @@ const assert = require('node:assert/strict');
     await page.waitForFunction(()=>document.querySelector('#source-status').textContent.includes('三角形'));
     await page.locator('#armor_support').selectOption('true');
     await page.locator('#wardrobe-editor').waitFor({state:'visible'});
+    if(fitting){await page.locator('#fit-enabled').check();await page.waitForFunction(()=>document.querySelector('#fit-armors').options.length>2);await page.locator('#fit-armors').selectOption(['ArmorIronBandedCuirass','ArmorIronBoots']);}
     const partCount=await page.locator('.wardrobe-part').count();assert(partCount>3);
     const roles=await page.locator('.wardrobe-part select:first-of-type').evaluateAll(xs=>xs.map(x=>x.value));
     assert(roles.includes('body'));assert(roles.includes('underwear'));assert(roles.includes('garment'));
@@ -50,6 +52,7 @@ const assert = require('node:assert/strict');
     const downloadEvent=page.waitForEvent('download');await page.locator('#export-settings').click();const settingsDownload=await downloadEvent;
     const settingsPath=path.join(out,'settings.json');await settingsDownload.saveAs(settingsPath);const saved=JSON.parse(fs.readFileSync(settingsPath,'utf8'));
     assert(saved.armor_support);assert.equal(saved.appearance_parts.garments.length,clothingCount);assert.equal(saved.appearance_parts.garments[0].value,17);
+    if(fitting)assert.deepEqual(saved.fit_armors,['ArmorIronBandedCuirass','ArmorIronBoots']);
     // Import the downloaded settings through the actual file input, retaining classification.
     for(let i=0;i<4;i++)await page.locator('#back').click();await page.locator('#import-settings').setInputFiles(settingsPath);
     await page.waitForFunction(()=>document.querySelector('#import-status').textContent.includes('読み込みました'));
@@ -60,6 +63,7 @@ const assert = require('node:assert/strict');
     if(await page.locator('#failure').isVisible())throw new Error(await page.locator('#failure').textContent());
     await page.waitForFunction(()=>document.querySelectorAll('#previews img').length>5&&[...document.querySelectorAll('#previews img')].every(i=>i.complete&&i.naturalWidth>0));
     const zipEvent=page.waitForEvent('download');await page.locator('#download').click();const zip=await zipEvent;await zip.saveAs(path.join(out,zip.suggestedFilename()));
+    if(fitting){await page.locator('#armor-patch-result').waitFor({state:'visible'});const patchEvent=page.waitForEvent('download');await page.locator('#armor-patch-download').click();await(await patchEvent).saveAs(path.join(out,'VRM2SkyrimArmorPatch.zip'));await page.locator('#fitted-followers input:checked').waitFor();await page.locator('#merge-armor-patch').click();await page.waitForFunction(()=>document.querySelector('#armor-patch-status').textContent.includes('パッチを作成しました'));const mergedEvent=page.waitForEvent('download');await page.locator('#armor-patch-download').click();await(await mergedEvent).saveAs(path.join(out,'merged-armor-patch.zip'));}
     await page.screenshot({path:path.join(out,'03-result.png'),fullPage:true});
     await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(out,'04-mobile-result.png'),fullPage:true});
     assert.deepEqual(errors,[]);const job=await page.evaluate(async()=>await(await fetch('/api/jobs/'+state.job)).json());
