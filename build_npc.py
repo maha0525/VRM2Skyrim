@@ -7,7 +7,8 @@ from pathlib import Path
 import struct
 
 from game_catalog import GameCatalog
-from head_visibility import HEAD_COVER_ID, HEAD_MASK
+from head_visibility import HEAD_COVER_ID, configure_native_head, head_records
+from equipment_runtime import runtime_records, vmad, write_runtime
 from plugin import Record, records, write_plugin
 from settings import SKILLS, load_settings
 from wardrobe import components
@@ -61,17 +62,14 @@ def appearance_records(settings, catalog):
                 "hands": 0x01000809, "feet": 0x0100080A}
     clothing_template = catalog.require("ClothesFarmClothes01", b"ARMO")
     inventory_fields = [(tag, data) for tag, data in clothing_template.fields if tag in {b"MOD2", b"MOD4", b"YNAM", b"ZNAM", b"ETYP"}]
-    # Native head hiding uses worn ARMO masks, not the race's Skin mask.
-    # A meshless outfit item hides native heads without replacing VRM slot 60.
+    # Retain 0.5.1's FormID for saves/AFT snapshots, but retire its worn mask.
     head_cover = Record(b"ARMO", HEAD_COVER_ID, 4, [
         (b"EDID", text(settings.prefix + "NativeHeadCover")), (b"OBND", bytes(12)),
         (b"FULL", text(settings.npc_name + " - Head Cover")),
         *[(tag, data) for tag, data in inventory_fields if tag == b"ETYP"],
-        (b"BOD2", struct.pack("<II", HEAD_MASK, 2)), (b"RNAM", uint(RACE_ID)),
+        (b"BOD2", struct.pack("<II", 0, 2)), (b"RNAM", uint(RACE_ID)),
         (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<i", 0))])
-    result, skin_addons, skin_mask, outfit_ids, inventory = [head_cover], [], 0, [HEAD_COVER_ID], []
-    logging.info("Wardrobe head cover: worn item %08X hides native head slots; VRM face remains in Skin slot 60",
-                 HEAD_COVER_ID)
+    result, skin_addons, skin_mask, inventory = [head_cover], [], 0, []
     garment_index = 0
     for part in components(settings):
         wearable = part["role"] == "garment"
@@ -96,10 +94,7 @@ def appearance_records(settings, catalog):
             (b"KSIZ", uint(1)), (b"KWDA", uint(keyword.form_id)), (b"MODL", uint(addon_id)),
             (b"DATA", struct.pack("<If", part["value"], part["weight"])),
             (b"DNAM", struct.pack("<i", round(part["armor_rating"] * 100)))]))
-        if part["equipped"]:
-            outfit_ids.append(armor_id)
-        else:
-            inventory.append((b"CNTO", uint(armor_id) + struct.pack("<i", 1)))
+        inventory.append((b"CNTO", uint(armor_id) + struct.pack("<i", 1)))
         garment_index += 1
     result.append(Record(b"ARMO", ARMOR_ID, 4, [
         (b"EDID", text(settings.prefix + "Appearance")), (b"OBND", bytes(12)),
@@ -108,7 +103,7 @@ def appearance_records(settings, catalog):
         *[(b"MODL", uint(form_id)) for form_id in skin_addons],
         (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<i", 0))]))
     result.append(Record(b"OTFT", OUTFIT_ID, 0, [(b"EDID", text(settings.prefix + "Outfit")),
-                                              (b"INAM", b"".join(uint(form_id) for form_id in outfit_ids))]))
+                                              (b"INAM", b"")]))
     return result, inventory
 
 
@@ -210,6 +205,11 @@ def build_npc(game_data, output, settings=None, catalog=None):
     npc.form_id, npc.flags = NPC_ID, 0
     base_stats = struct.unpack_from("<fff", race.values(b"DATA")[0], 36)
     factions = configure_actor(npc, settings, catalog, base_stats)
+    configure_native_head(npc, race)
+    appearance += head_records(settings, RACE_ID)
+    if settings.armor_support:
+        appearance += runtime_records(settings, catalog)
+        after(npc, b"EDID", [(b"VMAD", vmad(settings))])
     if inventory:
         existing = npc.values(b"CNTO")
         npc.remove(b"COCT")
@@ -231,6 +231,7 @@ def build_npc(game_data, output, settings=None, catalog=None):
     items = [race, *appearance, npc, relation]
     write_plugin(plugin_path, items, author=settings.author or "VRM2Skyrim",
                  placement=(cell, actor))
+    write_runtime(output, settings)
     generated = list(records(plugin_path))
     if len(generated) != len(items) + 3 or len({r.form_id for r in generated}) != len(generated):
         raise RuntimeError("Follower plugin record count mismatch")

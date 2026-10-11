@@ -139,3 +139,36 @@ unweighted helper-bone orientation can vary between independently imported parts
 Weighted bone rest poses are checked before all components animate on that rig.
 Game equip/remove behavior and compatibility with other armor overrides remain
 separate from offline geometry/binary/render verification.
+
+
+## 0.6.0 head and equipment ownership
+
+The 0.5.1 cover is retired: AFT can unequip/remove it. DATA flags at byte 32 of
+RACE disable bit 1 (0x2) FaceGen Head, as defined in xEdit and
+[CommonLibSSE](https://ryan.commonlib.dev/TESRace_8h_source.html).
+VRM head geometry remains in Skin. Private HDPT 0x80C / FLST 0x80D replace all
+human head references; generated meshless BSFadeNode head and FaceGeom assets
+provide an empty fallback. Old cover 0x80B remains an inert FormID with mask 0
+for saved inventory references, never initial equipment. Head parts and shapes
+cannot be restored by changing the default outfit or stripping equipment.
+
+Wardrobe OTFT is empty and all garments are ordinary CNTO items. Seven FLSTs
+at 0x840-0x846 bind InitialItems, Body/Hands/FeetClothes and Body/Hands/FeetEquipment
+to a private Actor VMAD script. Garments have optional equipment_group values
+body/hands/feet/accessory; omitted old settings derive an editable suggestion
+from their names. Gear categories use actual source ARMO slot 32/33/37. Only
+selected fitted game items participate. The source and compiled PEX are under
+runtime/. Per-mod PEX string-table renaming preserves every object/function index
+and instruction. Header metadata is sanitized. Class name, script path and VMAD
+bindings are private; no common runtime path causes follower ZIP collisions.
+
+OnInit equips configured inventory items once unless already a player teammate.
+OnObjectEquipped only unequips that group's conflicting items, ignoring delayed
+events for already-removed items. OnLoad repairs overlapping current equipment
+without restoring clothes or changing any outfit. AFT retains ownership of its
+sets and inventory. Template PEX is Skyrim 3.2, built with Orvid/Caprica v0.3.0
+against the user's Actor/ObjectReference/FormList declarations; missing unused
+type declarations are compile-only and are not distributed. Compiler archive
+SHA256: 0037e54cf3a1021e976278d9a637e8ae541aaf9ebeb8d274b6c2cfe32f4ee559.
+The test VM reads the real PEX format using the author's Caprica/pex schema;
+its mocked native calls establish code behavior, not actual game compatibility.

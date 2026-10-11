@@ -45,8 +45,10 @@ def validate_parts(parts):
     ids, equipped = set(), set()
     for garment in garments:
         keys = {"id", "name", "nodes", "slot", "armor_type", "armor_rating", "weight", "value", "equipped"}
-        if not isinstance(garment, dict) or set(garment) != keys:
+        if not isinstance(garment, dict) or set(garment) - {"equipment_group"} != keys:
             raise ValueError("Invalid garment settings")
+        if equipment_group(garment) not in {"body", "hands", "feet", "accessory"}:
+            raise ValueError("Invalid garment equipment group")
         item_id, name = garment["id"], garment["name"]
         if not isinstance(item_id, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", item_id) or item_id.lower() in ids:
             raise ValueError("Garment IDs must be unique ASCII identifiers")
@@ -86,6 +88,19 @@ def validate_source(settings, report):
         raise ValueError(f"全メッシュを一回だけ分類してください。未分類={sorted(available-selected)}、不明={sorted(selected-available)}")
     logging.info("Wardrobe: %s body, %s underwear, %s fixed nodes, %s garments",
                  *(len(settings.appearance_parts[role]) for role in ROLES), len(settings.appearance_parts["garments"]))
+
+
+def equipment_group(garment):
+    if "equipment_group" in garment:
+        return garment["equipment_group"]
+    name = garment["name"].lower()
+    if re.search(r"boot|shoe|loafer|sandal|靴|ブーツ|サンダル", name):
+        return "feet"
+    if re.search(r"glove|gauntlet|手袋|籠手", name):
+        return "hands"
+    if re.search(r"accessor|ring|necklace|bracelet|earring|眼鏡|指輪|首飾り|アクセ", name):
+        return "accessory"
+    return "body"
 
 
 def components(settings, fitting=True):

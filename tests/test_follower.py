@@ -66,7 +66,7 @@ class FollowerIntegrationTests(unittest.TestCase):
         self.assertEqual(npc.values(b"FULL"), ["ソフィー\0".encode("utf8")])
         self.assertEqual(by_kind[b"RACE"].form_id, RACE_ID)
         self.assertEqual(actor.form_id, REFERENCE_ID)
-        self.assertEqual(len({record.form_id for record in parsed if record.kind not in {b"TES4", b"CELL"}}), 7)
+        self.assertEqual(len({record.form_id for record in parsed if record.kind not in {b"TES4", b"CELL"}}), 9)
         groups = {record.groups[:index] for record in parsed for index in range(1, len(record.groups) + 1)}
         self.assertEqual(struct.unpack("<fII", by_kind[b"TES4"].values(b"HEDR")[0])[1], len(parsed) - 1 + len(groups))
 

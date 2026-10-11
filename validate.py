@@ -15,7 +15,8 @@ from plugin import records
 from settings import load_settings
 from build_npc import NPC_ID, RACE_ID
 from wardrobe import components
-from head_visibility import HEAD_COVER_ID, validate_head_visibility
+from head_visibility import validate_head_visibility
+from equipment_runtime import runtime_records, vmad, script_name, pex_strings, PROPERTIES
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "dependencies/io_scene_nifly"))
@@ -118,13 +119,18 @@ def validate(output, skeleton=None):
             )
     generated = list(records(mod / settings.plugin_name))
     head_visibility = validate_head_visibility(generated, settings)
+    for path in (mod / 'meshes' / settings.asset_dir / 'native_head_empty.nif',
+                 mod / 'meshes/actors/character/facegendata/facegeom' / settings.plugin_name / '00000800.nif'):
+        with NifFile(str(path)) as native_head:
+            if native_head.game != 'SKYRIMSE' or native_head.root.blockname != 'BSFadeNode' or native_head.shapes:
+                raise ValueError('Native head/FaceGen contains renderable geometry or the wrong root')
     local_ids = {
         record.form_id for record in generated if record.kind not in (b"TES4", b"CELL")
     }
     expected_records = (
-        7
+        9
         if not settings.armor_support
-        else 7
+        else 9 + len(PROPERTIES)
         + len([p for p in components(settings) if p["role"] != "garment"])
         + 2 * len(settings.appearance_parts["garments"])
         + len(settings.fit_armors)
@@ -137,7 +143,8 @@ def validate(output, skeleton=None):
         for tag, payload in record.fields:
             reference_tags = {b"ARMO": {b"MODL", b"RNAM"}, b"ARMA": {b"RNAM", b"MODL"},
                               b"NPC_": {b"DOFT", b"RNAM", b"WNAM", b"CNTO"},
-                              b"RACE": {b"WNAM"}, b"OTFT": {b"INAM"}}
+                                b"RACE": {b"WNAM", b"HEAD"}, b"OTFT": {b"INAM"},
+                                b"HDPT": {b"RNAM"}, b"FLST": {b"LNAM"}}
             if tag in reference_tags.get(record.kind, set()):
                 if (tag == b"CNTO" and len(payload) != 8) or (tag != b"CNTO" and len(payload) % 4):
                     raise ValueError("Malformed plugin reference field")
@@ -186,7 +193,7 @@ def validate(output, skeleton=None):
                 by_name[settings.prefix + "Outfit"].values(b"INAM")[0],
             )
         )
-        expected_outfit = {HEAD_COVER_ID}
+        expected_outfit = set()
         for index, garment in enumerate(settings.appearance_parts["garments"]):
             item = by_name[settings.prefix + "Garment_" + garment["id"]]
             if item.flags & 4 or item.values(b"FULL") != [
@@ -204,12 +211,22 @@ def validate(output, skeleton=None):
                 garment["armor_rating"] * 100
             ):
                 raise ValueError("Garment armor rating mismatch")
-            if garment["equipped"]:
-                expected_outfit.add(item.form_id)
+            npc = by_name[settings.prefix + 'NPC']
+            if struct.pack('<Ii', item.form_id, 1) not in npc.values(b'CNTO'):
+                raise ValueError('Garment missing from ordinary follower inventory')
         if outfit_ids != expected_outfit or skin.form_id in outfit_ids:
             raise ValueError(
-                "Initial outfit differs from the head cover/selected garments or contains the skin"
+                "Wardrobe default outfit must be empty, with clothes in ordinary inventory"
             )
+        if npc.values(b'VMAD') != [vmad(settings)]:
+            raise ValueError('Wardrobe script properties do not match the follower')
+        _, _, _, strings = pex_strings((mod/'scripts'/(script_name(settings)+'.pex')).read_bytes())
+        if script_name(settings).encode() not in strings:
+            raise ValueError('Wardrobe PEX does not declare the private script name')
+        fitting_profile = json.loads((output/'armor-fitting.json').read_text()) if settings.fit_armors else None
+        for expected in runtime_records(settings, profile=fitting_profile):
+            if by_id[expected.form_id].fields != expected.fields:
+                raise ValueError('Wardrobe replacement group differs from its configured garments/equipment')
     if (
         race.values(b"ANAM")
         != [(settings.asset_dir.replace("/", "\\") + "\\skeleton.nif\0").encode()] * 2

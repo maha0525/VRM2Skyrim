@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from build_npc import appearance_records, build_npc, ARMOR_ID
-from head_visibility import HEAD_COVER_ID, HEAD_MASK, validate_head_visibility
+from head_visibility import EMPTY_HEAD_ID, configure_native_head, head_records, validate_head_visibility
 from environment import find_game
 from game_catalog import GameCatalog
 from plugin import Record, records
@@ -26,7 +26,7 @@ def wardrobe_settings(**overrides):
 
 
 class WardrobeTests(unittest.TestCase):
-    def test_native_head_cover_survives_all_garments_removed(self):
+    def test_native_head_has_no_worn_item_dependency(self):
         class Catalog:
             def require(self, name, kind):
                 fields = [(b"ETYP", struct.pack("<I", 0x13F42))] if kind == b"ARMO" else []
@@ -35,20 +35,24 @@ class WardrobeTests(unittest.TestCase):
         for fitting in (False, True):
             settings = wardrobe_settings(fit_armors=["ArmorIronBoots"] if fitting else [])
             generated, _ = appearance_records(settings, Catalog())
+            npc = Record(b'NPC_', 0x01000800, 0, [(b'EDID', (settings.prefix+'NPC\0').encode()),
+                                                (b'PNAM', struct.pack('<I', 0x51176))])
+            race = Record(b'RACE', 0x01000804, 0, [(b'EDID', (settings.prefix+'Race\0').encode()),
+                                                (b'DATA', bytes(64)), (b'NAM0', b'')])
+            configure_native_head(npc, race)
+            generated += [npc, race, *head_records(settings, race.form_id)]
             report = validate_head_visibility(generated, settings)
-            self.assertEqual(report["worn_mask"] & HEAD_MASK, HEAD_MASK)
+            self.assertFalse(report['depends_on_equipped_head_cover'])
             outfit = next(r for r in generated if r.kind == b"OTFT")
-            outfit.replace(b"INAM", struct.pack("<I", HEAD_COVER_ID))
-            self.assertEqual(validate_head_visibility(generated, settings)["worn_mask"], HEAD_MASK)
-            cover = next(r for r in generated if r.form_id == HEAD_COVER_ID)
-            self.assertFalse(cover.values(b"MODL"))
-            # Regression: 0.4/0.5 only equipped garments, leaving the native head.
+            # AFT can empty/replace the outfit without restoring human geometry.
             outfit.replace(b"INAM", b"")
-            with self.assertRaisesRegex(ValueError, "does not hide the vanilla head"):
+            self.assertEqual(validate_head_visibility(generated, settings)['native_head_geometry'], 'empty')
+            npc.replace(b'PNAM', struct.pack('<I', 0x51176))
+            with self.assertRaisesRegex(ValueError, 'NPC still uses native human'):
                 validate_head_visibility(generated, settings)
-            outfit.replace(b"INAM", struct.pack("<I", HEAD_COVER_ID))
-            cover.replace(b"BOD2", struct.pack("<II", HEAD_MASK | (1 << 30), 2))
-            with self.assertRaisesRegex(ValueError, "hide only native head slots"):
+            npc.replace(b'PNAM', struct.pack('<I', EMPTY_HEAD_ID))
+            race.replace(b'HEAD', struct.pack('<I', 0x51176))
+            with self.assertRaisesRegex(ValueError, 'Race still supplies native human'):
                 validate_head_visibility(generated, settings)
 
     def test_secondary_rigs_need_names_geometry_and_unique_matches(self):
@@ -134,8 +138,8 @@ class WardrobeIntegrationTests(unittest.TestCase):
         self.assertEqual(coat.flags & 4, 0)
         self.assertEqual(coat.values(b"ETYP"), self.catalog.require("ClothesFarmClothes01").values(b"ETYP"))
         self.assertTrue(coat.values(b"MOD2"))
-        self.assertEqual(set(struct.unpack("<II", by_name[settings.prefix + "Outfit"].values(b"INAM")[0])),
-                         {HEAD_COVER_ID, coat.form_id})
+        self.assertEqual(by_name[settings.prefix + "Outfit"].values(b"INAM"), [b''])
+        self.assertIn(struct.pack('<Ii', coat.form_id, 1), by_name[settings.prefix+'NPC'].values(b'CNTO'))
         validate_head_visibility(parsed, settings)
         self.assertEqual(struct.unpack("<i", boots.values(b"DNAM")[0])[0], 1250)
         self.assertIn(struct.pack("<Ii", boots.form_id, 1), by_name[settings.prefix + "NPC"].values(b"CNTO"))

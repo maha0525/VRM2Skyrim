@@ -90,17 +90,16 @@ def package(output, settings=None):
         wardrobe_help = """Original garments:
 """ + "\n".join(rows) + f"""
 
-Initial outfit contains a hidden, zero-stat native-head cover and the garments
-marked equipped in the settings. The head cover has no mesh and hides Skyrim's
-generated head/hair, while the VRM face/hair remain in Skin slot 60. Other
-garments are added to the NPC inventory. Base body/underwear are the race's
-non-playable skin and are never included as ordinary removable equipment.
-Keep the non-playable head cover equipped. Use individual garment unequipitem
-commands rather than unequipall, which can remove the cover too. If updating an
-existing NPC save from 0.4/0.5.0, select this NPC in the console and run:
-  help "{settings.npc_name} - Head Cover" 4
-  equipitem <the ARMO's actual load-order FormID> 1
-This equips the new head cover without removing garments or deleting the NPC.
+All original garments are ordinary NPC inventory items. The default outfit is
+empty. A private Actor script equips the configured initial garments once;
+it never restores them after removal or changes AFT's outfit assignments.
+Native FaceGen head generation is disabled on the private race. Empty private
+head/FaceGen assets also avoid human geometry if head data is regenerated.
+VRM face/hair remain in Skin slot 60; no head-cover item needs to remain worn.
+Base body/underwear are non-playable race Skin, independent of all equipment.
+For updates, retain the same follower plugin and deploy, then restart Skyrim.
+If old 3D geometry persists, select this NPC in the console and use disable,
+then enable on that same selected reference. Do not delete/recycle the NPC.
 Original clothing uses layers 44-49/53-59; underwear=52, fixed face/hair=60.
 These slots are reserved within this follower MOD. Existing Skyrim armor has
 not been fitted to this avatar and is not supported by this build.
@@ -113,10 +112,8 @@ Find each ARMO's actual FormID (the leading load-order digits vary), then:
   unequipitem <FormID>
   equipitem <FormID>
 Check one garment at a time, then all original garments removed. The avatar
-should retain the base body, underwear, face and hair. Standard NPC outfit
-management may re-equip the default outfit; inventory dialogue/dismissal and
-save/reload behavior still need in-game confirmation. These commands test the
-generated wardrobe; they do not claim a new follower equipment UI.
+should retain the base body, underwear, face and hair. Follower inventory,
+AFT transitions and save/reload behavior still need in-game confirmation.
 """
     fitting_help = ""
     if settings.fit_armors:
@@ -134,9 +131,12 @@ adds private-race appearances. Only one combined armor patch should be active.
 The wizard can rebuild a combined patch for several installed/converted followers.
 After changing that set, replace the combined patch and deploy again.
 
-Remove the original VRM garments before wearing game armor. Original wardrobe
-layers are not automatically managed by this fitting feature. On a test save,
-select the NPC and use the garment FormIDs listed above:
+Fitted equipment and VRM garments switch by their body/hands/feet groups.
+Equipping fitted torso armor removes body-group garments; boots remove feet
+garments; gloves remove hands garments. Equipping a garment removes fitted
+equipment from that group. Accessories stay equipped. Items are unequipped,
+never deleted or transferred. OnLoad resolves already-overlapping equipment.
+If troubleshooting, select the NPC and use the garment FormIDs listed above:
 """ + remove + """
 Then use additem/equipitem with the original armor's base game FormID above, or
 give those items through follower inventory. Never add or equip the private ARMA.
@@ -235,6 +235,8 @@ def convert(source, game, blender, output, settings, progress=None):
             fit(output, Path(game) / "Data", blender)
         stage("フォロワーと初期配置の作成")
         build_npc(Path(game) / "Data", output, settings, catalog)
+        from head_visibility import write_head_assets
+        write_head_assets(output, settings)
         stage("出力の読み戻し検査")
         from validate import validate
         from verify_animation import verify_animation

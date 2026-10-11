@@ -1,5 +1,36 @@
 # VRM2Skyrim verification
 
+## 0.6.0 independent head / inventory / switching (2026-10-12)
+
+The user confirmed fitted banded iron armor renders in 0.5.1, but overlaps the
+VRM garments. Normal inventory hides default-outfit garments. Installed AFT
+source shows RemoveAllItems and SetOutfit(TweakNoOutfit) during inventory control;
+the user observed the 0.5.1 head cover disappears and the dark human face returns.
+The 0.5.1 equipment-head workaround is superseded, not considered AFT compatible.
+
+The private race disables FaceGen Head (DATA bit 1, value 0x2); NPC/race head
+references are private empty HDPT/FaceGen assets. Readback verifies empty BSFadeNode
+assets, no human head refs and no required equipped cover. All source NIF/DDS
+bytes remain identical. Clothes are CNTO inventory items, with empty OTFT.
+Private per-follower PEX/VMAD/FLST bindings implement initial wear once and
+body/hands/feet mutual exclusion, leaving accessories alone. No periodic reset,
+SetOutfit, AddItem, RemoveItem or inventory transfer is performed by the runtime.
+
+All 27 local Python checks and Ruff pass. The shipped, renamed PEX bytes are
+parsed and executed with a strict test VM and in-memory native actor calls.
+Tests cover clothing -> cuirass -> boots, reverse changes, inventory preservation,
+initialization for existing teammates, every item removed, OnLoad overlap repair
+and stale queued equip events. This proves the bytecode logic under those native
+API assumptions; it does not reproduce the engine rendering/outfit AI or AFT VM.
+The final fitted output retains all source triangles/body faces and shading
+normals, and every packaged byte matches the validated
+folder. Skyrim/AFT runtime appearance, migration and saved inventory remain
+awaiting game confirmation. No game/Vortex UI was operated by the agent.
+The real headless Chrome select/download/reimport path preserves the new
+equipment-group selection. Default boot/shoe names suggest feet; the user can
+override that suggestion or choose accessory explicitly.
+
+
 ## 0.5.1 native-head correction (2026-10-12)
 
 The user observed a vanilla human face over the VRM appearance in the 0.4.1
