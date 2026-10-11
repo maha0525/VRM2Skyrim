@@ -5,10 +5,11 @@ import struct
 import tempfile
 import unittest
 
-from build_npc import build_npc, ARMOR_ID
+from build_npc import appearance_records, build_npc, ARMOR_ID
+from head_visibility import HEAD_COVER_ID, HEAD_MASK, validate_head_visibility
 from environment import find_game
 from game_catalog import GameCatalog
-from plugin import records
+from plugin import Record, records
 from settings import FollowerSettings
 from wardrobe import suggest_role, validate_source
 from parallel_rigs import follower_links, propagate_pose
@@ -25,6 +26,31 @@ def wardrobe_settings(**overrides):
 
 
 class WardrobeTests(unittest.TestCase):
+    def test_native_head_cover_survives_all_garments_removed(self):
+        class Catalog:
+            def require(self, name, kind):
+                fields = [(b"ETYP", struct.pack("<I", 0x13F42))] if kind == b"ARMO" else []
+                return Record(kind, 0x1234, 0, fields)
+
+        for fitting in (False, True):
+            settings = wardrobe_settings(fit_armors=["ArmorIronBoots"] if fitting else [])
+            generated, _ = appearance_records(settings, Catalog())
+            report = validate_head_visibility(generated, settings)
+            self.assertEqual(report["worn_mask"] & HEAD_MASK, HEAD_MASK)
+            outfit = next(r for r in generated if r.kind == b"OTFT")
+            outfit.replace(b"INAM", struct.pack("<I", HEAD_COVER_ID))
+            self.assertEqual(validate_head_visibility(generated, settings)["worn_mask"], HEAD_MASK)
+            cover = next(r for r in generated if r.form_id == HEAD_COVER_ID)
+            self.assertFalse(cover.values(b"MODL"))
+            # Regression: 0.4/0.5 only equipped garments, leaving the native head.
+            outfit.replace(b"INAM", b"")
+            with self.assertRaisesRegex(ValueError, "does not hide the vanilla head"):
+                validate_head_visibility(generated, settings)
+            outfit.replace(b"INAM", struct.pack("<I", HEAD_COVER_ID))
+            cover.replace(b"BOD2", struct.pack("<II", HEAD_MASK | (1 << 30), 2))
+            with self.assertRaisesRegex(ValueError, "hide only native head slots"):
+                validate_head_visibility(generated, settings)
+
     def test_secondary_rigs_need_names_geometry_and_unique_matches(self):
         primary = {"hips": "Hips", "spine": "Spine", "head": "Head", "leftFoot": "Foot"}
         positions = {"Hips": np.array([0., 0, 1]), "Spine": np.array([0., 0, 1.3]),
@@ -108,7 +134,9 @@ class WardrobeIntegrationTests(unittest.TestCase):
         self.assertEqual(coat.flags & 4, 0)
         self.assertEqual(coat.values(b"ETYP"), self.catalog.require("ClothesFarmClothes01").values(b"ETYP"))
         self.assertTrue(coat.values(b"MOD2"))
-        self.assertEqual(struct.unpack("<I", by_name[settings.prefix + "Outfit"].values(b"INAM")[0])[0], coat.form_id)
+        self.assertEqual(set(struct.unpack("<II", by_name[settings.prefix + "Outfit"].values(b"INAM")[0])),
+                         {HEAD_COVER_ID, coat.form_id})
+        validate_head_visibility(parsed, settings)
         self.assertEqual(struct.unpack("<i", boots.values(b"DNAM")[0])[0], 1250)
         self.assertIn(struct.pack("<Ii", boots.form_id, 1), by_name[settings.prefix + "NPC"].values(b"CNTO"))
         self.assertEqual(len({r.form_id for r in parsed}), len(parsed))

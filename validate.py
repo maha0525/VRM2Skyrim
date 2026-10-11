@@ -15,6 +15,7 @@ from plugin import records
 from settings import load_settings
 from build_npc import NPC_ID, RACE_ID
 from wardrobe import components
+from head_visibility import HEAD_COVER_ID, validate_head_visibility
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "dependencies/io_scene_nifly"))
@@ -116,13 +117,14 @@ def validate(output, skeleton=None):
                 }
             )
     generated = list(records(mod / settings.plugin_name))
+    head_visibility = validate_head_visibility(generated, settings)
     local_ids = {
         record.form_id for record in generated if record.kind not in (b"TES4", b"CELL")
     }
     expected_records = (
         7
         if not settings.armor_support
-        else 6
+        else 7
         + len([p for p in components(settings) if p["role"] != "garment"])
         + 2 * len(settings.appearance_parts["garments"])
         + len(settings.fit_armors)
@@ -184,7 +186,7 @@ def validate(output, skeleton=None):
                 by_name[settings.prefix + "Outfit"].values(b"INAM")[0],
             )
         )
-        expected_outfit = set()
+        expected_outfit = {HEAD_COVER_ID}
         for index, garment in enumerate(settings.appearance_parts["garments"]):
             item = by_name[settings.prefix + "Garment_" + garment["id"]]
             if item.flags & 4 or item.values(b"FULL") != [
@@ -206,7 +208,7 @@ def validate(output, skeleton=None):
                 expected_outfit.add(item.form_id)
         if outfit_ids != expected_outfit or skin.form_id in outfit_ids:
             raise ValueError(
-                "Initial outfit differs from selected garments or contains the skin"
+                "Initial outfit differs from the head cover/selected garments or contains the skin"
             )
     if (
         race.values(b"ANAM")
@@ -271,6 +273,7 @@ def validate(output, skeleton=None):
         "private_skeleton_nodes": len(bone_set),
         "components": component_reports,
         "game_verified": False,
+        "head_visibility": head_visibility,
     }
     (output / "validation.json").write_text(
         json.dumps(report, indent=2), encoding="utf-8"

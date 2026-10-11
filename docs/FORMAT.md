@@ -85,6 +85,29 @@ slot. The source hash binds saved classification to the actual input VRM.
 
 ## Selected equipment fitting (0.5)
 
+### Native head hiding correction (0.5.1)
+
+Wardrobe Skin slot 60 does not hide the head generated from NPC/RACE head data.
+The engine combines **worn ARMO** body masks to hide native head/hair; Skin alone
+is not a worn outfit item. See the author's reverse-engineered
+[equipment pipeline](https://github.com/DavidJCobb/skyrim-outfit-system/blob/master/skse-plugin/SkyrimOutfitSystem/Patches/OverridePlayerSkinning.cpp#L49-L57).
+Unlike the fixed mode's equipped Appearance armor, 0.4/0.5.0 only equipped the
+garments. Inherited vanilla head parts could therefore render over the VRM face.
+
+Local ARMO 0x80B is a non-playable, zero-value/weight/rating, meshless head cover
+in the default OTFT. It occupies native head/hair/circlet/ears slots 30/31/41/42/43
+only, with no Armature or world model. It leaves body/clothing and VRM Skin slot
+60 alone. Existing Skin records and all exported geometry remain unchanged.
+Native head data is retained for engine compatibility, but hidden by worn flags.
+Normal garment removal leaves the head cover equipped. `unequipall`, changing
+the entire default outfit, and external equipment-management mods can remove it;
+equipping the cover again restores its flags. Headgear fitting is not supported.
+
+`validate_head_visibility` reads actual OTFT/ARMO masks separately from NIF checks.
+It rejects the old outputs, checks the hidden cover and its zero stats, prevents
+hiding VRM slot 60, and checks fixed mode too. This is binary-configuration
+validation, not evidence of the game engine's rendered result.
+
 `fit_armors` is a list of up to 64 distinct Skyrim.esm ARMO Editor IDs. It requires
 wardrobe mode and a complete independent body. The source is the game's original
 BSA mesh/texture, with a humanoid ARMA at body, hands or feet. Reference-skeleton

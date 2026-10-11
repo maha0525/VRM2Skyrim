@@ -90,9 +90,17 @@ def package(output, settings=None):
         wardrobe_help = """Original garments:
 """ + "\n".join(rows) + f"""
 
-Initial outfit contains the garments marked equipped in the settings. Other
+Initial outfit contains a hidden, zero-stat native-head cover and the garments
+marked equipped in the settings. The head cover has no mesh and hides Skyrim's
+generated head/hair, while the VRM face/hair remain in Skin slot 60. Other
 garments are added to the NPC inventory. Base body/underwear are the race's
 non-playable skin and are never included as ordinary removable equipment.
+Keep the non-playable head cover equipped. Use individual garment unequipitem
+commands rather than unequipall, which can remove the cover too. If updating an
+existing NPC save from 0.4/0.5.0, select this NPC in the console and run:
+  help "{settings.npc_name} - Head Cover" 4
+  equipitem <the ARMO's actual load-order FormID> 1
+This equips the new head cover without removing garments or deleting the NPC.
 Original clothing uses layers 44-49/53-59; underwear=52, fixed face/hair=60.
 These slots are reserved within this follower MOD. Existing Skyrim armor has
 not been fitted to this avatar and is not supported by this build.

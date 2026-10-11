@@ -7,6 +7,7 @@ from pathlib import Path
 import struct
 
 from game_catalog import GameCatalog
+from head_visibility import HEAD_COVER_ID, HEAD_MASK
 from plugin import Record, records, write_plugin
 from settings import SKILLS, load_settings
 from wardrobe import components
@@ -60,7 +61,17 @@ def appearance_records(settings, catalog):
                 "hands": 0x01000809, "feet": 0x0100080A}
     clothing_template = catalog.require("ClothesFarmClothes01", b"ARMO")
     inventory_fields = [(tag, data) for tag, data in clothing_template.fields if tag in {b"MOD2", b"MOD4", b"YNAM", b"ZNAM", b"ETYP"}]
-    result, skin_addons, skin_mask, outfit_ids, inventory = [], [], 0, [], []
+    # Native head hiding uses worn ARMO masks, not the race's Skin mask.
+    # A meshless outfit item hides native heads without replacing VRM slot 60.
+    head_cover = Record(b"ARMO", HEAD_COVER_ID, 4, [
+        (b"EDID", text(settings.prefix + "NativeHeadCover")), (b"OBND", bytes(12)),
+        (b"FULL", text(settings.npc_name + " - Head Cover")),
+        *[(tag, data) for tag, data in inventory_fields if tag == b"ETYP"],
+        (b"BOD2", struct.pack("<II", HEAD_MASK, 2)), (b"RNAM", uint(RACE_ID)),
+        (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<i", 0))])
+    result, skin_addons, skin_mask, outfit_ids, inventory = [head_cover], [], 0, [HEAD_COVER_ID], []
+    logging.info("Wardrobe head cover: worn item %08X hides native head slots; VRM face remains in Skin slot 60",
+                 HEAD_COVER_ID)
     garment_index = 0
     for part in components(settings):
         wearable = part["role"] == "garment"

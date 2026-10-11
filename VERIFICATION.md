@@ -1,5 +1,31 @@
 # VRM2Skyrim verification
 
+## 0.5.1 native-head correction (2026-10-12)
+
+The user observed a vanilla human face over the VRM appearance in the 0.4.1
+wardrobe build. Reading the delivered plugin confirms inherited NPC head parts
+and no head-covering worn item. The same fault exists in 0.5.0 fitting mode.
+The user-confirmed fixed mode equips its head-covering Appearance ARMO instead.
+Source-backed worn-mask checks now reject the two old wardrobe outputs and accept
+fixed mode. A non-playable, meshless head cover is included in new wardrobe
+outfits; its mask covers native head slots without touching VRM face Skin slot 60.
+Tests check default clothing, every garment removed, fitting/non-fitting modes,
+missing-cover rejection, and accidental slot-60 hiding rejection.
+All 24 Python tests and Ruff pass locally. Both existing wardrobe and fitted
+outputs were rebuilt and validated: 222399 original triangles, with every NIF
+and DDS byte unchanged from their respective earlier outputs. Private record
+counts are 20/24. Every ZIP entry was compared with the validated mod folder,
+and installed paths remain disjoint from the existing fixed-mode follower.
+
+The earlier NIF render harness displayed exported components but omitted the
+game-generated head. That render check could not establish final in-game face
+appearance. Engine-generated geometry must be considered separately from the
+exported meshes; binary head hiding and geometry checks are distinct evidence.
+The new head cover's in-game appearance, saved-NPC outfit migration, follower
+inventory/dismissal/reload behavior and interaction with equipment managers are
+not yet user-confirmed. Existing saves can equip the new head-cover FormID without
+deleting the follower. This change does not correct lighting/material brightness.
+
 ## 0.5.0 selected equipment fitting (2026-10-12)
 
 Twenty-three Python tests and Ruff pass. Synthetic geometry checks require the
