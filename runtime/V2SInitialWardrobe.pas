@@ -11,7 +11,7 @@
   .object V2SInitialWardrobe Actor
     .userFlags 0
     .docString ""
-    .autoState 
+    .autoState
     .structTable
     .endStructTable
     .variableTable
