@@ -1,5 +1,20 @@
 # VRM2Skyrim verification
 
+## 0.4.1 package coexistence (2026-10-11)
+
+The shared root settings JSON caused a file conflict when two generated followers
+were installed together. Settings and documentation now live under each MOD ID's
+private path. A regression test repackages two old-layout outputs, checks every
+installed ZIP path case-insensitively, reads settings back, verifies CRC/manifests,
+and requires game-file bytes to remain unchanged. This test is included in CI.
+
+The two previously delivered follower packages were also repackaged locally.
+Their complete ZIP file lists have no shared paths. All ESP, NIF and texture bytes
+match the previous delivered archives. Source VRMs and original ZIPs were retained.
+
+Twenty Python tests and Ruff pass. This metadata-only fix does not provide new
+gameplay or wardrobe verification.
+
 ## 0.4.0 wardrobe verification (2026-10-11)
 
 Nineteen Python tests pass locally, including source-hash binding, exact mesh
@@ -132,14 +147,10 @@ directories; only tool source and documentation belong in the repository.
 
 ## Game boundary
 
-The user confirmed the original 0.2 Sophie's appearance inside Skyrim. This is
-retained as an appearance confirmation, not treated as acceptance of the new
-follower behavior. The following 0.3 checks are still required in Skyrim:
-
-1. Enable the generated ESP, restart Skyrim, and enter the Temple of Kynareth.
-2. Find Sophie and verify the standard recruitment dialogue appears.
-3. Recruit, follow, wait, dismiss, then recruit again.
-4. Check behavior/stats/spells with the chosen profile and the installed mod set.
+On 2026-10-11 the user reported that verification of the delivered 0.3 Sophie
+follower was OK. This is retained as user-confirmed acceptance of that follower,
+in addition to the earlier 0.2 appearance confirmation. It does not establish
+acceptance of other profiles or the 0.4 wardrobe behavior.
 
 Ragdoll fitting, facial animation, hair physics and existing Skyrim armor fitting
 are not implemented. The temple CELL retains master metadata and can need a

@@ -4,6 +4,12 @@ The converter reads the user's installed Skyrim.esm and BSAs. No game assets or
 VRM inputs are part of this repository. Editor IDs are resolved against that
 master rather than guessed FormIDs.
 
+Since 0.4.1, generated documentation and reproducible settings use
+`vrm2skyrim/<lowercase mod_id>/README.txt` and `settings.json`. The former root
+`README.txt` and `VRM2Skyrim-settings.json` are removed when repackaging an older
+output. These metadata files are not read during gameplay. Coexistence checks
+compare all installed ZIP paths case-insensitively, not just game assets.
+
 The binary field layouts follow [xEdit's TES5 definitions](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.5/Core/wbDefinitionsTES5.pas).
 
 - NPC ACBS: uint32 flags; signed int16 magicka/stamina offsets; level, min/max,

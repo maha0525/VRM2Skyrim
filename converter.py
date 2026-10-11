@@ -78,6 +78,8 @@ def package(output, settings=None):
     output = Path(output)
     settings = settings or load_settings(output)
     mod = output / "mod"
+    metadata = mod / settings.asset_dir
+    metadata.mkdir(parents=True, exist_ok=True)
     appearance_description = "Fixed original appearance; clothing is not removable."
     wardrobe_help = ""
     if settings.armor_support:
@@ -130,11 +132,15 @@ Lip sync, blinking, hair physics and fitting existing Skyrim armor are not inclu
 Ragdoll collision shapes/constraints still require fitting to the avatar.
 Console preview and file checks do not replace Skyrim recruitment/gameplay checks.
 
-Settings are included as VRM2Skyrim-settings.json for reproducible conversion.
+Settings are included as {settings.asset_dir}/settings.json for reproducible conversion.
 The original VRM is not included. Respect its author's permissions when sharing.
 """
-    (mod / "README.txt").write_text(readme, encoding="utf8")
-    settings.save(mod / "VRM2Skyrim-settings.json")
+    (metadata / "README.txt").write_text(readme, encoding="utf8")
+    settings.save(metadata / "settings.json")
+    # These two generated metadata files used shared paths before 0.4.1.
+    # Remove them when repackaging an old build so they cannot still collide.
+    for name in ("README.txt", "VRM2Skyrim-settings.json"):
+        (mod / name).unlink(missing_ok=True)
     archive = output / f"{settings.mod_id}-VRM2Skyrim-{VERSION}.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as target:
         for path in sorted(mod.rglob("*")):

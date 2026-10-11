@@ -6,7 +6,7 @@
 
 初期配置は**ホワイトランのキナレス聖堂内**。標準フォロワーの派閥・プレイヤーとの友好関係・勧誘用ボイス・永続参照を設定し、会話から仲間にできる構成を作ります。
 
-現在のバージョンは **0.4.0**。固定外観と、元衣装を着脱する装備へ分けるモードを選べます。モデル表示は元の試作をSkyrim内でユーザー確認済み。聖堂配置・勧誘・待機・解散と、新しい衣服の着脱は生成／オフライン検証を実装し、ゲーム内確認はこれからです。[検証範囲](VERIFICATION.md)
+現在のバージョンは **0.4.1**。固定外観と、元衣装を着脱する装備へ分けるモードを選べます。0.3のソフィー版フォロワーはSkyrim内でユーザー確認OK。衣服の着脱モードは生成／オフライン検証を実装し、ゲーム内確認はこれからです。[検証範囲](VERIFICATION.md)
 
 ## 起動する
 
@@ -94,12 +94,12 @@ python wizard.py --no-browser --port 8768
 
 `.venv`で準備した場合は`.venv\Scripts\python.exe`を使います。VRMを`Convert-VRM.cmd`へドラッグしても変換できます。出力は`build/`以下。過去の変換結果は上書きしません。明示した`--output`には空のフォルダを指定してください。
 
-生成ZIPの`VRM2Skyrim-settings.json`をウィザードへ読み込めば、同じ設定で再変換できます。VRMを差し替えて別モデルへ使う場合は名前とMOD IDを変更します。
+生成ZIPの`vrm2skyrim/<MOD ID小文字>/settings.json`をウィザードへ読み込めば、同じ設定で再変換できます。説明書も同じフォルダの`README.txt`です。VRMを差し替えて別モデルへ使う場合は名前とMOD IDを変更します。0.3/0.4のルートにあった`VRM2Skyrim-settings.json`も引き続き読み込めます。0.4.1では説明書・設定を含む全ファイルをMODごとのパスに分け、別MOD ID同士のファイル競合を解消しました。
 
 ## 開発・検証
 
 ```powershell
-python -m unittest test_converter tests.test_follower tests.test_wardrobe
+python -m unittest test_converter tests.test_follower tests.test_wardrobe tests.test_package
 python -m ruff check --exclude dependencies,build,reference .
 ```
 
