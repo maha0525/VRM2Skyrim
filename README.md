@@ -59,7 +59,7 @@ ARMOの装備枠と、ARMAの身体を覆う範囲を分けています。胴の
 
 0.5.1の内部装備による頭の非表示は、AFTが初期装備を解除すると人間の顔が再出現するため廃止しました。専用種族のFaceGenによる頭の生成を無効にし、NPCと種族には空の頭部モデルを指定します。VRMの顔・髪は素肌の枠60に置きます。頭装備の設定に応じて、顔と髪を別々に含む外見へ切り替えます。専用種族の空の頭部設定は全状態で共通です。
 
-旧版と同じESPの新ZIPへ置換・デプロイ後、Skyrimを終了して再起動します。古い3D表示が残る場合だけ、コンソールで対象NPCを選択して`disable`→同じ選択のまま`enable`で再表示します。NPCやセーブは削除しません。既存セーブの持ち物は新規NPCとは異なるため、AFTが保管した服を再生成・複製する移行は行いません。
+通常の更新では、旧版と同じESPの新ZIPへ置換・デプロイ後、Skyrimを終了して再起動します。古い3D表示が残る場合だけ、コンソールで対象NPCを選択して`disable`→同じ選択のまま`enable`で再表示します。衣服の構成変更などで持ち物や装備に不具合が出た場合は、下の[更新時のリセット手順](#follower-update-reset)を使ってください。
 
 最初の画面で「対応あり」を選ぶと、VRMのメッシュ一覧に分類候補を表示します。候補は名前と材質からの推定なので、**身体・下着・顔や髪などの常時表示・着脱する衣服を自分で確認**してください。身体と服が一体になっているメッシュを、この版では切断・復元しません。
 
@@ -89,6 +89,26 @@ ARMOの装備枠と、ARMAの身体を覆う範囲を分けています。胴の
 標準フォロワー枠を使います。別の仲間が枠を使っている場合は、先に解散させてください。すでに聖堂へ配置されるので、通常は`player.placeatme`不要です。テスト用に聖堂へ移動するコンソールは `coc WhiterunTempleofKynareth`。
 
 生成READMEには配置参照の検索コマンドと、そのロード順に応じたFormIDを使う手順も入ります。0.1/0.2のSophie試作を使っていた場合、新しいSophieFollowerとは別プラグインなので、旧試作を無効にしたテスト用セーブで確認してください。
+
+<a id="follower-update-reset"></a>
+
+## 更新時に問題が出た場合：フォロワーをリセットする
+
+更新後に持ち物を開けない、装備がおかしくなるなどの問題が出た場合は、次の手順でフォロワーを導入し直してください。衣服の統合・分割を含む更新に使う復旧手順です。フォロワーの持ち物や管理MODで設定した状態を引き継ぐ更新ではありません。
+
+1. **更新前のフォロワーMODと防具パッチを戻し、更新前のセーブをロードします。** このセーブと旧版ZIPはバックアップとして残してください。
+2. **預けたアイテムを引き取ります。** このフォロワーMODで追加された元衣装以外の、武器・防具・その他の持ち物を回収してください。AFTなどが別に保管している装備・荷物も確認します。元衣装をプレイヤーや保管箱へ移していた場合は、対象フォロワーへ戻します。
+3. **フォロワーを解雇し、管理MODを使っている場合はその管理から登録を解除します。** 下記のAFTの準備を含め、管理解除が終わってから対象フォロワーのいない別の場所へ移動し、新しいセーブ枠へ手動保存してゲームを終了します。
+4. **対象フォロワーMODと、それを参照する防具パッチを無効にして、③のセーブをロードします。** Vortexではデプロイも実行してください。複数フォロワー用の共通パッチは、対象フォロワーを除いて作り直すと、残りのフォロワーの体型合わせを維持できます。対象ESPを参照するパッチが残らないようにします。
+5. **その状態で別のセーブ枠へ手動保存し、ゲームを終了します。** 更新前のバックアップと③のセーブを上書きしないでください。
+6. **更新後のフォロワーMODと、新版に合わせた防具パッチを導入・有効化し、⑤のセーブをロードします。** Vortexでは再度デプロイしてください。
+7. **ホワイトランのキナレス聖堂で、フォロワーを再び仲間にします。** 回収した装備を渡し直し、使っている管理MODの設定もやり直してください。
+
+**AFTを使っている場合の準備:** 単なる解雇では管理登録が残るため、③で個別の「Reset NPC」を使います。AFT作者の案内では、荷物の回収と装備管理OFF → 対象と他の活動中フォロワーを解雇 → ゲーム内で24時間待機 → 別の場所へファストトラベルして屋内へ入る → 保存してゲームを終了・再起動し、そのセーブをロード → 対象と会話してSettingsの「Reset NPC」 → 保存して終了、の順です。AFT全体をリセットする操作とは別です。翻訳によって項目名が異なります。[AFT作者の手順](https://www.nexusmods.com/skyrimspecialedition/mods/80675?tab=posts)
+
+④のロード時に「無効なコンテンツを有効化しますか？」（`Activate now?`）と聞かれた場合は**「いいえ」**を選びます。これは抜いたMODを再度有効にする質問です。その後の「一部のオブジェクトが利用できなくなります。ロードを続けますか？」（`Continue loading?`）では**「はい」**を選んで続行します。
+
+この手順は不具合時にフォロワーを導入し直すためのもので、セーブや外部MODの保存データにある全参照の完全消去を保証するものではありません。復旧できなかった場合は、①のバックアップと旧版MOD・防具パッチへ戻してください。
 
 ## 変換の範囲
 
@@ -177,3 +197,5 @@ VRM2Skyrim creates fixed-appearance Skyrim SE follower MODs from humanoid VRM 0/
 On Windows, install Python 3.11/3.12 and Blender 4.5 LTS, then run `Setup.cmd` and `Launch.cmd`. Select the VRM, configure the follower through the local wizard, and install its ZIP through Vortex/MO2. Names, voice type, combat class/style, leveling, stats, skills, perks, spells and initial equipment are configurable. Optional wardrobe mode classifies body, permanent underwear, face/hair and removable original garments. Garments can be grouped or split into separate items with configurable slots and stats. The interface is currently Japanese.
 
 The converter keeps original proportions and private asset paths per MOD ID. With an independent body, select original-game body/hand/foot equipment for fitting. Install both the follower ZIP and its separate armor-patch ZIP; enable the patch after the follower ESP. Remove original VRM wardrobe layers before wearing game equipment. The result page can combine several fitted followers into one patch. Facial animation and physics fitting remain unimplemented. New wardrobe/equipment behavior still requires in-game verification; the earlier Sophie follower was user-confirmed. See [VERIFICATION.md](VERIFICATION.md), [wardrobe design](docs/intent/armor-support.md) and [equipment fitting](docs/intent/armor-fitting.md).
+
+If an update causes inventory or equipment problems, use the [follower reset procedure](#follower-update-reset): keep the old MODs and save as backups, recover entrusted gear, dismiss and unregister the follower from your follower manager, save and quit, disable the follower and dependent patches, load and save into a separate slot, then install the new MODs and recruit the follower again at the temple. With AFT, follow its author's individual Reset NPC instructions first. Rebuild shared armor patches without the removed follower during the reset, then include the updated follower when reinstalling. This procedure does not guarantee removal of every reference from saves or external MOD data.
