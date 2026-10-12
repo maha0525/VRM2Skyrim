@@ -11,7 +11,7 @@ from environment import find_game
 from game_catalog import GameCatalog
 from plugin import Record, records
 from settings import FollowerSettings
-from wardrobe import suggest_role, validate_source, item_kind, keyword_names, GARMENT_SLOTS
+from wardrobe import suggest_role, validate_source, item_kind, keyword_names, GARMENT_SLOTS, skin_components
 from parallel_rigs import follower_links, propagate_pose
 import numpy as np
 
@@ -26,6 +26,15 @@ def wardrobe_settings(**overrides):
 
 
 class WardrobeTests(unittest.TestCase):
+    def test_classified_head_stays_combined_without_equipment_fitting(self):
+        parts = copy.deepcopy(wardrobe_settings().appearance_parts)
+        parts['fixed'] = [3, 5]
+        settings = wardrobe_settings(appearance_parts=parts, appearance_heads={'face': [3], 'hair': [5]})
+        fixed = [p for p in skin_components(settings) if p['role'] == 'fixed']
+        self.assertEqual([(p['file'], p['nodes']) for p in fixed], [('fixed.nif', [3, 5])])
+        settings.fit_armors = ['ArmorIronHelmet']
+        fixed = [p for p in skin_components(settings) if p['role'] == 'fixed']
+        self.assertEqual([(p['file'], p['nodes']) for p in fixed], [('fixed_full.nif', [3, 5])])
     def test_usage_keywords_do_not_change_equipment_replacement_or_slots(self):
         garment = wardrobe_settings().appearance_parts['garments'][0]
         self.assertEqual(item_kind(garment), 'body')

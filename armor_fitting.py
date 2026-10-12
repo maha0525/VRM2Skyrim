@@ -10,10 +10,10 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from armor_geometry import BodyField, canonical_bone, canonical_weights
-from armor_catalog import equipment_choices, slot_mask
-from bsa import BSA
+from armor_catalog import HUMAN_SLOTS, head_policy, official_choices, partition_slot, slot_mask
+from game_assets import GameAssets
 from custom_skeleton import NifFile, matrix
-from game_catalog import GameCatalog
+from official_catalog import OfficialCatalog
 from settings import load_settings, reference_root
 
 LOG = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ def world_vertices(shape):
 def skin_shape(shape):
     # Compare actual skin texture paths; a shape name is not a reliable contract.
     texture = shape.textures.get("Diffuse", "").lower().replace("\\", "/")
-    return "/actors/character/" in texture and any(x in texture for x in ("body_", "hands_", "feet_"))
+    return "/actors/character/" in texture and any(x in texture for x in ("body_", "hands_", "feet_", "head_", "femalehead.", "malehead."))
 
 
 def mesh_data(path):
@@ -39,7 +39,7 @@ def mesh_data(path):
             result.append({"name": shape.name, "index": index, "points": world_vertices(shape),
                            "tris": np.asarray(shape.tris, dtype=int), "weights": shape.bone_weights,
                            "skin": skin_shape(shape), "textures": shape.textures,
-                           "partitions": np.array([shape.partitions[i].id for i in shape.partition_tris]),
+                           "partitions": np.array([shape.partitions[i].id for i in shape.partition_tris], dtype=int),
                            "parents": parents})
     return result
 
@@ -62,49 +62,32 @@ def fit(output, game_data, blender):
     """Called after original conversion; modifies only the new output folder."""
     output, game_data = Path(output).resolve(), Path(game_data).resolve()
     settings = load_settings(output)
-    if not settings.fit_armors:
+    if not settings.fitting_enabled:
         return
-    catalog = GameCatalog(game_data)
+    catalog = OfficialCatalog(game_data)
     refs = reference_root(output)
     work = output / "armor-source"
     work.mkdir(exist_ok=True)
-    archives = {}
-
-    def extract(name, kind="meshes"):
-        name = name.lower().replace("\\", "/")
-        if not name.startswith(kind + "/"):
-            name = kind + "/" + name
-        dest = work / name
-        if dest.exists():
-            return dest
-        if Path(name).is_absolute() or ".." in Path(name).parts:
-            raise ValueError("Unsafe game asset path")
-        archive_names = (["Skyrim - Meshes0.bsa", "Skyrim - Meshes1.bsa"] if kind == "meshes"
-                         else [f"Skyrim - Textures{i}.bsa" for i in range(9)])
-        for archive_name in archive_names:
-            if not (game_data / archive_name).exists():
-                continue
-            if archive_name not in archives:
-                archives[archive_name] = BSA(game_data / archive_name)
-            archive = archives[archive_name]
-            if name in archive.entries:
-                archive.extract(name, dest)
-                return dest
-        raise FileNotFoundError(f"Game asset is not in the original BSAs: {name}")
+    assets = GameAssets(game_data, catalog.plugins, work, settings.fit_source == 'installed')
+    extract = assets.extract
 
     prefix = "female" if settings.sex == "female" else "male"
-    source_parts = [p for part in ("body", "hands", "feet")
-                    for p in mesh_data(extract(f"actors/character/character assets/{prefix}{part}_1.nif")) if p["skin"]]
+    reference_files = [extract(f'actors/character/character assets/{prefix}{part}_1.nif') for part in ('body', 'hands', 'feet')]
+    source_parts = [p for file in reference_files for p in mesh_data(file) if p['skin']]
     original_body = output / "mod/meshes" / settings.asset_dir / "body.nif"
     target_parts = mesh_data(work / "body.nif" if (work / "body.nif").exists() else original_body)
     skeleton = original_body.parent / "skeleton.nif"
-    source_skeleton = refs / ("meshes/actors/character/character assets female/skeleton_female.nif"
-                              if settings.sex == "female" else "meshes/actors/character/character assets/skeleton.nif")
+    skeleton_name = ('actors/character/character assets female/skeleton_female.nif'
+                     if settings.sex == 'female' else 'actors/character/character assets/skeleton.nif')
+    source_skeleton = extract(skeleton_name) if settings.fit_source == 'installed' else refs / ('meshes/' + skeleton_name)
+    reference_signature = hashlib.sha256(b''.join(hashlib.sha256(p.read_bytes()).digest()
+                                         for p in [*reference_files, source_skeleton, skeleton])).hexdigest()
     with NifFile(str(source_skeleton)) as source, NifFile(str(skeleton)) as target:
         parents = {n: node.parent.name if node.parent else None for n, node in source.nodes.items()}
         target_parents = {n: node.parent.name if node.parent else None for n, node in target.nodes.items()}
         source_joints = {n: matrix(node.global_transform)[:3, 3] for n, node in source.nodes.items()}
         target_joints = {n: matrix(node.global_transform)[:3, 3] for n, node in target.nodes.items()}
+        target_transforms = {n: matrix(node.global_transform) for n, node in target.nodes.items()}
     src, src_tris, src_slots, src_weights = combine(source_parts, parents)
     dst, dst_tris, _, dst_weights = combine(target_parts, target_parents)
     field = BodyField(src, src_weights, dst, dst_weights, source_joints, target_joints)
@@ -114,14 +97,40 @@ def fit(output, game_data, blender):
     body_slots = src_slots[nearest_reference]
     if not {32, 33, 37}.issubset(set(body_slots)):
         raise ValueError("Target body cannot be separated into torso, hands and feet")
-    plan = {"source_skeleton": str(source_skeleton), "body": [], "equipment": [], "textures": {}}
+    plan = {"source_skeleton": str(source_skeleton), "body": [], "equipment": [], "bindings": [], "textures": {},
+            'source_profile': settings.fit_source, 'reference_signature': reference_signature,
+            'plugins': catalog.plugins, 'missing_optional_textures': []}
     arrays = {"reference": conformed, "target": dst}
     offset = 0
     for part in target_parts:
         plan["body"].append({"name": part["name"], "face_slots": body_slots[offset:offset + len(part["tris"])].tolist()})
         offset += len(part["tris"])
-    lookup = {r.form_id: r for r in catalog.choices(b"ARMA")}
-    human_race = catalog.require("NakedTorso", b"ARMA").values(b"RNAM")[0]
+    selected = official_choices(catalog, settings.sex)
+    if settings.fit_mode != 'all_official':
+        allowed = {r.form_id for r in selected}
+        selected = [catalog.require(key, b'ARMO') for key in settings.fit_armors]
+        if any(r.form_id not in allowed for r in selected):
+            raise ValueError('Selected equipment is not playable humanoid gear')
+    needs_head = any(slot_mask(a) & ((1 << 0) | (1 << 1) | (1 << 12) | (1 << 13))
+                     for r in selected for a in catalog.addon_records(r, settings.sex))
+    if needs_head:
+        head_source = mesh_data(extract(f'actors/character/character assets/{prefix}head.nif'))
+        target_head_path = original_body.parent / 'face.nif'
+        if not target_head_path.is_file():
+            raise ValueError('Headgear requires classification of the VRM face mesh')
+        head_target = mesh_data(target_head_path)
+        head_src, _, _, head_src_weights = combine(head_source, parents)
+        head_dst, _, _, head_dst_weights = combine(head_target, target_parents)
+        combined_weights = {bone: list(pairs) for bone, pairs in src_weights.items()}
+        for bone, pairs in head_src_weights.items():
+            combined_weights.setdefault(bone, []).extend((i+len(src), w) for i, w in pairs)
+        combined_target = {bone: list(pairs) for bone, pairs in dst_weights.items()}
+        for bone, pairs in head_dst_weights.items():
+            combined_target.setdefault(bone, []).extend((i+len(dst), w) for i, w in pairs)
+        full_field = BodyField(np.concatenate((src, head_src)), combined_weights,
+                               np.concatenate((dst, head_dst)), combined_target, source_joints, target_joints)
+    else:
+        full_field = field
     target_tree = cKDTree(dst)
     source_tree = cKDTree(src)
     target_vertex_weights = [{} for _ in dst]
@@ -135,19 +144,53 @@ def fit(output, game_data, blender):
     for bone, pairs in src_weights.items():
         for i, w in pairs:
             source_vertex_weights[i][bone] = w
-    for item_index, editor_id in enumerate(settings.fit_armors):
-        armor = catalog.require(editor_id, b"ARMO")
-        if armor not in equipment_choices(catalog):
-            raise ValueError(f"Only body, hand and foot equipment is supported: {editor_id}")
-        candidates = [lookup[struct.unpack("<I", value)[0]] for value in armor.values(b"MODL")]
-        tag = b"MOD3" if settings.sex == "female" else b"MOD2"
-        selected = [a for a in candidates if a.values(tag) and slot_mask(a) & slot_mask(armor)
-                    and a.values(b"RNAM") == [human_race]]
-        if len(selected) != 1:
-            raise ValueError(f"Equipment needs one humanoid addon: {editor_id}")
-        addon = selected[0]
+    bindings = [(armor, addon) for armor in selected for addon in catalog.addon_records(armor, settings.sex)]
+    unique = {}
+    for armor, addon in bindings:
+        key = catalog.key(addon)
+        origin, local = catalog.identity(armor)
+        policy = head_policy(settings, addon, key)
+        binding = {'editor_id': armor.editor_id, 'original_form_id': armor.form_id,
+                   'origin_plugin': origin, 'origin_local_id': local, 'armor_mask': slot_mask(armor),
+                   'source_addon_key': key, **policy}
+        if key not in unique:
+            unique[key] = len(unique)
+        binding['mesh_index'] = unique[key]
+        plan['bindings'].append(binding)
+    LOG.info('Batch fitting %s items / %s humanoid addons', len(selected), len(unique))
+    for key, item_index in unique.items():
+        addon = catalog.require(key, b'ARMA')
+        binding = next(i for i in plan['bindings'] if i['mesh_index'] == item_index)
+        editor_id = binding['editor_id']
+        tag = catalog.model_tag(addon, settings.sex)
         source_path = extract(addon.values(tag)[0].rstrip(b"\0").decode("utf8"))
         data = mesh_data(source_path)
+        alternates = addon.values(b'MO3S' if tag == b'MOD3' else b'MO2S')
+        texture_overrides = {}
+        if alternates:
+            blob = alternates[0]
+            offset = 4
+            for _ in range(struct.unpack_from('<I', blob)[0]):
+                length = struct.unpack_from('<I', blob, offset)[0]
+                offset += 4
+                name = blob[offset:offset+length].rstrip(b'\0').decode('utf8')
+                offset += length
+                form_id, index = struct.unpack_from('<II', blob, offset)
+                offset += 8
+                texture_set = catalog.by_id[form_id]
+                part = next((p for p in data if p['name'].casefold() == name.casefold()), None)
+                if part is None:
+                    part = next((p for p in data if p['index'] == index), None)
+                    if part is None:
+                        raise ValueError(f'Alternate-texture shape missing: {name} ({index})')
+                    LOG.info('Alternate texture uses its 3D index: %s -> %s', name, part['name'])
+                for tag_name, texture_name in ((b'TX00', 'Diffuse'), (b'TX01', 'Normal'), (b'TX02', 'SoftLighting'),
+                                               (b'TX03', 'HeightMap'), (b'TX04', 'EnvMap'), (b'TX05', 'EnvMask'),
+                                               (b'TX06', 'FacegenDetail'), (b'TX07', 'Specular')):
+                    if texture_set.values(tag_name):
+                        texture = texture_set.values(tag_name)[0].rstrip(b'\0').decode('utf8')
+                        part['textures'][texture_name] = texture
+                        texture_overrides.setdefault(part['name'], {})[texture_name] = texture
         exposed = [part for part in data if part["skin"]]
         source_centers = src[src_tris].mean(axis=1)
         if exposed:
@@ -157,14 +200,21 @@ def fit(output, game_data, blender):
         else:
             visible = np.zeros(len(dst_tris), dtype=bool)
         mask = slot_mask(addon)
-        slots = [s for s in sorted(BODY_SLOTS) if mask & 1 << (s - 30)]
-        if not slots or mask & ~sum(1 << (s - 30) for s in BODY_SLOTS):
+        slots = [s for s in sorted(HUMAN_SLOTS) if mask & 1 << (s - 30)]
+        if not slots:
             raise ValueError(f"Unsupported addon partitions: {editor_id}")
-        equipment = {"editor_id": editor_id, "original_form_id": armor.form_id, "addon_local_id": 0x880 + item_index,
-                     "file": f"fitted_{editor_id.lower()}_1.nif", "slots": slots,
+        for part in data:
+            if not part['skin']:
+                part['partitions'] = np.array([partition_slot(n, slots[0]) for n in part['partitions']], dtype=int)
+        slots = sorted(set(slots) | {int(n) for p in data if not p['skin'] for n in p['partitions']})
+        token = hashlib.sha256((key+settings.sex+settings.fit_source+reference_signature+
+                                hashlib.sha256(source_path.read_bytes()).hexdigest()).encode()).hexdigest()[:16]
+        equipment = {**binding, 'mesh_index': item_index, 'source_key': token,
+                     "addon_local_id": 0x1000 + item_index,
+                     "file": f"fitted_{token}_1.nif", "slots": slots,
                      "source": str(source_path), "source_addon": addon.editor_id,
                      "priority": addon.values(b"DNAM")[0][1 if settings.sex == "female" else 0],
-                     "shapes": [], "exposed_body": []}
+                     "shapes": [], "exposed_body": [], 'texture_overrides': texture_overrides}
         LOG.info("Fitting %s: %s source shapes, %s embedded skin shapes", editor_id, len(data), len(exposed))
         for part in data:
             if part["skin"]:
@@ -184,21 +234,46 @@ def fit(output, game_data, blender):
                             weights.setdefault(target_bone, []).append((i, weight * value))
                 else:
                     weights.setdefault(target_bone, []).extend(pairs)
-            points = field.deform(part["points"], weights)
-            _, near = target_tree.query(points)
-            transferred = {}
-            for index, vertex in enumerate(near):
-                for name, value in sorted(target_vertex_weights[vertex].items(), key=lambda x: -x[1])[:4]:
-                    transferred.setdefault(name, []).append((index, value))
+            fitting_field = full_field if set(slots) & {30, 31, 41, 42, 43} else field
+            if not part['weights']:
+                bone = 'SHIELD' if 39 in slots else ('NPC R Finger11 [RF11]' if 36 in slots else 'NPC Spine2 [Spn2]')
+                if bone not in source_joints or bone not in target_joints:
+                    raise ValueError(f'Rigid attachment bone missing: {bone}')
+                transform = target_transforms[bone]
+                points = part['points'] @ transform[:3, :3].T + transform[:3, 3]
+                transferred = {bone: [(i, 1.) for i in range(len(points))]}
+            else:
+                points = fitting_field.deform(part["points"], weights)
+                if binding['armor_mask'] & (1 << 6) and not binding['armor_mask'] & sum(1 << (s-30) for s in BODY_SLOTS):
+                    # Keep finger weights; a ring must follow its finger, not the palm surface.
+                    transferred = {b: pairs for b, pairs in part['weights'].items() if b in target_joints}
+                elif set(slots) & {30, 31, 41, 42, 43} and not set(slots) & BODY_SLOTS:
+                    transferred = {'NPC Head [Head]': [(i, 1.) for i in range(len(points))]}
+                else:
+                    _, near = target_tree.query(points)
+                    transferred = {}
+                    for index, vertex in enumerate(near):
+                        for name, value in sorted(target_vertex_weights[vertex].items(), key=lambda x: -x[1])[:4]:
+                            transferred.setdefault(name, []).append((index, value))
             key = f"equipment_{item_index}_{part['index']}"
             arrays[key] = points
             equipment["shapes"].append({"name": part["name"], "index": part["index"], "points": key,
-                                         "weights": transferred, "face_slots": part["partitions"].tolist(),
+                                         "weights": transferred, "face_slots": part["partitions"].tolist() if len(part['partitions']) else [slots[0]]*len(part['tris']),
                                          "remapped_auxiliary_bones": sorted(unknown)})
-            for texture in part["textures"].values():
+            for texture_slot, texture in part["textures"].items():
                 if not texture or texture in plan["textures"]:
                     continue
-                texture_path = extract(texture, "textures")
+                try:
+                    texture_path = extract(texture, 'textures')
+                except FileNotFoundError:
+                    if texture_slot in ('Diffuse', 'Normal'):
+                        raise
+                    # Some shipping NIFs reference optional maps absent from the
+                    # official archives. Preserve that lack of a map explicitly.
+                    plan['textures'][texture] = ''
+                    plan['missing_optional_textures'].append({'source': str(source_path), 'slot': texture_slot, 'texture': texture})
+                    LOG.warning('Official optional texture is absent; leaving slot empty: %s (%s)', texture, texture_slot)
+                    continue
                 name = hashlib.sha256(texture.lower().encode()).hexdigest()[:12] + "_" + texture_path.name
                 relative = f"textures/{settings.asset_dir}/equipment/{name}"
                 dest = output / "mod" / relative

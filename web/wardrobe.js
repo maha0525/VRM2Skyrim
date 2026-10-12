@@ -4,7 +4,7 @@ const wardrobeKinds={body:'上半身・全身服',legs:'下半身（スカート
 function wardrobeSlotLabel(slot){return slot===46?'46 · マントとして表示される枠':slot===47?'47 · バッグとして表示される枠':`${slot} · 重ね着枠`;}
 function wardrobeItemKind(g){if(g.item_kind)return g.item_kind;const n=g.name.toLowerCase();for(const [kind,pattern]of [['feet',/boot|shoe|loafer|sandal|靴|ブーツ|サンダル/],['hands',/glove|gauntlet|手袋|籠手/],['backpack',/backpack|リュック|バックパック/],['cloak',/cloak|cape|マント|ケープ/],['legs',/tights|stocking|skirt|pants|trouser|タイツ|スカート|ズボン/],['accessory',/accessor|ring|necklace|bracelet|earring|眼鏡|指輪|首飾り|アクセ/]])if(pattern.test(n))return kind;return 'body';}
 const wardrobeState={nodes:new Map(),garments:new Map(),hash:'',sequence:0,preview:null,revision:0};
-const wardrobeRoles={body:'身体',underwear:'下着（無装備でも表示）',fixed:'顔・髪など常時表示',garment:'着脱する衣服'};
+const wardrobeRoles={body:'身体',underwear:'下着（無装備でも表示）',face:'顔（頭装備で切替）',hair:'髪（頭装備で切替）',fixed:'常時表示のアクセサリー',garment:'着脱する衣服'};
 function wardrobeEquipmentGroup(g){if(g.equipment_group)return g.equipment_group;const n=g.name.toLowerCase();if(/boot|shoe|loafer|sandal|靴|ブーツ|サンダル/.test(n))return 'feet';if(/glove|gauntlet|手袋|籠手/.test(n))return 'hands';if(/accessor|ring|necklace|bracelet|earring|backpack|cloak|cape|眼鏡|指輪|首飾り|アクセ|リュック|マント|ケープ/.test(n))return 'accessory';return 'body';}
 function garmentDefaults(id,name,slot=53){return {id,name,nodes:[],slot,armor_type:'clothing',armor_rating:0,weight:0,value:0,equipped:true,equipment_group:wardrobeEquipmentGroup({name}),item_kind:wardrobeItemKind({name})};}
 function wardrobeLoad(source,settings=null){
@@ -16,18 +16,20 @@ function wardrobeLoad(source,settings=null){
   if(imported){
     for(const g of settings.appearance_parts.garments)wardrobeState.garments.set(g.id,{...g,nodes:[...g.nodes]});
     for(const role of ['body','underwear','fixed'])for(const node of settings.appearance_parts[role]||[])wardrobeState.nodes.set(node,{role,group:''});
+    for(const role of ['face','hair'])for(const node of settings.appearance_heads?.[role]||[])wardrobeState.nodes.set(node,{role,group:''});
     for(const g of settings.appearance_parts.garments)for(const node of g.nodes)wardrobeState.nodes.set(node,{role:'garment',group:g.id});
   }else{
     wardrobeState.garments.set('outfit',garmentDefaults('outfit','元の衣装'));
-    for(const p of source.parts)wardrobeState.nodes.set(p.node,{role:p.suggested_role,group:p.suggested_role==='garment'?'outfit':''});
+    for(const p of source.parts){const role=p.suggested_role==='fixed'?/hair/i.test(p.name)?'hair':/face|head|eye|mouth/i.test(p.name)||p.materials.some(m=>/face|eyelash|eyebrow/i.test(m))?'face':'fixed':p.suggested_role;wardrobeState.nodes.set(p.node,{role,group:role==='garment'?'outfit':''});}
   }
   $('wardrobe-preview-images').replaceChildren();$('wardrobe-preview-status').textContent='';renderWardrobe();
 }
 function wardrobeCollect(){
   const parts={body:[],underwear:[],fixed:[],garments:[]};
-  for(const [node,p]of wardrobeState.nodes)if(p.role!=='garment')parts[p.role].push(node);
+  const heads={face:[],hair:[]};
+  for(const [node,p]of wardrobeState.nodes)if(p.role!=='garment'){if(p.role==='face'||p.role==='hair'){parts.fixed.push(node);heads[p.role].push(node);}else parts[p.role].push(node);}
   for(const [id,g]of wardrobeState.garments){const nodes=[...wardrobeState.nodes].filter(([,p])=>p.role==='garment'&&p.group===id).map(([node])=>node);if(nodes.length)parts.garments.push({...g,nodes});}
-  return {appearance_parts:parts,appearance_source_sha256:wardrobeState.hash};
+  return {appearance_parts:parts,appearance_source_sha256:wardrobeState.hash,appearance_heads:heads.face.length||heads.hair.length?heads:{}};
 }
 function wardrobeClearPreview(){
   wardrobeState.revision++;

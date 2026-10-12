@@ -4,6 +4,8 @@ import json
 import logging
 from pathlib import Path
 import sys
+import re
+from collections import defaultdict
 
 import bpy
 import numpy as np
@@ -24,6 +26,9 @@ def select(objects, active):
 
 def submesh(source, faces, name, slot, rig):
     """Copy faces without moving vertices; preserve UVs, loop normals and skin."""
+    # The exporter strips Blender's .001 suffix, including a following slot.
+    # Give each partition an explicit stable name so finishing edits round-trip.
+    name = re.sub(r'\.(\d{3})', r'_copy\1', name)
     mesh = source.data
     faces = [mesh.polygons[i] for i in faces]
     indices = sorted({i for face in faces for i in face.vertices})
@@ -70,6 +75,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument('--mesh-key')
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
     output = args.output.resolve()
     settings = load_settings(output)
@@ -84,10 +90,22 @@ def main():
     rig = next(obj for obj in bpy.context.scene.objects if obj.type == "ARMATURE")
     body = {obj.name: obj for obj in bpy.context.scene.objects if obj.type == "MESH"
             and any(m.type == "ARMATURE" for m in obj.modifiers)}
+    existing = set(bpy.context.scene.objects)
+    bpy.context.view_layer.objects.active = None
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.import_scene.pynifly(filepath=str(skel), rename_bones=False, create_bones=False,
+                               import_animations=False, import_shapekeys=False, import_collisions=False)
+    full_rig = next(o for o in bpy.context.scene.objects if o not in existing and o.type == 'ARMATURE')
+    for bone in rig.data.bones:
+        if bone.name not in full_rig.data.bones or not np.allclose(np.asarray(rig.matrix_world@bone.matrix_local),
+                    np.asarray(full_rig.matrix_world@full_rig.data.bones[bone.name].matrix_local), atol=.001):
+            raise ValueError('Full attachment skeleton differs from the original body bind pose: '+bone.name)
+    bpy.data.objects.remove(rig, do_unlink=True)
+    rig = full_rig
     from custom_skeleton import NifFile
     texture_map = {key.lower().replace("\\", "/"): value for key, value in plan["textures"].items()}
 
-    def export(path, objects):
+    def export(path, objects, overrides=None):
         if not objects:
             raise ValueError(f"No output geometry: {path}")
         select(objects + [rig], rig)
@@ -96,10 +114,19 @@ def main():
                                    export_animations=False, export_colors=True, intuit_defaults=False)
         with NifFile(str(path)) as nif:
             for shape in nif.shapes:
+                for name, values in (overrides or {}).items():
+                    if shape.name.startswith('Fitted_' + name + '_'):
+                        for slot, texture in values.items():
+                            shape.set_texture(slot, texture)
                 for slot, texture in shape.textures.items():
                     key = texture.lower().replace("\\", "/")
                     if key in texture_map:
                         shape.set_texture(slot, texture_map[key].replace("/", "\\"))
+                if shape.shader.blockname == 'BSEffectShaderProperty':
+                    # This pinned DLL supports replacing an effect shader via
+                    # addBlock; setBlock(type 33) is intentionally unimplemented.
+                    shape.save_shader_attributes()
+                    shape.write_properties()
             nif.save()
         logging.info("Fitted NIF: %s (%s shapes)", path.name, len(objects))
 
@@ -107,6 +134,8 @@ def main():
     manifest["components"] = [part for part in manifest["components"] if part["role"] != "body"]
     region_sets = (("body", (32, 34, 38)), ("hands", (33,)), ("feet", (37,)))
     for region, slots in region_sets:
+        if args.mesh_key:
+            continue
         objects = []
         for part in plan["body"]:
             source = body[part["name"]]
@@ -120,7 +149,11 @@ def main():
                                            "nodes": settings.appearance_parts["body"], "slot": slots[0],
                                            "slots": list(slots), "partial_source": True,
                                            "nif": path.relative_to(output / "mod").as_posix()})
+        for obj in objects:
+            bpy.data.objects.remove(obj, do_unlink=True)
     for equipment in plan["equipment"]:
+        if args.mesh_key and equipment['source_key'] != args.mesh_key:
+            continue
         existing = set(bpy.context.scene.objects)
         bpy.context.view_layer.objects.active = None
         bpy.ops.object.select_all(action="DESELECT")
@@ -129,6 +162,8 @@ def main():
                                    import_shapekeys=False, import_collisions=False)
         imported = [obj for obj in bpy.context.scene.objects if obj not in existing]
         meshes = {obj.name: obj for obj in imported if obj.type == "MESH"}
+        with NifFile(equipment['source']) as native:
+            native_triangles = [shape.tris for shape in native.shapes]
         objects = []
         for part in equipment["shapes"]:
             source = meshes[part["name"]]
@@ -139,15 +174,31 @@ def main():
             source.parent = None
             source.data.vertices.foreach_set("co", points.ravel())
             source.data.normals_split_custom_set([(0., 0., 0.)] * len(source.data.loops))
+            for material in source.data.materials:
+                flags = material.pyn_shader.Shader_Flags_1
+                if 'SKINNED' not in flags:
+                    material.pyn_shader.Shader_Flags_1 = flags+' | SKINNED' if flags else 'SKINNED'
             source.vertex_groups.clear()
             for name, pairs in part["weights"].items():
                 group = source.vertex_groups.new(name=name)
                 for index, value in pairs:
                     group.add([index], value, "REPLACE")
-            for slot in sorted(set(part["face_slots"])):
+            face_lookup = defaultdict(list)
+            for triangle, slot in zip(native_triangles[part['index']], part['face_slots']):
+                face_lookup[tuple(sorted(triangle))].append(slot)
+            face_slots = []
+            for polygon in source.data.polygons:
+                key = tuple(sorted(polygon.vertices))
+                if not face_lookup[key]:
+                    raise ValueError(f'Equipment importer changed triangle topology: {part["name"]}')
+                face_slots.append(face_lookup[key].pop(0))
+            dropped = sum(len(values) for values in face_lookup.values())
+            if dropped:
+                logging.info('Blender omitted %s degenerate/duplicate source faces: %s', dropped, part['name'])
+            for slot in sorted(set(face_slots)):
                 if slot not in equipment["slots"]:
                     raise ValueError("Armor shape partition is outside its addon")
-                faces = [i for i, value in enumerate(part["face_slots"]) if value == slot]
+                faces = [i for i, value in enumerate(face_slots) if value == slot]
                 objects.append(submesh(source, faces, f"Fitted_{part['name']}_{slot}", slot, rig))
         for part in equipment["exposed_body"]:
             source = body[part["name"]]
@@ -156,16 +207,26 @@ def main():
                 if faces:
                     objects.append(submesh(source, faces, f"OriginalSkin_{source.name}_{slot}", slot, rig))
         path = skel.parent / equipment["file"]
-        export(path, objects)
+        from outfit_edits import apply_to_blender
+        apply_to_blender(objects, settings.appearance_source_sha256, equipment['source_key'])
+        export(path, objects, equipment.get('texture_overrides'))
         # Both engine weight variants are identical: retain one original VRM body.
         low = path.with_name(path.name.replace("_1.nif", "_0.nif"))
         low.write_bytes(path.read_bytes())
         for obj in imported:
             bpy.data.objects.remove(obj, do_unlink=True)
-    (output / "appearance.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf8")
-    fitted = {"plugin": settings.plugin_name, "race_local_id": 0x804,
-              "equipment": [{key: item[key] for key in ("editor_id", "original_form_id", "addon_local_id", "file", "slots", "priority")}
-                            for item in plan["equipment"]]}
+        for obj in objects:
+            bpy.data.objects.remove(obj, do_unlink=True)
+        bpy.data.orphans_purge(do_recursive=True)
+    if not args.mesh_key:
+        (output / "appearance.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf8")
+    geometries = {item['mesh_index']: item for item in plan['equipment']}
+    fitted = {"plugin": settings.plugin_name, "race_local_id": 0x804, 'schema': 2,
+              'source_profile': plan['source_profile'], 'reference_signature': plan.get('reference_signature'), 'plugins': plan['plugins'],
+              'avatar_sha256': settings.appearance_source_sha256,
+              'equipment': [{**binding, **{key: geometries[binding['mesh_index']][key] for key in
+                                         ('addon_local_id', 'file', 'slots', 'priority', 'source_key')}}
+                            for binding in plan['bindings']]}
     path = output / "mod" / settings.asset_dir / "armor-fitting.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(fitted, indent=2), encoding="utf8")

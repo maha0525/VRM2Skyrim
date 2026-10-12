@@ -14,7 +14,8 @@ from scipy.spatial import cKDTree
 from plugin import records
 from settings import load_settings
 from build_npc import NPC_ID, RACE_ID
-from wardrobe import components, keyword_names
+from wardrobe import components, keyword_names, skin_components
+from gear_head_runtime import head_variants, validate_head_models
 from head_visibility import validate_head_visibility
 from equipment_runtime import runtime_records, vmad, script_name, pex_strings, PROPERTIES
 from nif_materials import DOUBLE_SIDED
@@ -136,9 +137,11 @@ def validate(output, skeleton=None):
         9
         if not settings.armor_support
         else 9 + len(PROPERTIES)
-        + len([p for p in components(settings) if p["role"] != "garment"])
+        + len(skin_components(settings))
         + 2 * len(settings.appearance_parts["garments"])
-        + len(settings.fit_armors)
+        + (len({i['addon_local_id'] for i in json.loads((output/'armor-fitting.json').read_text())['equipment']})
+           if settings.fitting_enabled else 0)
+        + ((5 + sum(bool(p['nodes']) for p in head_variants(settings))) if settings.head_switch_enabled else 0)
     )
     if len(local_ids) != expected_records:
         raise ValueError(f"Expected {expected_records} private follower records")
@@ -183,8 +186,8 @@ def validate(output, skeleton=None):
         by_id = {r.form_id: r for r in generated}
         keyword_manifest = json.loads((output/'npc.json').read_text(encoding='utf8'))['garment_keywords']
         skin = by_name[settings.prefix + "Appearance"]
-        skin_components = [p for p in components(settings) if p["role"] != "garment"]
-        if len(skin.values(b"MODL")) != len(skin_components):
+        expected_skin = skin_components(settings)
+        if len(skin.values(b"MODL")) != len(expected_skin):
             raise ValueError(
                 "Skin does not contain all permanent appearance components"
             )
@@ -234,7 +237,7 @@ def validate(output, skeleton=None):
         _, _, _, strings = pex_strings((mod/'scripts'/(script_name(settings)+'.pex')).read_bytes())
         if script_name(settings).encode() not in strings:
             raise ValueError('Wardrobe PEX does not declare the private script name')
-        fitting_profile = json.loads((output/'armor-fitting.json').read_text()) if settings.fit_armors else None
+        fitting_profile = json.loads((output/'armor-fitting.json').read_text()) if settings.fitting_enabled else None
         for expected in runtime_records(settings, profile=fitting_profile):
             if by_id[expected.form_id].fields != expected.fields:
                 raise ValueError('Wardrobe replacement group differs from its configured garments/equipment')
@@ -302,6 +305,7 @@ def validate(output, skeleton=None):
         "components": component_reports,
         "game_verified": False,
         "head_visibility": head_visibility,
+        'head_models': validate_head_models(output, settings),
     }
     (output / "validation.json").write_text(
         json.dumps(report, indent=2), encoding="utf-8"

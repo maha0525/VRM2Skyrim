@@ -40,17 +40,27 @@ def main():
     if wardrobe.startswith("armor:"):
         fitting = json.loads((output / "armor-fitting.json").read_text())
         chosen = wardrobe[6:]
-        selected = [p for p in fitting["equipment"] if chosen == "all" or p["editor_id"] == chosen]
+        unknown = set(chosen.split(',')) - {p['editor_id'] for p in fitting['equipment']}
+        if chosen != 'all' and unknown:
+            raise ValueError(f"Unknown fitted armor: {', '.join(sorted(unknown))}")
+        selected = [p for p in fitting["equipment"] if chosen == "all" or p["editor_id"] in chosen.split(',')]
         if not selected:
             raise ValueError("Unknown fitted armor")
         if chosen == "all":
             # Conversion can include many alternatives at the same equip slot.
             # Show one compatible representative per primary slot, as the game
             # cannot wear two cuirasses (or two pairs of boots) simultaneously.
-            compatible = {}
+            compatible, occupied = [], set()
             for item in selected:
-                compatible.setdefault(item["slots"][0], item)
-            selected = list(compatible.values())
+                slots = set(item['slots'])
+                if not occupied.intersection(slots):
+                    compatible.append(item)
+                    occupied.update(slots)
+            selected = compatible
+        if any(p.get('hide_face') for p in selected):
+            parts = [p for p in parts if p['id'] != 'face']
+        if any(p.get('hide_hair') for p in selected):
+            parts = [p for p in parts if p['id'] != 'hair']
         parts += [{**p, "role": "equipment", "slot": p["slots"][0]} for p in selected]
     elif wardrobe not in ("initial", "all", "underwear") and not any(wardrobe == "without:" + p["id"] for p in parts if p["role"] == "garment"):
         raise ValueError("Unknown wardrobe state")
@@ -59,7 +69,7 @@ def main():
         for slot in part.get("slots", [part["slot"]]):
             slot_priority[slot] = max(slot_priority.get(slot, 0), part.get("priority", 0))
     nifs, rig = [], None
-    if settings.fit_armors:
+    if settings.fitting_enabled:
         # Use the complete original skin's import as the common preview rig.
         # Importers orient unweighted helper bones differently after partitioning.
         bpy.ops.import_scene.pynifly(filepath=str(output / "armor-source/body.nif"), rename_bones=False,
@@ -69,6 +79,17 @@ def main():
         for obj in list(bpy.context.scene.objects):
             if obj.type == "MESH":
                 bpy.data.objects.remove(obj, do_unlink=True)
+        existing = set(bpy.context.scene.objects)
+        bpy.context.view_layer.objects.active = None
+        bpy.ops.import_scene.pynifly(filepath=str(skel), rename_bones=False, create_bones=False,
+                                   import_animations=False, import_shapekeys=False, import_collisions=False)
+        full = next(o for o in bpy.context.scene.objects if o not in existing and o.type == 'ARMATURE')
+        for bone in rig.data.bones:
+            if not np.allclose(np.asarray(rig.matrix_world@bone.matrix_local),
+                               np.asarray(full.matrix_world@full.data.bones[bone.name].matrix_local), atol=.001):
+                raise ValueError('Attachment skeleton changes the original body bind pose')
+        bpy.data.objects.remove(rig, do_unlink=True)
+        rig = full
     for part in parts:
         if settings.armor_support and part["role"] == "garment":
             if wardrobe.startswith("armor:") or wardrobe == "underwear" or wardrobe == "without:" + part["id"] or (wardrobe == "initial" and not part["equipped"]):
@@ -98,7 +119,7 @@ def main():
             weighted = {group.name for obj in imported if obj.type == "MESH" for group in obj.vertex_groups
                         if not group.name.startswith("SBP_")}
             for bone in new_rig.data.bones:
-                if settings.fit_armors and bone.name not in weighted:
+                if settings.fitting_enabled and bone.name not in weighted:
                     continue
                 if bone.name not in rig.data.bones or not np.allclose(np.array(bone.matrix_local), np.array(rig.data.bones[bone.name].matrix_local), atol=.001):
                     raise ValueError(f"Separated appearance uses inconsistent bone rest pose: {bone.name}")
@@ -113,6 +134,9 @@ def main():
             bpy.data.objects.remove(new_rig, do_unlink=True)
     meshes = [obj for obj in bpy.context.scene.objects if obj.type == "MESH" and not obj.hide_render
               and any(mod.type == "ARMATURE" and mod.object == rig for mod in obj.modifiers)]
+    for obj in bpy.context.scene.objects:
+        if obj.type == 'MESH' and obj not in meshes:
+            obj.hide_render = True  # Skeleton bounds/custom-shape helpers are editor metadata.
     from blender_meshes import preview_face_culling
     for material in {m for obj in meshes for m in obj.data.materials if m}:
         preview_face_culling(material, 'DOUBLE_SIDED' in material.pyn_shader.Shader_Flags_2)

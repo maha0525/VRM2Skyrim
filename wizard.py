@@ -23,7 +23,7 @@ from wardrobe import validate_source
 
 class WizardApplication:
     def __init__(self, workspace=None):
-        self.workspace = Path(workspace or ROOT / "build/wizard")
+        self.workspace = Path(workspace or ROOT / "build/wizard").resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.sources = {}
         self.source_reports = {}
@@ -32,6 +32,21 @@ class WizardApplication:
         self.fitting_profiles = {}
         self.lock = threading.Lock()
         self.executor = ThreadPoolExecutor(max_workers=1)
+        for path in self.workspace.glob('*/wizard-job.json'):
+            try:
+                job = json.loads(path.read_text(encoding='utf8'))
+                uuid.UUID(hex=job['id'])
+                if (job['status'] == 'complete' and Path(job['output']).resolve() == path.parent and
+                        Path(job['archive']).name == job['archive'] and (path.parent/job['archive']).is_file()):
+                    self.jobs[job['id']] = job
+            except (ValueError, OSError, KeyError, TypeError):
+                logging.warning('Could not restore completed wizard result: %s', path)
+
+    def remember_job(self, job):
+        output = Path(job['output']).resolve()
+        if output.parent != self.workspace:
+            raise ValueError('Completed output is outside the wizard workspace')
+        (output/'wizard-job.json').write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding='utf8')
 
     def catalog(self, game):
         path = Path(game).resolve() / "Data"
@@ -143,6 +158,36 @@ class WizardApplication:
         self.executor.submit(self._run_preview, job, source, blender, output, settings, wardrobe)
         return {"job_id": job_id}
 
+    def start_edit(self, job_id, mesh_key, blob, blender):
+        original = self.snapshot(job_id)
+        if original['status'] != 'complete' or mesh_key not in {i['key'] for i in original.get('edit_meshes', [])}:
+            raise ValueError('変換済みの装備を選んでください')
+        with self.lock:
+            if any(job['status'] in ('queued', 'running') for job in self.jobs.values()):
+                raise ValueError('変換・編集の完了を待ってください')
+            handle = uuid.uuid4().hex
+            path = self.workspace/'edits'/(handle+'.nif')
+            path.parent.mkdir(exist_ok=True)
+            path.write_bytes(blob)
+            job = {**original, 'id': handle, 'kind': 'equipment_edit', 'status': 'queued', 'stage': '仕上げた装備を取り込み中', 'events': []}
+            self.jobs[handle] = job
+        self.executor.submit(self._run_edit, job, mesh_key, path, Path(blender))
+        return {'job_id': handle}
+
+    def _run_edit(self, job, mesh_key, path, blender):
+        job['status'] = 'running'
+        try:
+            from outfit_edits import apply_edit
+            output = Path(job['output'])
+            archive = apply_edit(output, mesh_key, path, blender)
+            with self.lock:
+                job.update(status='complete', archive=archive.name, stage='仕上げた装備をMODへ反映しました')
+            self.remember_job(job)
+        except Exception as error:
+            logging.exception('Equipment finishing import failed')
+            with self.lock:
+                job.update(status='failed', error=str(error))
+
     def _run_preview(self, job, source, blender, output, settings, wardrobe):
         job["status"] = "running"
         try:
@@ -170,9 +215,14 @@ class WizardApplication:
                 job.update(status="complete", archive=archive.name,
                            previews=sorted(path.relative_to(output).as_posix() for path in (output / "previews").glob("*.png")),
                            game_verified=False)
-                if settings.fit_armors:
+                if settings.fitting_enabled:
                     job["armor_patch"] = "armor-patch/VRM2SkyrimArmorPatch.zip"
-                    job["fit_armors"] = settings.fit_armors
+                    fitting = json.loads((output/'armor-fitting.json').read_text())
+                    job['fit_armors'] = list(dict.fromkeys(i['editor_id'] for i in fitting['equipment']))
+                    job['edit_kit'] = 'OutfitStudio-EditKit.zip'
+                    job['edit_meshes'] = list({i['source_key']: {'key': i['source_key'], 'name': i['editor_id']}
+                                              for i in fitting['equipment']}.values())
+            self.remember_job(job)
         except Exception as error:
             logging.exception("Wizard conversion failed")
             with self.lock:
@@ -229,6 +279,10 @@ def handler_for(app):
                 if url.path == "/api/environment":
                     return self.reply({"game": str(find_game() or ""), "blender": str(find_blender() or ""),
                                        "defaults": asdict(FollowerSettings()), "version": VERSION})
+                if url.path == '/api/jobs':
+                    with app.lock:
+                        return self.reply({'jobs': [dict(job) for job in app.jobs.values()
+                                                   if job['status'] == 'complete' and job.get('plugin_name')]})
                 if url.path == "/api/fitted-followers":
                     game = parse_qs(url.query).get("game", [""])[0]
                     return self.reply({"profiles": app.fitted_profiles(game)})
@@ -256,18 +310,21 @@ def handler_for(app):
             try:
                 self.trusted()
                 size = int(self.headers.get("Content-Length", "0"))
-                limit = 512 * 1024 * 1024 if self.path == "/api/source" else 1024 * 1024
+                limit = 512 * 1024 * 1024 if self.path in ('/api/source', '/api/equipment-edit') else 1024 * 1024
                 if not 0 < size <= limit:
                     raise ValueError("File/request exceeds size limit")
                 blob = self.rfile.read(size)
                 if len(blob) != size:
                     raise ValueError("Incomplete upload")
+                if self.path == '/api/equipment-edit':
+                    return self.reply(app.start_edit(self.headers.get('X-Job-Id'), self.headers.get('X-Mesh-Key'), blob,
+                                                     unquote(self.headers.get('X-Blender', ''))), 202)
                 if self.path == "/api/source":
                     return self.reply(app.upload(unquote(self.headers.get("X-Filename", "avatar.vrm")), blob))
                 request = json.loads(blob)
                 if self.path == "/api/catalog":
                     catalog = app.catalog(request["game"])
-                    return self.reply({"choices": catalog.json_choices(), "checks": doctor(request["game"], request["blender"])})
+                    return self.reply({"choices": catalog.json_choices(request.get('sex', 'female')), "checks": doctor(request["game"], request["blender"])})
                 if self.path == "/api/validate":
                     settings = FollowerSettings.from_dict(request["settings"])
                     if settings.armor_support:

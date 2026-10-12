@@ -15,6 +15,7 @@
   </aside>
   <main>
     <div id="error" role="alert" hidden></div>
+    <section id="saved-results" hidden><h3>前に作ったフォロワー</h3><label>変換結果<select id="saved-job"></select></label><button id="open-saved" type="button" class="secondary">結果と装備編集を開く</button></section>
     <form id="wizard" novalidate>
       <section data-step="0">
         <p class="eyebrow">STEP 01</p><h2>連れていくアバターを選ぶ</h2><p class="lead">人型のVRM 0 / 1に対応。元の衣装でフォロワーを作ります。</p>
@@ -25,7 +26,20 @@
           <h3>身体と衣服を分類する</h3><p class="hint">名前から分類候補を出しています。身体、下着、顔・髪などの常時表示、着脱する衣服を確認してください。身体と服が一体のメッシュは、この画面では切断しません。</p>
           <p class="hint">元VRMの服を着脱する装備にできます。身体が独立しているモデルでは、本体ゲームの鎧・手袋・靴を体型へ合わせることもできます。</p>
           <label class="checkbox"><input id="fit-enabled" type="checkbox">既存装備をこの身体に合わせる</label>
-          <div id="fit-panel" hidden><label>変換する装備（複数選択、64品まで）<select id="fit-armors" multiple size="8"></select></label><p class="hint">候補はゲーム本体から読み込みます。最初は鉄の鎧とブーツを選びます。ヘルメット・盾・DLC・他MODの装備はこの入力形式では対象外です。元衣装を外してから着替えてください。互換パッチはフォロワーMODとは別のZIPになります。</p></div>
+          <div id="fit-panel" hidden>
+            <label>変換範囲<select id="fit_mode"><option value="all_official">公式の全装備（本体・導入済みDLC・公式追加コンテンツ）</option><option value="selected">選んだ装備</option></select></label>
+            <label>元の体型と装備の読み込み<select id="fit_source"><option value="official">公式の元データ（標準体型）</option><option value="installed">導入済みデータ（UNP・CBBEなど）</option></select></label>
+            <p class="hint">導入済みデータを選ぶと、配置された装備と身体を組にして読み込みます。BodySlideの装備と身体は同じプリセットで出力してください。</p>
+            <label id="fit-selection">変換する装備（複数選択）<select id="fit-armors" multiple size="8"></select></label>
+            <p id="fit-count" class="hint"></p>
+            <details><summary>頭装備で顔・髪を隠す設定</summary>
+              <label class="checkbox"><input id="head-hide-face" type="checkbox">頭装備では顔を隠す（既定値）</label>
+              <label class="checkbox"><input id="head-hide-hair" type="checkbox" checked>髪を占有する頭装備では髪を隠す（既定値）</label>
+              <label>装備を検索<input id="head-search" type="search" placeholder="兜・フードの名前"></label>
+              <div id="head-policies"></div><p class="hint">同じ装備モデルの付呪違いにも反映します。サークレットは既定で髪を残します。顔・髪の切替にはSKSE64が必要です。</p>
+            </details>
+            <p class="hint">同じ形の装備は共有して変換します。鎧・手袋・靴を装備すると、対応する元衣装が外れます。専用種族用の互換パッチは別のZIPです。変換後にはOutfit Studio用の身体・骨格と編集用装備も出力します。</p>
+          </div>
           <p id="wardrobe-warning" role="status"></p>
           <div class="wardrobe-actions"><button type="button" id="wardrobe-reset" class="secondary">分類候補へ戻す</button><button type="button" id="wardrobe-combine" class="secondary">衣服を一品にまとめる</button><button type="button" id="wardrobe-split" class="secondary">衣服を個別に分ける</button><button type="button" id="wardrobe-add" class="secondary">装備グループを追加</button></div>
           <div id="wardrobe-parts" class="wardrobe-parts"></div>
@@ -64,6 +78,13 @@
     </form>
     <section id="progress" hidden><p class="eyebrow">CONVERTING</p><h2>世界への入口を作っています</h2><p id="stage" aria-live="polite"></p><div class="progress-bar"><div></div></div><ol id="events"></ol><pre id="failure" hidden></pre></section>
     <section id="result" hidden><p class="eyebrow">READY TO INSTALL</p><h2 id="result-title"></h2><p class="lead">フォロワーMODのZIPを作成しました。</p><a id="download" class="primary" download>MOD ZIPを保存</a><div id="armor-patch-result" hidden><h3>装備の互換パッチ</h3><a id="armor-patch-download" class="secondary" download>防具互換パッチZIPを保存</a><p class="hint">このフォロワーとパッチの両方を導入し、フォロワーESPの後でVRM2SkyrimArmorPatch.espを有効化します。元衣装を外してから、変換した元ゲームの装備を渡してください。</p><div id="fitted-followers"></div><button id="merge-armor-patch" type="button" class="secondary">選択したフォロワー分を一つのパッチにまとめる</button><p id="armor-patch-status" role="status"></p><p class="hint">体型合わせを使うフォロワーを追加・削除したらパッチを更新してください。インストール済み、またはこのウィザードで変換済みのフォロワーを選べます。有効な互換パッチは一つにします。</p></div><div class="install"><h3>ゲームへ迎える</h3><ol><li>ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行。</li><li><code id="plugin-name"></code>を有効にして、Skyrimを起動し直す。</li><li>ホワイトランのキナレス聖堂で話しかけて仲間にする。</li></ol><p>待機・解散などは標準のフォロワー会話を使います。元衣装の着脱確認コマンドはZIP内のvrm2skyrim/&lt;MOD ID&gt;/README.txtにあります。</p></div><div id="previews" class="preview-grid"></div><p class="hint">画像は出力ファイルを読み戻したプレビューです。勧誘・衣服の着脱・装備交換・再起動後の状態は導入後に確認してください。転倒時の物理は未対応です。</p><button id="again" type="button" class="secondary">もう一体作る</button><p id="output-folder" class="hint"></p></section>
+    <section id="equipment-edit" hidden>
+      <h3>Outfit Studioで形を仕上げる</h3><a id="edit-kit-download" class="secondary" download>身体・骨格・編集用装備を保存</a>
+      <label>仕上げた装備を戻す<select id="edit-mesh"></select></label>
+      <label>編集済みNIF<input id="edit-nif" type="file" accept=".nif"></label>
+      <button id="import-edit" type="button" class="secondary">形を取り込み、MOD ZIPを更新</button>
+      <p class="hint">頂点と法線を取り込み、元のウェイト・素材・装備枠を保ちます。同じVRMで再変換すると保存した仕上げを再利用します。手順は編集用ZIPのREADME.txtにあります。</p><p id="edit-status" role="status"></p>
+    </section>
   </main>
 </div>
 <script src="wardrobe.js"></script><script src="wizard.js"></script>

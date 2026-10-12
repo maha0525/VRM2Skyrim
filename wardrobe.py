@@ -135,13 +135,30 @@ def keyword_names(garment):
     return result
 
 
+def skin_components(settings):
+    """Use one fixed-layer addon per skin to avoid multiple models competing at slot 60."""
+    parts = [p for p in components(settings) if p['role'] != 'garment']
+    if settings.head_switch_enabled:
+        parts = [p for p in parts if p['id'] not in ('fixed', 'face', 'hair')]
+        parts.append({'id': 'fixed', 'role': 'fixed', 'file': 'fixed_full.nif',
+                      'slot': FIXED_SLOT, 'nodes': settings.appearance_parts['fixed']})
+    return parts
+
+
 def components(settings, fitting=True):
     if not settings.armor_support:
         return [{"id": "appearance", "file": "avatar.nif", "nodes": None, "slot": 32, "role": "fixed"}]
     parts = settings.appearance_parts
     result = [{"id": role, "file": role + ".nif", "nodes": parts[role], "slot": slot, "role": role}
               for role, slot in zip(ROLES, (BODY_SLOT, UNDERWEAR_SLOT, FIXED_SLOT)) if parts[role]]
-    if settings.fit_armors and fitting:
+    if settings.head_switch_enabled:
+        result = [p for p in result if p['id'] != 'fixed']
+        selected = set(sum(settings.appearance_heads.values(), []))
+        remaining = [n for n in parts['fixed'] if n not in selected]
+        for name, nodes in [('fixed', remaining), *settings.appearance_heads.items()]:
+            if nodes:
+                result.append({'id': name, 'file': name+'.nif', 'nodes': nodes, 'slot': FIXED_SLOT, 'role': 'fixed'})
+    if settings.fitting_enabled and fitting:
         result[0]["slots"] = [32, 34, 38]
         result[0]["partial_source"] = True
         result += [{"id": role, "file": role + ".nif", "nodes": parts["body"], "slot": slot,

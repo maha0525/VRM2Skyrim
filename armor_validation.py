@@ -71,8 +71,11 @@ def validate_fitting(output):
     with NifFile(str(root / "skeleton.nif")) as skeleton:
         bones = set(skeleton.nodes)
     addons = {r.form_id & 0xFFFFFF: r for r in records(output / "mod" / settings.plugin_name, {b"ARMA"})}
-    result = []
+    result, cache = [], {}
     for item in profile["equipment"]:
+        if item['addon_local_id'] in cache:
+            result.append({**cache[item['addon_local_id']], 'editor_id': item['editor_id']})
+            continue
         path = root / item["file"]
         if path.read_bytes() != path.with_name(path.name.replace("_1.nif", "_0.nif")).read_bytes():
             raise ValueError("Equipment weight variants must retain one original VRM body")
@@ -97,7 +100,7 @@ def validate_fitting(output):
                         totals[index] += value
                         influences[index] += 1
                 if np.any(influences < 1) or np.any(influences > 4) or np.max(np.abs(totals - 1)) > .015:
-                    raise ValueError("Fitted equipment skin weights are invalid")
+                    raise ValueError(f"Fitted equipment skin weights are invalid: {item['editor_id']}/{shape.name}; influences={int(influences.min())}..{int(influences.max())}, totals={float(totals.min())}..{float(totals.max())}")
                 if not np.isfinite(shape.verts).all():
                     raise ValueError("Nonfinite fitted equipment geometry")
                 for texture in shape.textures.values():
@@ -113,11 +116,13 @@ def validate_fitting(output):
                     if maximum > .001:
                         raise ValueError("Exposed skin is not the original VRM body")
                 count += len(shape.tris)
-        result.append({"editor_id": item["editor_id"], "triangles": count,
-                       "original_exposed_skin_triangles": exposed, "original_skin_max_distance": maximum})
+        row = {"editor_id": item["editor_id"], "triangles": count,
+               "original_exposed_skin_triangles": exposed, "original_skin_max_distance": maximum}
+        cache[item['addon_local_id']] = row
+        result.append(row)
     report = {"original_body_faces": len(triangles), "body_faces_preserved_exactly": True,
               "original_skin_min_normal_cosine": min(normal_cosines),
-              "equipment": result, "game_verified": False}
+              "equipment": result, 'unique_equipment_meshes': len(cache), "game_verified": False}
     (output / "armor-validation.json").write_text(json.dumps(report, indent=2), encoding="utf8")
     logging.info("Armor readback: %s original skin faces, %s fitted equipment", len(triangles), len(result))
     return report

@@ -7,6 +7,7 @@ const integers = new Set(["level","min_level","max_level","health","magicka","st
 const floats = new Set(["level_multiplier","height_scale","spawn_offset_x","spawn_offset_y"]);
 function error(message="") {$('error').hidden=!message; $('error').textContent=message;}
 async function api(path, data) {
+  if(path==='/api/catalog')data={...data,sex:$('sex').value};
   const response=await fetch(path, data===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
   const result=await response.json(); if(!response.ok)throw new Error(result.error||"通信に失敗しました"); return result;
 }
@@ -14,7 +15,9 @@ function download(name, value) {const url=URL.createObjectURL(new Blob([JSON.str
 function applySettings(settings) {
   for(const [key,value] of Object.entries(settings)) {const input=$(key); if(!input)continue; if(input.type==='checkbox') input.checked=value; else input.value=String(value);}
   state.perks=new Map((settings.perks||[]).map(item=>[item.editor_id,item.rank])); state.spells=new Set(settings.spells||[]);
-  state.fitArmors=new Set(settings.fit_armors||[]); $('fit-enabled').checked=state.fitArmors.size>0; setupFitting();
+  state.fitArmors=new Set(settings.fit_armors||[]); $('fit-enabled').checked=state.fitArmors.size>0||settings.fit_mode==='all_official';
+  state.headOverrides=structuredClone(settings.head_overrides||{});
+  $('head-hide-face').checked=settings.head_defaults?.hide_face??false; $('head-hide-hair').checked=settings.head_defaults?.hide_hair??true; setupFitting();
   for(const key of skills) $('skill-'+key).value=settings.skills?.[key]??20;
   if(state.source)wardrobeLoad(state.source,settings);
   updateLevel(); updateMarriage(); renderChoices();
@@ -28,7 +31,11 @@ function collect() {
   settings.perks=[...state.perks].map(([editor_id,rank])=>({editor_id,rank})); settings.spells=[...state.spells];
   settings.skills=settings.auto_calculate?{}:Object.fromEntries(skills.map(key=>[key,Number($('skill-'+key).value)])); Object.assign(settings,wardrobeCollect());
   settings.fit_armors=settings.armor_support&&$('fit-enabled').checked?[...$('fit-armors').selectedOptions].map(o=>o.value):[];
-  if(settings.armor_support&&$('fit-enabled').checked&&!settings.fit_armors.length)throw new Error('体型合わせする装備を選んでください'); return settings;
+  settings.fit_mode=settings.armor_support&&$('fit-enabled').checked?$('fit_mode').value:'selected';
+  settings.head_defaults={hide_face:$('head-hide-face').checked,hide_hair:$('head-hide-hair').checked};
+  settings.head_overrides=state.headOverrides||{};
+  if(settings.fit_mode==='all_official')settings.fit_armors=[];
+  if(settings.armor_support&&$('fit-enabled').checked&&settings.fit_mode==='selected'&&!settings.fit_armors.length)throw new Error('体型合わせする装備を選んでください'); return settings;
 }
 async function updateId() {
   if(state.idDirty)return;
@@ -64,9 +71,22 @@ function setupChoices(choices) {
 }
 function setupFitting() {
   const selected=state.fitArmors||new Set(); $('fit-armors').replaceChildren();
-  for(const item of state.choices?.armors||[]){const option=new Option(`${item.label} (${item.id})`,item.id);option.selected=selected.has(item.id);$('fit-armors').add(option);}
+  for(const item of state.choices?.armors||[]){const option=new Option(`${item.label} (${item.editor_id}) · ${item.plugin}`,item.id);option.dataset.editorId=item.editor_id;option.selected=selected.has(item.id)||selected.has(item.editor_id);$('fit-armors').add(option);}
   $('fit-panel').hidden=!$('fit-enabled').checked;
-  if($('fit-enabled').checked&&!$('fit-armors').selectedOptions.length){for(const option of $('fit-armors').options)option.selected=['ArmorIronBandedCuirass','ArmorIronBoots'].includes(option.value);}
+  $('fit-selection').hidden=$('fit_mode').value==='all_official';
+  $('fit-count').textContent=`${(state.choices?.armors||[]).length.toLocaleString()}品 · ${(state.choices?.equipment_plugins||[]).join(' / ')}`;
+  if($('fit-enabled').checked&&!$('fit-armors').selectedOptions.length){for(const option of $('fit-armors').options)option.selected=['ArmorIronBandedCuirass','ArmorIronBoots'].includes(option.dataset.editorId);}
+  renderHeadPolicies();
+}
+function renderHeadPolicies(){
+  const target=$('head-policies');target.replaceChildren();const rows=new Map(),filter=$('head-search').value.toLowerCase();
+  const selected=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));
+  for(const item of state.choices?.armors||[]){if($('fit_mode').value==='selected'&&!selected.has(item.id))continue;for(const addon of item.addons||[]){if(!(addon.mask&0x3803))continue;if(!rows.has(addon.key))rows.set(addon.key,{...addon,label:item.label});}}
+  for(const addon of rows.values()){if(filter&&!`${addon.label} ${addon.name}`.toLowerCase().includes(filter))continue;const row=document.createElement('div');row.dataset.addon=addon.key;
+    const name=document.createElement('span');name.textContent=`${addon.label} (${addon.name})`;row.append(name);
+    const policy=state.headOverrides?.[addon.key]||{hide_face:$('head-hide-face').checked,hide_hair:$('head-hide-hair').checked&&!!(addon.mask&2)};
+    for(const [key,label]of [['hide_face','顔を隠す'],['hide_hair','髪を隠す']]){const box=document.createElement('label');box.className='checkbox';box.textContent=label;const input=document.createElement('input');input.type='checkbox';input.checked=policy[key];input.dataset.policy=key;input.onchange=()=>{state.headOverrides??={};state.headOverrides[addon.key]={...policy,[key]:input.checked};renderHeadPolicies();};box.append(input);row.append(box);}const reset=document.createElement('button');reset.type='button';reset.textContent='既定値へ';reset.onclick=()=>{delete state.headOverrides[addon.key];renderHeadPolicies();};row.append(reset);target.append(row);
+  }
 }
 async function showArmorPatch(job) {
   $('armor-patch-result').hidden=!job.armor_patch; if(!job.armor_patch)return;
@@ -118,6 +138,8 @@ async function next() {
 }
 function fileURL(job,name){return `/api/jobs/${job}/file?name=${encodeURIComponent(name)}`;}
 function showResult(job) {
+  state.resultJob=job.id;$('equipment-edit').hidden=!job.edit_kit;
+  if(job.edit_kit){$('edit-kit-download').href=fileURL(job.id,job.edit_kit);$('edit-mesh').replaceChildren(...job.edit_meshes.map(i=>new Option(i.name,i.key)));}
   showArmorPatch(job).catch(e=>error(e.message));
   $('progress').hidden=true;$('result').hidden=false;$('result-title').textContent=job.npc_name+'を、スカイリムへ。';$('download').href=fileURL(job.id,job.archive);$('download').download=job.archive;$('plugin-name').textContent=job.plugin_name;$('output-folder').textContent='出力フォルダ: '+job.output;
   const names=['original-01.png','rest-01.png','walk-08.png','attack-10.png','attack-hand-10.png']; const labels=['元VRM（姿勢合わせ）','出力NIF','標準歩行','標準の剣攻撃','手と剣の近接確認'];$('previews').replaceChildren();
@@ -146,16 +168,22 @@ async function init() {
   for(let i=0;i<skills.length;i++){const label=document.createElement('label');label.textContent=skillLabels[i];const input=document.createElement('input');input.id='skill-'+skills[i];input.type='number';input.min='0';input.max='100';input.value='20';label.append(input);$('skills').append(label);}
   const env=await api('/api/environment');state.defaults=env.defaults;$('version').textContent='VRM2Skyrim '+env.version;$('game').value=env.game;$('blender').value=env.blender;applySettings(env.defaults);
   initWardrobe();
+  const saved=await api('/api/jobs');
+  if(saved.jobs.length){$('saved-results').hidden=false;$('saved-job').replaceChildren(...saved.jobs.map(j=>new Option(j.npc_name+' · '+j.plugin_name,j.id)));}
+  $('open-saved').onclick=async()=>{try{const job=await api('/api/jobs/'+$('saved-job').value);$('wizard').hidden=true;showResult(job);}catch(e){error(e.message);}};
   $('fit-enabled').onchange=async()=>{if($('fit-enabled').checked&&!state.choices){$('next').disabled=true;try{const result=await api('/api/catalog',{game:$('game').value,blender:$('blender').value});setupChoices(result.choices);}catch(e){error(e.message);$('fit-enabled').checked=false;}finally{$('next').disabled=false;}}setupFitting();};
-  $('fit-armors').onchange=()=>{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));};
+  $('fit-armors').onchange=()=>{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));renderHeadPolicies();};
+  $('fit_mode').onchange=setupFitting;$('head-search').oninput=renderHeadPolicies;
+  $('head-hide-face').onchange=renderHeadPolicies;$('head-hide-hair').onchange=renderHeadPolicies;
+  $('import-edit').onclick=async()=>{const file=$('edit-nif').files[0];if(!file){$('edit-status').textContent='編集したNIFを選んでください';return;}$('import-edit').disabled=true;try{const response=await fetch('/api/equipment-edit',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Job-Id':state.resultJob,'X-Mesh-Key':$('edit-mesh').value,'X-Blender':encodeURIComponent($('blender').value)},body:file});const result=await response.json();if(!response.ok)throw new Error(result.error);for(;;){const job=await api('/api/jobs/'+result.job_id);$('edit-status').textContent=job.stage;if(job.status==='failed')throw new Error(job.error);if(job.status==='complete'){showResult(job);$('edit-status').textContent='仕上げを反映しました。更新されたMOD ZIPを保存してください。';break;}await new Promise(r=>setTimeout(r,1000));}}catch(e){$('edit-status').textContent=e.message;}finally{$('import-edit').disabled=false;}};
   $('merge-armor-patch').onclick=async()=>{const button=$('merge-armor-patch');button.disabled=true;$('armor-patch-status').textContent='互換パッチを作成しています…';try{const result=await api('/api/armor-patch',{game:$('game').value,profiles:[...$('fitted-followers').querySelectorAll('input:checked')].map(input=>input.value)});$('armor-patch-download').href=fileURL(result.job_id,result.archive);$('armor-patch-status').textContent='選択したフォロワー分のパッチを作成しました。このZIPに差し替えてください。';}catch(e){$('armor-patch-status').textContent=e.message;}finally{button.disabled=false;}};
   $('source').onchange=()=>upload($('source').files[0]);const zone=document.querySelector('.dropzone');zone.ondragover=e=>{e.preventDefault();zone.classList.add('drag');};zone.ondragleave=()=>zone.classList.remove('drag');zone.ondrop=e=>{e.preventDefault();zone.classList.remove('drag');upload(e.dataTransfer.files[0]);};
   $('next').onclick=next;$('back').onclick=()=>showStep(state.step-1);$('create').onclick=create;$('level_mode').onchange=updateLevel;$('auto_calculate').onchange=updateLevel;$('preset').onchange=preset;
   $('mod_name').oninput=()=>{state.nameDirty=true;updateId();};$('npc_name').oninput=()=>state.nameDirty=true;$('mod_id').oninput=()=>state.idDirty=true;
-  $('sex').onchange=()=>{$('voice').value=$('sex').value==='male'?'MaleNord':'FemaleEvenToned';updateMarriage();};$('voice').onchange=updateMarriage;
+  $('sex').onchange=async()=>{const sex=$('sex').value;$('voice').value=sex==='male'?'MaleNord':'FemaleEvenToned';updateMarriage();if(state.choices){try{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));const result=await api('/api/catalog',{game:$('game').value,blender:$('blender').value});if($('sex').value===sex){state.choices.armors=result.choices.armors;setupFitting();}}catch(e){error(e.message);}}};$('voice').onchange=updateMarriage;
   $('perk-search').oninput=renderChoices;$('spell-search').oninput=renderChoices;
   $('export-settings').onclick=()=>download($('mod_id').value+'-settings.json',collect());
   $('import-settings').onchange=async()=>{try{state.imported=JSON.parse(await $('import-settings').files[0].text());state.importPending=!state.choices;applySettings(state.imported);state.nameDirty=true;state.idDirty=true;$('import-status').textContent='設定を読み込みました';}catch(e){error(e.message);}};
-  $('again').onclick=()=>{$('result').hidden=true;$('wizard').hidden=false;state.source=null;state.imported=null;state.nameDirty=false;state.idDirty=false;$('source').value='';$('source-status').textContent='次のVRMを選択してください';wardrobeLoad(null);showStep(0);};
+  $('again').onclick=()=>{$('result').hidden=true;$('equipment-edit').hidden=true;$('wizard').hidden=false;state.source=null;state.imported=null;state.nameDirty=false;state.idDirty=false;$('source').value='';$('source-status').textContent='次のVRMを選択してください';wardrobeLoad(null);showStep(0);};
 }
 init().catch(e=>error(e.message));

@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import re
 
-VERSION = "0.6.2"
+VERSION = "0.7.0"
 
 
 def identifier(name):
@@ -53,6 +53,11 @@ class FollowerSettings:
     appearance_source_sha256: str = ""
     appearance_parts: dict = field(default_factory=dict)
     fit_armors: list = field(default_factory=list)
+    fit_mode: str = 'selected'
+    fit_source: str = 'official'
+    head_defaults: dict = field(default_factory=lambda: {'hide_face': False, 'hide_hair': True})
+    head_overrides: dict = field(default_factory=dict)
+    appearance_heads: dict = field(default_factory=dict)
 
     def __post_init__(self):
         if not isinstance(self.mod_id, str) or not isinstance(self.author, str):
@@ -104,12 +109,41 @@ class FollowerSettings:
             validate_parts(self.appearance_parts)
             if not re.fullmatch(r"[0-9a-f]{64}", self.appearance_source_sha256):
                 raise ValueError("衣服の分類を入力VRMに結び付けてください")
-        if not isinstance(self.fit_armors, list) or len(self.fit_armors) > 64 or any(
-                not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", name)
+        if not isinstance(self.fit_armors, list) or len(self.fit_armors) > 20000 or any(
+                not isinstance(name, str) or not re.fullmatch(r"(?:[A-Za-z][A-Za-z0-9_]{0,127}|[A-Za-z0-9_-]+\.(?:esm|esl|esp):[0-9A-Fa-f]{6})", name)
                 for name in self.fit_armors) or len(self.fit_armors) != len(set(self.fit_armors)):
-            raise ValueError("体型合わせの装備は重複しないEditor IDを64品まで指定してください")
-        if self.fit_armors and not self.armor_support:
+            raise ValueError("体型合わせの装備IDが不正または重複しています")
+        if self.fit_mode not in ('selected', 'all_official') or self.fit_source not in ('official', 'installed'):
+            raise ValueError('Invalid equipment conversion mode/reference')
+        if self.fitting_enabled and not self.armor_support:
             raise ValueError("体型合わせには身体・下着・衣服の分類が必要です")
+        if not isinstance(self.head_defaults, dict) or set(self.head_defaults) != {'hide_face', 'hide_hair'} or any(type(v) is not bool for v in self.head_defaults.values()):
+            raise ValueError('Head defaults require hide_face and hide_hair booleans')
+        if not isinstance(self.head_overrides, dict):
+            raise ValueError('Invalid headgear overrides')
+        for key, policy in self.head_overrides.items():
+            if not re.fullmatch(r'[A-Za-z0-9_-]+\.(?:esm|esl|esp):[0-9A-Fa-f]{6}', key) or not isinstance(policy, dict) or set(policy) != {'hide_face', 'hide_hair'} or any(type(v) is not bool for v in policy.values()):
+                raise ValueError('Invalid headgear visibility override')
+        if not isinstance(self.appearance_heads, dict):
+            raise ValueError('Invalid head components')
+        if self.appearance_heads:
+            if set(self.appearance_heads) != {'face', 'hair'}:
+                raise ValueError('Head components require face and hair node lists')
+            selected = []
+            for values in self.appearance_heads.values():
+                if not isinstance(values, list) or any(type(n) is not int or n < 0 for n in values):
+                    raise ValueError('Invalid head component nodes')
+                selected.extend(values)
+            if len(set(selected)) != len(selected) or not set(selected).issubset(self.appearance_parts.get('fixed', [])):
+                raise ValueError('Face/hair must be distinct subsets of permanent meshes')
+
+    @property
+    def fitting_enabled(self):
+        return bool(self.fit_armors) or self.fit_mode == 'all_official'
+
+    @property
+    def head_switch_enabled(self):
+        return self.fitting_enabled and bool(self.appearance_heads)
 
     @property
     def prefix(self):

@@ -32,7 +32,12 @@ Event OnInit()
     Debug.Trace("VRM2Skyrim: initial wardrobe equipped once")
 EndEvent
 
-Bool Function AnyEquipped(FormList items)
+Bool Function AnyEquipped(FormList items, Int slotMask)
+    ; Large fitting lists already require SKSE for independent head visibility.
+    ; Look at the actual worn body/hands/feet slot, not every enchanted variant.
+    If items.GetSize() > 64
+        Return items.HasForm(GetWornForm(slotMask))
+    EndIf
     Int i = 0
     While i < items.GetSize()
         If IsEquipped(items.GetAt(i))
@@ -44,13 +49,13 @@ Bool Function AnyEquipped(FormList items)
 EndFunction
 
 Function ResolveCurrentEquipment()
-    If AnyEquipped(BodyEquipment)
+    If AnyEquipped(BodyEquipment, 4)
         UnequipConflicts(BodyClothes)
     EndIf
-    If AnyEquipped(HandsEquipment)
+    If AnyEquipped(HandsEquipment, 8)
         UnequipConflicts(HandsClothes)
     EndIf
-    If AnyEquipped(FeetEquipment)
+    If AnyEquipped(FeetEquipment, 128)
         UnequipConflicts(FeetClothes)
     EndIf
 EndFunction
@@ -79,20 +84,23 @@ Event OnObjectEquipped(Form akBaseObject, ObjectReference akReference)
     EndIf
     If BodyEquipment.HasForm(akBaseObject)
         UnequipConflicts(BodyClothes)
-    ElseIf HandsEquipment.HasForm(akBaseObject)
+    EndIf
+    If HandsEquipment.HasForm(akBaseObject)
         UnequipConflicts(HandsClothes)
-    ElseIf FeetEquipment.HasForm(akBaseObject)
+    EndIf
+    If FeetEquipment.HasForm(akBaseObject)
         UnequipConflicts(FeetClothes)
-    ElseIf BodyClothes.HasForm(akBaseObject)
-        If AnyEquipped(BodyEquipment)
+    EndIf
+    If BodyClothes.HasForm(akBaseObject)
+        If AnyEquipped(BodyEquipment, 4)
             UnequipConflicts(BodyClothes)
         EndIf
     ElseIf HandsClothes.HasForm(akBaseObject)
-        If AnyEquipped(HandsEquipment)
+        If AnyEquipped(HandsEquipment, 8)
             UnequipConflicts(HandsClothes)
         EndIf
     ElseIf FeetClothes.HasForm(akBaseObject)
-        If AnyEquipped(FeetEquipment)
+        If AnyEquipped(FeetEquipment, 128)
             UnequipConflicts(FeetClothes)
         EndIf
     EndIf

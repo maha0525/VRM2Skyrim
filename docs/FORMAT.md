@@ -1,5 +1,43 @@
 # Skyrim record and skeleton sources
 
+## 0.7.0 equipment identities and private models
+
+The official catalog reads installed base/DLC/Creation masters, resolving every
+disk FormID through that file's MAST array, including ESL files. Saved equipment
+identities use `owner-plugin:local-24-bit-id`; catalog indices and runtime load
+order are not persistent identities. Female actors can use the shared male model
+when the addon has no female model. Human addons are selected separately from
+beast-specific addons. An item may have several humanoid addons, and enchanted
+variants share the same fitted addon geometry.
+
+The follower keeps its Skyrim-only master layout and existing saved local IDs.
+Fitted private ARMA records begin at `0x1000`, one per unique source addon. The
+combined armor patch adds them to the original ARMO, remapping all references,
+VMAD object properties and alternate texture sets into its master order. Original
+statistics, enchantments, keywords, names and original-race addons are retained.
+Footstep references and all five equipment/visibility lists are overridden in the
+combined patch, which owns the required DLC/Creation dependencies.
+
+Permanent VRM face/hair/accessory geometry shares one slot-60 addon. Full,
+face-hidden, hair-hidden and both-hidden Skin ARMO records use local IDs
+`0x801/0x852/0x853/0x854`, with visibility FLSTs `0x855/0x856` and optional variant
+addons `0x860..0x862`. Empty visibility variants omit that addon. SKSE's
+ActorBase.SetSkin and Actor.QueueNiNodeUpdate switch geometry without equipping a
+head-cover item or restoring native FaceGen. Equip/load/NiNode events reconcile
+the selected private skin; unchanged skin never queues another refresh.
+
+Original equipment uses its native biped mask. Helmet partitions 130/131/142 map
+to biped layers 30/31/42. Unskinned shields use the custom skeleton's SHIELD
+attachment. Alternate texture sets are applied per shape; missing optional
+native texture maps are explicitly omitted and recorded in the fitting plan.
+
+Finishing overrides store vertex positions and normals by avatar SHA256 plus a
+source key derived from the addon identity, sex, reference body/skeleton and
+source NIF. Import rejects topology/UV/name changes and changes to original
+skin. NIF and Blender UV origins are reconciled when reusing the edit. Explicit
+partition names avoid the exporter's Blender duplicate-suffix truncation.
+Failed imports restore the prior meshes, saved override and archives.
+
 The converter reads the user's installed Skyrim.esm and BSAs. No game assets or
 VRM inputs are part of this repository. Editor IDs are resolved against that
 master rather than guessed FormIDs.

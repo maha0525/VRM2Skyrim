@@ -81,6 +81,25 @@ class EquipmentRuntimeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             rename_pex(b'not a PEX', 'V2S_Invalid')
 
+    def test_all_equipment_lists_check_worn_slots(self):
+        actor = Actor({n: 1 for n in (101, 102, 103, 201, 202, 203, 301)}, teammate=True)
+        binding = dict(zip(PROPERTIES, ((101, 102, 103), (101,), (102,), (103,), (), (), ())))
+        for prop, mask, gear in (('BodyEquipment', 4, 201), ('HandsEquipment', 8, 202), ('FeetEquipment', 128, 203)):
+            binding[prop] = tuple(range(1000, 4000))+(gear,)
+            actor.worn_slots[mask] = gear
+        vm = PexVM(TEMPLATE, actor, binding)
+        actor.worn = {101, 102, 103, 201, 202, 203, 301}
+        vm.run('OnLoad')
+        self.assertEqual(actor.worn, {201, 202, 203, 301})
+
+    def test_one_item_replacing_several_body_groups(self):
+        actor = Actor({n: 1 for n in (101, 102, 103, 900)})
+        binding = dict(zip(PROPERTIES, ((101, 102, 103), (101,), (102,), (103,), (900,), (900,), (900,))))
+        vm = PexVM(TEMPLATE, actor, binding)
+        actor.worn = {101, 102, 103, 900}
+        vm.run('OnObjectEquipped', 900, None)
+        self.assertEqual(actor.worn, {900})
+
     def test_all_groups_ignore_equip_order_and_leave_accessories_alone(self):
         binding = dict(zip(PROPERTIES, ((101,102,103,301), (101,), (102,), (103,), (201,), (202,), (203,))))
         for clothing_first in (True,False):

@@ -36,11 +36,11 @@ def pex_strings(data):
     return metadata, start, offset, strings
 
 
-def rename_pex(data, script_name):
+def rename_pex(data, script_name, template_name=TEMPLATE_NAME):
     _, _, end, strings = pex_strings(data)
     def encoded(value):
         return struct.pack('>H', len(value))+value
-    matches = [s.lower() == TEMPLATE_NAME.lower().encode() for s in strings]
+    matches = [s.lower() == template_name.lower().encode() for s in strings]
     replacements = [script_name.encode() if match else s for s, match in zip(strings, matches)]
     if not any(matches):
         raise ValueError('PEX template script name not found')
@@ -60,9 +60,12 @@ def vmad(settings):
     def string(value):
         raw = value.encode()
         return struct.pack('<H', len(raw))+raw
-    payload = struct.pack('<hhh', 5, 2, 1)+string(script_name(settings))+struct.pack('<BH', 0, len(PROPERTIES))
+    payload = struct.pack('<hhh', 5, 2, 2 if settings.head_switch_enabled else 1)+string(script_name(settings))+struct.pack('<BH', 0, len(PROPERTIES))
     for prop in PROPERTIES:
         payload += string(prop)+bytes((1, 1))+struct.pack('<HhI', 0, -1, LIST_IDS[prop])
+    if settings.head_switch_enabled:
+        from gear_head_runtime import binding
+        payload += binding(settings)
     return payload
 
 
@@ -75,17 +78,22 @@ def runtime_records(settings, catalog=None, profile=None):
         category = equipment_group(garment)
         if category != 'accessory':
             groups[category.title()+'Clothes'].append(form_id)
-    for name in settings.fit_armors:
+    equipment = profile['equipment'] if profile else []
+    names = list(dict.fromkeys(item['editor_id'] for item in equipment)) if profile else settings.fit_armors
+    for name in names:
         if catalog is not None:
             armor = catalog.require(name, b'ARMO')
             form_id = armor.form_id
             mask = struct.unpack_from('<I', armor.values(b'BOD2')[0])[0]
         else:
-            item = next(i for i in profile['equipment'] if i['editor_id'] == name)
+            item = next(i for i in equipment if i['editor_id'] == name)
+            if item.get('origin_plugin', 'Skyrim.esm').lower() != 'skyrim.esm':
+                continue  # Combined patch supplies DLC references in its own master order.
             form_id = item['original_form_id']
-            mask = sum(1 << (slot-30) for slot in item['slots'])
-        category = next(c for slot, c in ((32, 'Body'), (33, 'Hands'), (37, 'Feet')) if mask & (1 << (slot-30)))
-        groups[category+'Equipment'].append(form_id)
+            mask = item.get('armor_mask', sum(1 << (slot-30) for slot in item['slots']))
+        for slot, category in ((32, 'Body'), (33, 'Hands'), (37, 'Feet')):
+            if mask & (1 << (slot-30)) and form_id not in groups[category+'Equipment']:
+                groups[category+'Equipment'].append(form_id)
     return [Record(b'FLST', LIST_IDS[name], 0, [
         (b'EDID', (settings.prefix+name+'\0').encode()),
         *[(b'LNAM', struct.pack('<I', form_id)) for form_id in groups[name]]]) for name in PROPERTIES]

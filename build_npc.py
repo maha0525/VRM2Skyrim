@@ -11,7 +11,7 @@ from head_visibility import HEAD_COVER_ID, configure_native_head, head_records
 from equipment_runtime import runtime_records, vmad, write_runtime
 from plugin import Record, records, write_plugin
 from settings import SKILLS, load_settings
-from wardrobe import components, keyword_names
+from wardrobe import components, keyword_names, skin_components
 
 NPC_ID = 0x01000800
 ARMOR_ID = 0x01000801
@@ -59,7 +59,7 @@ def appearance_records(settings, catalog):
         outfit = Record(b"OTFT", OUTFIT_ID, 0, [(b"EDID", text(settings.prefix + "Outfit")), (b"INAM", uint(ARMOR_ID))])
         return [addon, armor, outfit], []
     skin_ids = {"body": ADDON_ID, "underwear": 0x01000807, "fixed": 0x01000808,
-                "hands": 0x01000809, "feet": 0x0100080A}
+                "hands": 0x01000809, "feet": 0x0100080A, 'face': 0x01000850, 'hair': 0x01000851}
     clothing_template = catalog.require("ClothesFarmClothes01", b"ARMO")
     inventory_fields = [(tag, data) for tag, data in clothing_template.fields if tag in {b"MOD2", b"MOD4", b"YNAM", b"ZNAM", b"ETYP"}]
     # Retain 0.5.1's FormID for saves/AFT snapshots, but retire its worn mask.
@@ -71,7 +71,7 @@ def appearance_records(settings, catalog):
         (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<i", 0))])
     result, skin_addons, skin_mask, inventory = [head_cover], [], 0, []
     garment_index = 0
-    for part in components(settings):
+    for part in [*skin_components(settings), *[p for p in components(settings) if p['role'] == 'garment']]:
         wearable = part["role"] == "garment"
         addon_id = 0x01000810 + garment_index * 2 if wearable else skin_ids[part["id"]]
         armor_id = addon_id + 1
@@ -190,9 +190,13 @@ def build_npc(game_data, output, settings=None, catalog=None):
     struct.pack_into("<ff", data, 16, 1., 1.)
     race.replace(b"DATA", bytes(data))
     appearance, inventory = appearance_records(settings, catalog)
-    if settings.fit_armors:
+    if settings.fitting_enabled:
         fitting = json.loads((output / "armor-fitting.json").read_text())
+        seen = set()
         for item in fitting["equipment"]:
+            if item['addon_local_id'] in seen:
+                continue
+            seen.add(item['addon_local_id'])
             appearance.append(Record(b"ARMA", 0x01000000 | item["addon_local_id"], 0, [
                 (b"EDID", text(settings.prefix + "Fitted_" + item["editor_id"])),
                 (b"BOD2", struct.pack("<II", sum(1 << (s - 30) for s in item["slots"]), 2)),
@@ -208,7 +212,12 @@ def build_npc(game_data, output, settings=None, catalog=None):
     configure_native_head(npc, race)
     appearance += head_records(settings, RACE_ID)
     if settings.armor_support:
-        appearance += runtime_records(settings, catalog)
+        appearance += runtime_records(settings, profile=fitting if settings.fitting_enabled else None)
+        if settings.head_switch_enabled:
+            from gear_head_runtime import head_skin_records
+            skin = next(r for r in appearance if r.form_id == ARMOR_ID)
+            fixed = next(r for r in appearance if r.form_id == 0x01000808)
+            appearance += head_skin_records(settings, skin, fitting if settings.fitting_enabled else None, fixed)
         after(npc, b"EDID", [(b"VMAD", vmad(settings))])
     if inventory:
         existing = npc.values(b"CNTO")
@@ -232,6 +241,8 @@ def build_npc(game_data, output, settings=None, catalog=None):
     write_plugin(plugin_path, items, author=settings.author or "VRM2Skyrim",
                  placement=(cell, actor))
     write_runtime(output, settings)
+    from gear_head_runtime import write_runtime as write_head_runtime
+    write_head_runtime(output, settings)
     generated = list(records(plugin_path))
     if len(generated) != len(items) + 3 or len({r.form_id for r in generated}) != len(generated):
         raise RuntimeError("Follower plugin record count mismatch")

@@ -1,5 +1,63 @@
 # VRM2Skyrim verification
 
+## 0.7.0 official equipment / head policies / finishing (2026-10-12)
+
+The final private Erys conversion covers 2986 distinct playable humanoid ARMO
+items from nine installed official plugins, with 3076 item/addon bindings and
+483 unique fitted addon meshes. Shared male models used by female actors,
+including iron shields, are included. Enchanted variants reuse geometry.
+The follower has 521 private records; the combined patch has 2986 ARMO,
+78 footstep ARMA overrides and five equipment/visibility FLST overrides
+(3069 records). Original armor data and localized names are read back against
+the remapped installed masters. A real second, deployed-reference follower was
+also combined into one patch successfully.
+
+All 222399 original VRM triangles and 20464 original skin faces are retained.
+Partitioned/copied skin preserves its source positions, UVs and normals;
+minimum normal cosine is 0.9999817029985892. Both fitted weight variants are
+identical. Every delivered fitting NIF is checked for SE format, resolved
+textures, valid bones/partitions, normalized weights and finite coordinates.
+Vanilla walk/attack sampling retains original limb lengths in all 75 frames.
+Actual delivered iron and stalhrim gear, including helmets and shields, was
+imported, rendered and visually inspected; the iron set was also rendered with
+the native sword-attack animation.
+
+The four permanent visibility states contain 38/31/7/0 shapes. Exact source
+geometry, UVs, normals, transforms, bone weights, texture paths, alpha settings
+and shader flags are compared against the separate original face/hair parts.
+Native FaceGen remains disabled. Shipped compiled PEX tests exercise equip,
+unequip, load and NiNode events, independent face/hair policies, refresh-loop
+prevention, all clothing groups and equip ordering. Large equipment lists use
+actual worn slots instead of walking every enchanted variant. One item that
+replaces multiple groups removes every corresponding original garment.
+
+A genuinely modified NIF was imported and its changed surface reproduced in
+two separate Blender regenerations. An actual NIF with modified original skin
+was rejected before persistence. Failure injection restores prior meshes and
+saved overrides. Stable partition names and NIF/Blender UV-origin conversion
+are included in this path. The edit fixture was removed and the delivered
+meshes restored byte-for-byte afterwards.
+
+A fresh deployed-reference conversion completed from VRM input to validated
+follower/patch/edit-kit ZIPs with five representative body/boots/head/shield/DLC
+items. Its reference female-body file is byte-identical to the installed UNP
+body (6850 vertices), demonstrating unequal source/target topology through the
+real fitting pipeline. The official profile separately uses archive-native
+body and equipment rather than mixing them with deployed body replacers.
+
+Headless Chrome tests operate the wizard's saved-result reopening, fitting
+range/reference controls, male/female catalog switching, independent head
+policies and JSON export/reimport. Completed job metadata survives restart.
+Clothes-only conversions keep the classified face/hair in a single permanent
+addon. The full 42 Python tests and Ruff pass.
+
+The final follower ZIP's every entry was hashed against its validated MOD
+folder and package manifest. SHA256:
+`da16f8ddc6e19f72349c2f974e992148497edbd3c220f4987709a43942d8fe88`.
+Private inputs, reference assets, screenshots, renders, edited fixtures and
+generated MOD archives remain local; only generic source/docs/runtime are
+published. Head visibility uses SKSE64.
+
 ## 0.6.2 source-material culling (2026-10-12)
 
 The user reported the 0.6.1 wardrobe update worked, then supplied close-up images

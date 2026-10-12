@@ -1,6 +1,41 @@
 """Resolve playable humanoid equipment from actual master records."""
 import struct
 
+HUMAN_SLOTS = set(range(30, 50)) | set(range(53, 62))
+
+
+def partition_slot(partition, fallback):
+    # Skyrim's helmet partitions 130/131/142 use the same biped layer as
+    # 30/31/42. A zero partition is an unpartitioned shape, not biped slot 0.
+    slot = partition % 100 if partition >= 100 else partition
+    if slot == 0:
+        return fallback
+    if slot not in HUMAN_SLOTS:
+        raise ValueError(f'Unsupported native equipment partition: {partition}')
+    return slot
+
+
+def official_choices(catalog, sex='female'):
+    result = []
+    for armor in catalog.choices(b'ARMO'):
+        if armor.flags & (4 | 0x20) or not armor.values(b'FULL') or not (armor.values(b'BOD2') or armor.values(b'BODT')):
+            continue
+        mask = slot_mask(armor)
+        addons = catalog.addon_records(armor, sex)
+        if mask and addons and all(slot_mask(a) and not slot_mask(a) & ~sum(1 << (s-30) for s in HUMAN_SLOTS) for a in addons):
+            result.append(armor)
+    return result
+
+
+def head_policy(settings, addon, key):
+    mask = slot_mask(addon)
+    if not mask & sum(1 << (s-30) for s in (30, 31, 41, 42, 43)):
+        return {'hide_face': False, 'hide_hair': False}
+    value = {'hide_face': settings.head_defaults['hide_face'],
+             'hide_hair': settings.head_defaults['hide_hair'] and bool(mask & (1 << 1))}
+    value.update(settings.head_overrides.get(key, {}))
+    return value
+
 
 def slot_mask(record):
     values = record.values(b"BOD2") or record.values(b"BODT")
