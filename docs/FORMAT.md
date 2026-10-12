@@ -164,11 +164,26 @@ bindings are private; no common runtime path causes follower ZIP collisions.
 
 OnInit equips configured inventory items once unless already a player teammate.
 OnObjectEquipped only unequips that group's conflicting items, ignoring delayed
-events for already-removed items. OnLoad repairs overlapping current equipment
+events for already-removed items. In 0.6.1 fitted gear wins in either event order:
+a re-equipped garment removes matching clothes, never fitted gear. Original
+clothes can be worn after the corresponding gear is removed. OnLoad repairs overlapping current equipment
 without restoring clothes or changing any outfit. AFT retains ownership of its
 sets and inventory. Template PEX is Skyrim 3.2, built with Orvid/Caprica v0.3.0
 against the user's Actor/ObjectReference/FormList declarations; missing unused
 type declarations are compile-only and are not distributed. Compiler archive
 SHA256: 0037e54cf3a1021e976278d9a637e8ae541aaf9ebeb8d274b6c2cfe32f4ee559.
+
+Optional garment `item_kind` is body/legs/hands/feet/cloak/backpack/accessory.
+Omitted old settings infer usage from the name. It controls native semantic
+keywords, independently of equipment_group and the render/equip slot. Clothing
+gets ArmorClothing + VendorItemClothing and ClothingBody/Hands/Feet where relevant;
+armor gets ArmorLight/Heavy + VendorItemArmor and ArmorCuirass/Gauntlets/Boots.
+Legwear shares the native body keyword because Skyrim has no separate pants
+classification. SkyUI subtype follows its part-mask precedence, not these usage
+keywords ([upstream InventoryDataSetter](https://github.com/schlangster/skyui/blob/master/src/ItemMenus/InventoryDataSetter.as)).
+The user's UI labels layer 46 as cloak and 47 as backpack. The wizard explains
+this convention, prefers 53-59/44/45/48/49 for ordinary split clothes, and keeps
+imported explicit slots unchanged. Selecting a different slot rebuilds both
+records and NIF partitions through the normal conversion pipeline.
 The test VM reads the real PEX format using the author's Caprica/pex schema;
 its mocked native calls establish code behavior, not actual game compatibility.

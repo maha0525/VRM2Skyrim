@@ -16,6 +16,21 @@ on load or periodically override AFT. Clothes and selected fitted armor exclude
 one another by user-configurable body/hands/feet groups; accessories stay alone.
 Switch events only unequip conflicting items, never delete or transfer them.
 
+The user confirmed the original face and fitted cuirass/boots render in 0.6.0,
+without AFT equipment management. Tights could nevertheless displace the cuirass:
+the event handler let re-equipped garments remove fitted gear. Fitted gear must
+win regardless of event order, including repeated automatic clothing equips.
+Remove gear first to switch back to original clothes. Do not lock items away
+from AFT or restore any outfit automatically.
+
+Sequential layer assignment also gave skirt slot 46 and tights slot 47, displayed
+as cloak/backpack by the user's inventory UI. Expose slot purpose, garment usage
+and replacement group separately. Ordinary split clothes should not default to
+46/47. Preserve imported slots; changing a slot must update ARMO, ARMA and mesh
+partitions together. Usage keywords do not independently choose a SkyUI icon:
+SkyUI subtype is derived from the occupied slot. Clothing/vendor keywords must
+be complete, with body/hands/feet keywords matching the chosen usage.
+
 Validate actual head assets/records without relying on any equipped item, PEX
 and VMAD property bindings, fresh initial inventory, and equip/unequip transitions
 after removing all items and changing outfits. Preserve original mesh/texture

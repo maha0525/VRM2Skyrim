@@ -1,9 +1,12 @@
 "use strict";
-const wardrobeSlots=[44,45,46,47,48,49,53,54,55,56,57,58,59];
+const wardrobeSlots=[53,54,55,56,57,58,59,44,45,48,49,46,47];
+const wardrobeKinds={body:'上半身・全身服',legs:'下半身（スカート・タイツなど）',hands:'手袋',feet:'靴',cloak:'マント',backpack:'バッグ',accessory:'その他のアクセサリー'};
+function wardrobeSlotLabel(slot){return slot===46?'46 · マントとして表示される枠':slot===47?'47 · バッグとして表示される枠':`${slot} · 重ね着枠`;}
+function wardrobeItemKind(g){if(g.item_kind)return g.item_kind;const n=g.name.toLowerCase();for(const [kind,pattern]of [['feet',/boot|shoe|loafer|sandal|靴|ブーツ|サンダル/],['hands',/glove|gauntlet|手袋|籠手/],['backpack',/backpack|リュック|バックパック/],['cloak',/cloak|cape|マント|ケープ/],['legs',/tights|stocking|skirt|pants|trouser|タイツ|スカート|ズボン/],['accessory',/accessor|ring|necklace|bracelet|earring|眼鏡|指輪|首飾り|アクセ/]])if(pattern.test(n))return kind;return 'body';}
 const wardrobeState={nodes:new Map(),garments:new Map(),hash:'',sequence:0,preview:null,revision:0};
 const wardrobeRoles={body:'身体',underwear:'下着（無装備でも表示）',fixed:'顔・髪など常時表示',garment:'着脱する衣服'};
-function wardrobeEquipmentGroup(g){if(g.equipment_group)return g.equipment_group;const n=g.name.toLowerCase();if(/boot|shoe|loafer|sandal|靴|ブーツ|サンダル/.test(n))return 'feet';if(/glove|gauntlet|手袋|籠手/.test(n))return 'hands';if(/accessor|ring|necklace|bracelet|earring|眼鏡|指輪|首飾り|アクセ/.test(n))return 'accessory';return 'body';}
-function garmentDefaults(id,name,slot=44){return {id,name,nodes:[],slot,armor_type:'clothing',armor_rating:0,weight:0,value:0,equipped:true,equipment_group:wardrobeEquipmentGroup({name})};}
+function wardrobeEquipmentGroup(g){if(g.equipment_group)return g.equipment_group;const n=g.name.toLowerCase();if(/boot|shoe|loafer|sandal|靴|ブーツ|サンダル/.test(n))return 'feet';if(/glove|gauntlet|手袋|籠手/.test(n))return 'hands';if(/accessor|ring|necklace|bracelet|earring|backpack|cloak|cape|眼鏡|指輪|首飾り|アクセ|リュック|マント|ケープ/.test(n))return 'accessory';return 'body';}
+function garmentDefaults(id,name,slot=53){return {id,name,nodes:[],slot,armor_type:'clothing',armor_rating:0,weight:0,value:0,equipped:true,equipment_group:wardrobeEquipmentGroup({name}),item_kind:wardrobeItemKind({name})};}
 function wardrobeLoad(source,settings=null){
   wardrobeState.nodes.clear();wardrobeState.garments.clear();wardrobeState.sequence=0;
   wardrobeState.revision++;
@@ -49,13 +52,13 @@ function renderWardrobe(){
     const count=[...wardrobeState.nodes.values()].filter(p=>p.role==='garment'&&p.group===id).length;
     const title=document.createElement('summary');title.textContent=`${g.name} · ${count}メッシュ${count?'':'（未使用）'}`;box.append(title);
     const grid=document.createElement('div');grid.className='grid three';
-    for(const [key,caption]of [['name','装備名'],['slot','装備枠'],['equipment_group','鎧との切替'],['armor_type','種類'],['armor_rating','防御力'],['weight','重量'],['value','価値'],['equipped','初期装備']]){
+    for(const [key,caption]of [['name','装備名'],['item_kind','部位・用途'],['slot','占有する装備枠'],['equipment_group','鎧との切替'],['armor_type','防具の分類'],['armor_rating','防御力'],['weight','重量'],['value','価値'],['equipped','初期装備']]){
       const label=document.createElement('label');label.textContent=caption;let input;
-      if(key==='slot'||key==='armor_type'||key==='equipment_group'){input=document.createElement('select');const entries=key==='slot'?wardrobeSlots.map(s=>[s,String(s)]):key==='equipment_group'?[['body','胴の鎧で外す'],['hands','手袋で外す'],['feet','靴で外す'],['accessory','防具と併用']]:[['clothing','衣服'],['light','軽装'],['heavy','重装']];for(const [v,text]of entries)input.add(new Option(text,v));input.value=key==='equipment_group'?wardrobeEquipmentGroup(g):g[key];}
+      if(['slot','armor_type','equipment_group','item_kind'].includes(key)){input=document.createElement('select');const entries=key==='slot'?wardrobeSlots.map(s=>[s,wardrobeSlotLabel(s)]):key==='item_kind'?Object.entries(wardrobeKinds):key==='equipment_group'?[['body','胴の鎧を優先して外す'],['hands','手袋を優先して外す'],['feet','靴を優先して外す'],['accessory','防具と併用']]:[['clothing','衣服（防具ではない）'],['light','軽装'],['heavy','重装']];for(const [v,text]of entries)input.add(new Option(text,v));input.value=key==='equipment_group'?wardrobeEquipmentGroup(g):key==='item_kind'?wardrobeItemKind(g):g[key];}
       else {input=document.createElement('input');input.type=key==='name'?'text':key==='equipped'?'checkbox':'number';if(key==='equipped'){input.checked=g[key];label.className='checkbox';}else{input.value=g[key];if(key==='name')input.maxLength=128;else{input.min=0;input.max=key==='value'?2147483647:key==='weight'?1000:10000;input.step=key==='value'?1:.1;}}}
       input.dataset.field=key;input.setAttribute('aria-label',g.name+' '+caption);
-      input.onchange=()=>{g[key]=key==='equipped'?input.checked:key==='name'||key==='armor_type'||key==='equipment_group'?input.value:Number(input.value);wardrobeClearPreview();if(key==='name')renderWardrobe();};label.append(input);grid.append(label);
-    }box.append(grid);garments.append(box);
+      input.onchange=()=>{g[key]=key==='equipped'?input.checked:['name','armor_type','equipment_group','item_kind'].includes(key)?input.value:Number(input.value);wardrobeClearPreview();if(key==='name')renderWardrobe();};label.append(input);grid.append(label);
+    }box.append(grid);const help=document.createElement('p');help.className='hint';help.textContent='部位・用途はゲーム内の衣服判定に使います。SkyUIのアイコン・種類名は主に装備枠で決まり、UI MODによって表示が異なります。46・47はマント／バッグ向け。普通の服は他の重ね着枠を選んでください。防具と併用を選ぶと重ね着できますが、形によっては重なります。元衣装に戻すときは対応する鎧・手袋・靴を先に外してください。';box.append(help);garments.append(box);
   }
   const preview=$('wardrobe-preview-state'), previous=preview.value;preview.replaceChildren(new Option('全ての服を着る','all'),new Option('服を外す（身体と下着）','underwear'));
   for(const g of wardrobeCollect().appearance_parts.garments)preview.add(new Option(g.name+'だけ外す','without:'+g.id));preview.value=[...preview.options].some(o=>o.value===previous)?previous:'all';

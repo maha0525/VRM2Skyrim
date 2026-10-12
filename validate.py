@@ -14,7 +14,7 @@ from scipy.spatial import cKDTree
 from plugin import records
 from settings import load_settings
 from build_npc import NPC_ID, RACE_ID
-from wardrobe import components
+from wardrobe import components, keyword_names
 from head_visibility import validate_head_visibility
 from equipment_runtime import runtime_records, vmad, script_name, pex_strings, PROPERTIES
 
@@ -176,6 +176,7 @@ def validate(output, skeleton=None):
                 raise ValueError("Appearance addon mesh is missing")
     if settings.armor_support:
         by_id = {r.form_id: r for r in generated}
+        keyword_manifest = json.loads((output/'npc.json').read_text(encoding='utf8'))['garment_keywords']
         skin = by_name[settings.prefix + "Appearance"]
         skin_components = [p for p in components(settings) if p["role"] != "garment"]
         if len(skin.values(b"MODL")) != len(skin_components):
@@ -196,6 +197,11 @@ def validate(output, skeleton=None):
         expected_outfit = set()
         for index, garment in enumerate(settings.appearance_parts["garments"]):
             item = by_name[settings.prefix + "Garment_" + garment["id"]]
+            expected_keywords = keyword_manifest[garment['id']]
+            names = keyword_names(garment)
+            if (list(expected_keywords) != names or item.values(b'KSIZ') != [struct.pack('<I', len(names))]
+                    or item.values(b'KWDA') != [b''.join(struct.pack('<I', expected_keywords[n]) for n in names)]):
+                raise ValueError('Garment usage/vendor keywords mismatch')
             if item.flags & 4 or item.values(b"FULL") != [
                 garment["name"].encode("utf8") + b"\0"
             ]:

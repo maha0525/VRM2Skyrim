@@ -133,8 +133,9 @@ After changing that set, replace the combined patch and deploy again.
 
 Fitted equipment and VRM garments switch by their body/hands/feet groups.
 Equipping fitted torso armor removes body-group garments; boots remove feet
-garments; gloves remove hands garments. Equipping a garment removes fitted
-equipment from that group. Accessories stay equipped. Items are unequipped,
+garments; gloves remove hands garments. Fitted gear has priority even when the
+engine re-equips a garment. Remove that gear first to wear original clothes
+again. Accessories stay equipped. Items are unequipped,
 never deleted or transferred. OnLoad resolves already-overlapping equipment.
 If troubleshooting, select the NPC and use the garment FormIDs listed above:
 """ + remove + """

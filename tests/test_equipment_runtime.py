@@ -18,7 +18,7 @@ class EquipmentRuntimeTests(unittest.TestCase):
         self.assertEqual(set(vm.properties), set(PROPERTIES))
         return actor, vm
 
-    def test_clothes_armor_boots_and_reverse_changes_preserve_inventory(self):
+    def test_armor_has_priority_over_repeated_clothing_equips(self):
         actor, vm = self.fixture()
         inventory = actor.inventory.copy()
         vm.run('OnInit')
@@ -32,7 +32,20 @@ class EquipmentRuntimeTests(unittest.TestCase):
         self.assertEqual(actor.worn, {201, 202})
         actor.call('equipitem', [101, 0, 1])
         actor.drain_events(vm)
+        self.assertEqual(actor.worn, {201, 202})
+        # NPC/AFT re-equipping a later garment must not strip the cuirass.
+        for _ in range(3):
+            actor.call('equipitem', [102, 0, 1])
+            actor.drain_events(vm)
+            self.assertEqual(actor.worn, {201, 202})
+        actor.call('equipitem', [103, 0, 1])
+        actor.drain_events(vm)
+        self.assertEqual(actor.worn, {201, 202})
+        actor.call('unequipitem', [201, 0, 1])
+        actor.call('equipitem', [101, 0, 1])
+        actor.drain_events(vm)
         self.assertEqual(actor.worn, {101, 202})
+        actor.call('unequipitem', [202, 0, 1])
         actor.call('equipitem', [103, 0, 1])
         actor.drain_events(vm)
         self.assertEqual(actor.worn, {101, 103})
@@ -51,7 +64,7 @@ class EquipmentRuntimeTests(unittest.TestCase):
         actor.call('equipitem', [201, 0, 1])
         actor.call('equipitem', [101, 0, 1])
         actor.drain_events(vm)
-        self.assertFalse({101, 201}.issubset(actor.worn))
+        self.assertEqual(actor.worn, {201})
         # A queued event for removed clothes must not undress the current armor.
         actor.worn = {201, 202, 301}
         vm.run('OnObjectEquipped', 101, None)
@@ -67,3 +80,15 @@ class EquipmentRuntimeTests(unittest.TestCase):
         self.assertIn(b'V2S_OneWardrobe', strings)
         with self.assertRaises(ValueError):
             rename_pex(b'not a PEX', 'V2S_Invalid')
+
+    def test_all_groups_ignore_equip_order_and_leave_accessories_alone(self):
+        binding = dict(zip(PROPERTIES, ((101,102,103,301), (101,), (102,), (103,), (201,), (202,), (203,))))
+        for clothing_first in (True,False):
+            actor = Actor({n:1 for n in (101,102,103,201,202,203,301)})
+            vm = PexVM(TEMPLATE,actor,binding)
+            actor.call('equipitem',[301,0,1])
+            for clothes,gear in ((101,201),(102,202),(103,203)):
+                for item in ((clothes,gear) if clothing_first else (gear,clothes)):
+                    actor.call('equipitem',[item,0,1])
+                    actor.drain_events(vm)
+            self.assertEqual(actor.worn,{201,202,203,301})

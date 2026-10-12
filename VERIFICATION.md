@@ -1,5 +1,42 @@
 # VRM2Skyrim verification
 
+## 0.6.1 equipment priority and garment classification (2026-10-12)
+
+The user confirmed that 0.6.0 renders the original VRM face with the fitted
+cuirass/boots in normal follower use. AFT equipment management had not been
+enabled in that successful test. The user also observed tights displacing the
+cuirass and UI labels showing skirt as cloak and tights as backpack. The source
+used last-equipped-wins in both directions, and sequential garment slots 46/47
+explain those UI labels. These are separate mechanisms.
+
+0.6.1 makes fitted gear win in either equip-event order, including repeated
+clothing equips. Original clothes can be worn after removing corresponding gear;
+accessories and all inventory counts remain untouched. The real shipped PEX
+bytes are tested for all three groups, both event orders, repeated equip attempts,
+delayed events and empty/replaced equipment states. All 29 Python tests and Ruff
+pass. These tests use native actor mocks, not the engine's equipment AI.
+
+The wizard exposes garment usage, slot purpose and replacement group separately.
+The headless Chrome select -> download -> reimport test verifies all three
+fields. New splits prefer generic layers over cloak/backpack slots. Proper native
+vendor and garment-usage keywords are written and read back from the plugin.
+Usage keywords do not promise an independently selected SkyUI subtype/icon.
+
+The private local test output was rebuilt with the original garment FormIDs and
+new layers 53-57. All five garment NIFs preserve their exact vertices, triangles,
+UVs, normals, weights, bone names, textures and shape transforms; only partitions
+change. Every other NIF/DDS is byte-identical to 0.6.0. Readback retains all
+222399 source triangles, 20464 original body faces and 33 private records. The
+final garment NIFs were imported and rendered in Blender with the original
+wardrobe, then visually inspected. The armor-patch ESP is byte-identical to the
+previous patch, and installed paths remain disjoint from the existing fixed-mode
+follower ZIP. Every ZIP entry equals its validated mod-folder file.
+
+The new runtime's Skyrim behavior, updating a saved follower's changed layer
+masks and AFT equipment management still require in-game confirmation. No
+Skyrim/Vortex UI was operated. Existing successful game feedback is evidence
+for 0.6.0's face and fitted appearance, not for these new priority/layer changes.
+
 ## 0.6.0 independent head / inventory / switching (2026-10-12)
 
 The user confirmed fitted banded iron armor renders in 0.5.1, but overlaps the

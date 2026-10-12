@@ -11,7 +11,7 @@ from head_visibility import HEAD_COVER_ID, configure_native_head, head_records
 from equipment_runtime import runtime_records, vmad, write_runtime
 from plugin import Record, records, write_plugin
 from settings import SKILLS, load_settings
-from wardrobe import components
+from wardrobe import components, keyword_names
 
 NPC_ID = 0x01000800
 ARMOR_ID = 0x01000801
@@ -86,12 +86,12 @@ def appearance_records(settings, catalog):
             skin_addons.append(addon_id)
             skin_mask |= mask
             continue
-        keyword = catalog.require({"clothing": "ArmorClothing", "light": "ArmorLight", "heavy": "ArmorHeavy"}[part["armor_type"]], b"KYWD")
+        keywords = [catalog.require(name, b"KYWD").form_id for name in keyword_names(part)]
         result.append(Record(b"ARMO", armor_id, 0, [
             (b"EDID", text(item_name)), (b"OBND", bytes(12)), (b"FULL", text(part["name"])),
             *inventory_fields,
             (b"BOD2", struct.pack("<II", mask, armor_type)), (b"RNAM", uint(RACE_ID)),
-            (b"KSIZ", uint(1)), (b"KWDA", uint(keyword.form_id)), (b"MODL", uint(addon_id)),
+            (b"KSIZ", uint(len(keywords))), (b"KWDA", b''.join(uint(k) for k in keywords)), (b"MODL", uint(addon_id)),
             (b"DATA", struct.pack("<If", part["value"], part["weight"])),
             (b"DNAM", struct.pack("<i", round(part["armor_rating"] * 100)))]))
         inventory.append((b"CNTO", uint(armor_id) + struct.pack("<i", 1)))
@@ -245,6 +245,8 @@ def build_npc(game_data, output, settings=None, catalog=None):
               "spawn_cell": cell.editor_id, "spawn_cell_form_id": hex(cell.form_id), "spawn_position": location,
               "spawn_source": marker.editor_id, "custom_race": settings.prefix + "Race",
               "skeleton": settings.asset_dir + "/skeleton.nif",
+              "garment_keywords": {g['id']: {name: catalog.require(name,b'KYWD').form_id for name in keyword_names(g)}
+                                   for g in settings.appearance_parts.get('garments', [])} if settings.armor_support else {},
               "records": [{"type": r.kind.decode(), "id": hex(r.form_id), "editor_id": r.editor_id} for r in generated],
               "game_verified": False}
     (output / "npc.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf8")

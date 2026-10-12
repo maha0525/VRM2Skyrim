@@ -11,7 +11,7 @@ from environment import find_game
 from game_catalog import GameCatalog
 from plugin import Record, records
 from settings import FollowerSettings
-from wardrobe import suggest_role, validate_source
+from wardrobe import suggest_role, validate_source, item_kind, keyword_names, GARMENT_SLOTS
 from parallel_rigs import follower_links, propagate_pose
 import numpy as np
 
@@ -26,6 +26,20 @@ def wardrobe_settings(**overrides):
 
 
 class WardrobeTests(unittest.TestCase):
+    def test_usage_keywords_do_not_change_equipment_replacement_or_slots(self):
+        garment = wardrobe_settings().appearance_parts['garments'][0]
+        self.assertEqual(item_kind(garment), 'body')
+        self.assertEqual(GARMENT_SLOTS[:5], (53, 54, 55, 56, 57))
+        tights = {**garment, 'name': 'tights', 'slot': 47, 'equipment_group': 'accessory'}
+        self.assertEqual(item_kind(tights), 'legs')
+        self.assertEqual(keyword_names(tights), ['ArmorClothing', 'VendorItemClothing', 'ClothingBody'])
+        self.assertEqual(keyword_names({**tights, 'item_kind': 'feet', 'armor_type': 'heavy'}),
+                         ['ArmorHeavy', 'VendorItemArmor', 'ArmorBoots'])
+        parts = copy.deepcopy(wardrobe_settings().appearance_parts)
+        parts['garments'][0]['item_kind'] = 'unknown'
+        with self.assertRaisesRegex(ValueError, 'item kind'):
+            wardrobe_settings(appearance_parts=parts)
+
     def test_native_head_has_no_worn_item_dependency(self):
         class Catalog:
             def require(self, name, kind):
@@ -138,6 +152,10 @@ class WardrobeIntegrationTests(unittest.TestCase):
         self.assertEqual(coat.flags & 4, 0)
         self.assertEqual(coat.values(b"ETYP"), self.catalog.require("ClothesFarmClothes01").values(b"ETYP"))
         self.assertTrue(coat.values(b"MOD2"))
+        for item, names in ((coat, ['ArmorClothing', 'VendorItemClothing', 'ClothingBody']),
+                            (boots, ['ArmorHeavy', 'VendorItemArmor', 'ArmorBoots'])):
+            self.assertEqual(item.values(b'KSIZ'), [struct.pack('<I', len(names))])
+            self.assertEqual(item.values(b'KWDA'), [b''.join(struct.pack('<I', self.catalog.require(n,b'KYWD').form_id) for n in names)])
         self.assertEqual(by_name[settings.prefix + "Outfit"].values(b"INAM"), [b''])
         self.assertIn(struct.pack('<Ii', coat.form_id, 1), by_name[settings.prefix+'NPC'].values(b'CNTO'))
         validate_head_visibility(parsed, settings)

@@ -84,10 +84,16 @@ Event OnObjectEquipped(Form akBaseObject, ObjectReference akReference)
     ElseIf FeetEquipment.HasForm(akBaseObject)
         UnequipConflicts(FeetClothes)
     ElseIf BodyClothes.HasForm(akBaseObject)
-        UnequipConflicts(BodyEquipment)
+        If AnyEquipped(BodyEquipment)
+            UnequipConflicts(BodyClothes)
+        EndIf
     ElseIf HandsClothes.HasForm(akBaseObject)
-        UnequipConflicts(HandsEquipment)
+        If AnyEquipped(HandsEquipment)
+            UnequipConflicts(HandsClothes)
+        EndIf
     ElseIf FeetClothes.HasForm(akBaseObject)
-        UnequipConflicts(FeetEquipment)
+        If AnyEquipped(FeetEquipment)
+            UnequipConflicts(FeetClothes)
+        EndIf
     EndIf
 EndEvent

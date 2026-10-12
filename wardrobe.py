@@ -4,8 +4,10 @@ import math
 import re
 
 BODY_SLOT, UNDERWEAR_SLOT, FIXED_SLOT = 32, 52, 60
-GARMENT_SLOTS = tuple(range(44, 50)) + tuple(range(53, 60))
+# Prefer generic layers; 46/47 are commonly displayed as cloak/backpack by UI mods.
+GARMENT_SLOTS = tuple(range(53, 60)) + (44, 45, 48, 49, 46, 47)
 ROLES = ("body", "underwear", "fixed")
+ITEM_KINDS = ("body", "legs", "hands", "feet", "cloak", "backpack", "accessory")
 
 
 def suggest_role(name, materials):
@@ -45,8 +47,10 @@ def validate_parts(parts):
     ids, equipped = set(), set()
     for garment in garments:
         keys = {"id", "name", "nodes", "slot", "armor_type", "armor_rating", "weight", "value", "equipped"}
-        if not isinstance(garment, dict) or set(garment) - {"equipment_group"} != keys:
+        if not isinstance(garment, dict) or set(garment) - {"equipment_group", "item_kind"} != keys:
             raise ValueError("Invalid garment settings")
+        if item_kind(garment) not in ITEM_KINDS:
+            raise ValueError("Invalid garment item kind")
         if equipment_group(garment) not in {"body", "hands", "feet", "accessory"}:
             raise ValueError("Invalid garment equipment group")
         item_id, name = garment["id"], garment["name"]
@@ -98,9 +102,37 @@ def equipment_group(garment):
         return "feet"
     if re.search(r"glove|gauntlet|手袋|籠手", name):
         return "hands"
-    if re.search(r"accessor|ring|necklace|bracelet|earring|眼鏡|指輪|首飾り|アクセ", name):
+    if re.search(r"accessor|ring|necklace|bracelet|earring|backpack|cloak|cape|眼鏡|指輪|首飾り|アクセ|リュック|マント|ケープ", name):
         return "accessory"
     return "body"
+
+
+def item_kind(garment):
+    if "item_kind" in garment:
+        return garment["item_kind"]
+    name = garment["name"].lower()
+    for kind, pattern in (("feet", r"boot|shoe|loafer|sandal|靴|ブーツ|サンダル"),
+                          ("hands", r"glove|gauntlet|手袋|籠手"),
+                          ("backpack", r"backpack|リュック|バックパック"),
+                          ("cloak", r"cloak|cape|マント|ケープ"),
+                          ("legs", r"tights|stocking|skirt|pants|trouser|タイツ|スカート|ズボン"),
+                          ("accessory", r"accessor|ring|necklace|bracelet|earring|眼鏡|指輪|首飾り|アクセ")):
+        if re.search(pattern, name):
+            return kind
+    return "body"
+
+
+def keyword_names(garment):
+    """Semantic/vendor keywords; UI subtype still follows the occupied layer."""
+    armor_type, kind = garment["armor_type"], item_kind(garment)
+    result = [{"clothing": "ArmorClothing", "light": "ArmorLight", "heavy": "ArmorHeavy"}[armor_type],
+              "VendorItemClothing" if armor_type == "clothing" else "VendorItemArmor"]
+    keyword = ({"body": "ClothingBody", "legs": "ClothingBody", "hands": "ClothingHands", "feet": "ClothingFeet"}
+               if armor_type == "clothing" else
+               {"body": "ArmorCuirass", "legs": "ArmorCuirass", "hands": "ArmorGauntlets", "feet": "ArmorBoots"}).get(kind)
+    if keyword:
+        result.append(keyword)
+    return result
 
 
 def components(settings, fitting=True):

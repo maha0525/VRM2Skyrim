@@ -1,7 +1,7 @@
 .info
   .source "V2SInitialWardrobe.psc"
   .modifyTime 0
-  .compileTime 1791748569
+  .compileTime 1791776866
   .user "VRM2Skyrim"
   .computer "VRM2Skyrim"
 .endInfo
@@ -323,18 +323,30 @@
             label4:
             CALLMETHOD HasForm ::BodyClothes_var ::temp0 akBaseObject ;@line 86
             JUMPF ::temp0 label5 ;@line 86
-            CALLMETHOD UnequipConflicts self ::nonevar ::BodyEquipment_var ;@line 87
-            JUMP label2 ;@line 87
-            label5:
-            CALLMETHOD HasForm ::HandsClothes_var ::temp0 akBaseObject ;@line 88
-            JUMPF ::temp0 label6 ;@line 88
-            CALLMETHOD UnequipConflicts self ::nonevar ::HandsEquipment_var ;@line 89
-            JUMP label2 ;@line 89
+            CALLMETHOD AnyEquipped self ::temp0 ::BodyEquipment_var ;@line 87
+            JUMPF ::temp0 label6 ;@line 87
+            CALLMETHOD UnequipConflicts self ::nonevar ::BodyClothes_var ;@line 88
+            JUMP label6 ;@line 88
             label6:
-            CALLMETHOD HasForm ::FeetClothes_var ::temp0 akBaseObject ;@line 90
-            JUMPF ::temp0 label2 ;@line 90
-            CALLMETHOD UnequipConflicts self ::nonevar ::FeetEquipment_var ;@line 91
-            JUMP label2 ;@line 91
+            JUMP label2 ;@line 88
+            label5:
+            CALLMETHOD HasForm ::HandsClothes_var ::temp0 akBaseObject ;@line 90
+            JUMPF ::temp0 label7 ;@line 90
+            CALLMETHOD AnyEquipped self ::temp0 ::HandsEquipment_var ;@line 91
+            JUMPF ::temp0 label8 ;@line 91
+            CALLMETHOD UnequipConflicts self ::nonevar ::HandsClothes_var ;@line 92
+            JUMP label8 ;@line 92
+            label8:
+            JUMP label2 ;@line 92
+            label7:
+            CALLMETHOD HasForm ::FeetClothes_var ::temp0 akBaseObject ;@line 94
+            JUMPF ::temp0 label2 ;@line 94
+            CALLMETHOD AnyEquipped self ::temp0 ::FeetEquipment_var ;@line 95
+            JUMPF ::temp0 label9 ;@line 95
+            CALLMETHOD UnequipConflicts self ::nonevar ::FeetClothes_var ;@line 96
+            JUMP label9 ;@line 96
+            label9:
+            JUMP label2 ;@line 96
             label2:
           .endCode
         .endFunction
