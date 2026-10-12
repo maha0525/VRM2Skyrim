@@ -17,6 +17,7 @@ from build_npc import NPC_ID, RACE_ID
 from wardrobe import components, keyword_names
 from head_visibility import validate_head_visibility
 from equipment_runtime import runtime_records, vmad, script_name, pex_strings, PROPERTIES
+from nif_materials import DOUBLE_SIDED
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "dependencies/io_scene_nifly"))
@@ -46,6 +47,10 @@ def validate(output, skeleton=None):
             if nif.game != "SKYRIMSE":
                 raise ValueError(f"Wrong NIF target: {nif.game}")
             for shape in nif.shapes:
+                source_shape = next((s for s in part.get('shapes', []) if s['name'] == shape.name), None)
+                if source_shape is not None and 'double_sided' in source_shape:
+                    if bool(shape.shader.properties.Shader_Flags_2 & DOUBLE_SIDED) != source_shape['double_sided']:
+                        raise ValueError('NIF face culling differs from source material: '+shape.name)
                 if len(shape.verts) > 65535 or not shape.bone_names:
                     raise ValueError(f"Invalid skinned shape: {shape.name}")
                 if set(shape.bone_names) - bone_set:

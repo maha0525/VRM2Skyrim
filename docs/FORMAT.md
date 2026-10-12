@@ -187,3 +187,21 @@ imported explicit slots unchanged. Selecting a different slot rebuilds both
 records and NIF partitions through the normal conversion pipeline.
 The test VM reads the real PEX format using the author's Caprica/pex schema;
 its mocked native calls establish code behavior, not actual game compatibility.
+
+## 0.6.2 material face culling
+
+Original glTF materials retain `doubleSided` (default false). Do not force the
+Skyrim DOUBLE_SIDED shader flag on opaque, masked or blended materials. Their
+alpha modes and MToon depth-write choices remain independent. See the
+[glTF double-sided specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#double-sided).
+`nif_materials.apply_alpha` also enforces culling and reads the saved NIF back.
+Appearance shape metadata records source sidedness; final validation rejects
+a mismatching native flag where that metadata is present.
+
+This corrects eye strips caused by back-facing eyelash geometry covering the
+front-facing sclera. Default morphs and texture transparency are unchanged.
+Cycles previews use an explicit Geometry.Backfacing transparent branch for
+single-sided materials because viewport culling alone does not govern Cycles.
+The branch wraps the current surface shader, preserving its alpha handling;
+explicit double-sided materials are left intact. Source previews use stable
+material IDs, and exported-NIF previews follow native material flags.

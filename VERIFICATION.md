@@ -1,5 +1,40 @@
 # VRM2Skyrim verification
 
+## 0.6.2 source-material culling (2026-10-12)
+
+The user reported the 0.6.1 wardrobe update worked, then supplied close-up images
+of thick dark strips over the sclera. The original face materials are
+doubleSided=false, use intact white sclera textures, and all twenty default face
+morphs evaluate to zero. The converter forced every material to DOUBLE_SIDED.
+Same-source, same-camera A/B renders differing only in backface visibility
+reproduce/remove the strip. Ray casts through the strip identify a back-facing
+eyelash-material triangle before the front-facing eye. This identifies the
+producer's material-setting error, not missing avatar preparation.
+
+Exports now preserve source sidedness independently of alphaMode and depth write.
+New export checks read the native NIF flag back. Shape metadata enables the final
+validator to reject culling drift. Cycles previews explicitly hide back-facing
+surfaces for single-sided materials, preserving existing surface/alpha shaders
+and leaving explicit double-sided materials intact. Source previews use stable
+material names so duplicate/long names cannot lose their material policy.
+
+All 32 local Python checks and Ruff pass. Native synthetic-NIF tests cover each
+opaque/masked/blended and single/double combination, repeated application, alpha
+property preservation, geometry and unrelated flags. A fresh conversion from the
+private source avatar exports 52 original shapes: 19 single-sided and 33 explicitly
+double-sided. Independent per-name native readback matches every source policy.
+Both source and exported-NIF production preview paths were run, and same-camera
+eye close-ups of the delivered NIF were visually inspected.
+
+The delivered private output preserves every vertex, triangle, UV, normal, bone
+name, weight, transform, partition, alpha mode/value and texture. Only the
+DOUBLE_SIDED flag changes where the source is single-sided, including original
+skin copied into fitted equipment. All DDS files, follower ESP, private wardrobe
+PEX and armor-patch ESP remain byte-identical to 0.6.1. Native geometry validation
+retains 222399 original triangles, 20464 body faces and 33 private records.
+The ZIP was checked against the validated folder byte-for-byte. Avatar source,
+screenshots, renders and generated MODs remain local.
+
 ## 0.6.1 equipment priority and garment classification (2026-10-12)
 
 The user confirmed that 0.6.0 renders the original VRM face with the fitted

@@ -35,6 +35,9 @@ def main():
     document, binary = read_glb(args.source)
     for index, node in enumerate(document["nodes"]):
         node["name"] = f"VRMNode_{index:05}"
+    for index, material in enumerate(document.get('materials', [])):
+        material['name'] = f'VRMMaterial_{index:05}'
+    source_materials = {m['name']: m for m in document.get('materials', [])}
     glb = output / "preview-source.glb"
     write_glb(glb, document, binary)
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -42,6 +45,10 @@ def main():
     rigs = [obj for obj in bpy.context.scene.objects if obj.type == "ARMATURE"]
     helpers = {bone.custom_shape for rig in rigs for bone in rig.pose.bones if bone.custom_shape}
     meshes = [obj for obj in bpy.context.scene.objects if obj.type == "MESH" and obj not in helpers]
+    from blender_meshes import preview_face_culling
+    for material in bpy.data.materials:
+        info = source_materials.get(material.name, {})
+        preview_face_culling(material, info.get('doubleSided', False))
     bounds = []
     for obj in meshes:
         node = int(obj.name.split("_")[-1].split(".")[0])

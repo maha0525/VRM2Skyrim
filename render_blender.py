@@ -113,6 +113,9 @@ def main():
             bpy.data.objects.remove(new_rig, do_unlink=True)
     meshes = [obj for obj in bpy.context.scene.objects if obj.type == "MESH" and not obj.hide_render
               and any(mod.type == "ARMATURE" and mod.object == rig for mod in obj.modifiers)]
+    from blender_meshes import preview_face_culling
+    for material in {m for obj in meshes for m in obj.data.materials if m}:
+        preview_face_culling(material, 'DOUBLE_SIDED' in material.pyn_shader.Shader_Flags_2)
     # These PNGs were decoded from the delivered DDS, not copied from the VRM.
     for image in bpy.data.images:
         if image.filepath:

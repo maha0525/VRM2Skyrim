@@ -66,10 +66,8 @@ def save_images(meshes, output, settings, source_materials):
         material["BS_Shader_Block_Name"] = "BSLightingShaderProperty"
         material.pyn_shader.Shader_Type = "Default"
         material.pyn_shader.Shader_Flags_1 = "SKINNED | RECEIVE_SHADOWS | CAST_SHADOWS | ZBUFFER_TEST"
-        mtoon = info.get("extensions", {}).get("VRMC_materials_mtoon", {})
-        zwrite = info.get("alphaMode", "OPAQUE") != "BLEND" or mtoon.get("transparentWithZWrite", False)
-        material.pyn_shader.Shader_Flags_2 = (("ZBUFFER_WRITE | " if zwrite else "")
-                                             + "DOUBLE_SIDED | VERTEX_COLORS")
+        from nif_materials import lighting_flags_2
+        material.pyn_shader.Shader_Flags_2 = lighting_flags_2(info)
         material.pyn_shader.Spec_Color = (0.0, 0.0, 0.0)
         material.pyn_shader.Alpha = (1. if info.get("alphaMode", "OPAQUE") == "OPAQUE" else
                                      info.get("pbrMetallicRoughness", {}).get("baseColorFactor", [1, 1, 1, 1])[3])
@@ -377,7 +375,8 @@ def main():
                                    export_animations=False, export_colors=True, intuit_defaults=False)
         apply_alpha(nif_path, {obj.name: source_materials[obj.material_slots[0].material.name] for obj in selected})
         manifest.append({**part, "nif": nif_path.relative_to(output / "mod").as_posix(),
-                         "shapes": [{"name": obj.name, "source_node": obj["v2s_source_node"]} for obj in selected]})
+                         "shapes": [{"name": obj.name, "source_node": obj["v2s_source_node"],
+                                     "double_sided": source_materials[obj.material_slots[0].material.name].get('doubleSided', False)} for obj in selected]})
         LOG.info("Exported component %s: %s shapes, slot %s", part["id"], len(selected), part["slot"])
     (output / "appearance.json").write_text(json.dumps({"components": manifest}, ensure_ascii=False, indent=2), encoding="utf8")
     bpy.ops.wm.save_as_mainfile(filepath=str(output / "converted.blend"))

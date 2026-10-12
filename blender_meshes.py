@@ -1,6 +1,29 @@
 """Geometry partitioning that does not depend on an avatar's mesh names."""
 import bmesh
 import bpy
+import logging
+
+
+def preview_face_culling(material, double_sided=False):
+    """Cycles needs a shader branch; viewport backface culling alone is ignored."""
+    material.use_backface_culling = not double_sided
+    logging.debug('Preview material %s: doubleSided=%s', material.name, double_sided)
+    if double_sided or not material.use_nodes or material.node_tree.nodes.get('V2S_BackfaceCulling'):
+        return
+    tree = material.node_tree
+    outputs = [node for node in tree.nodes if node.type == 'OUTPUT_MATERIAL']
+    output = next((node for node in outputs if node.is_active_output), outputs[0] if outputs else None)
+    if output is None or not output.inputs['Surface'].is_linked:
+        return
+    incoming = output.inputs['Surface'].links[0].from_socket
+    geometry = tree.nodes.new('ShaderNodeNewGeometry')
+    mix = tree.nodes.new('ShaderNodeMixShader')
+    mix.name = 'V2S_BackfaceCulling'
+    transparent = tree.nodes.new('ShaderNodeBsdfTransparent')
+    tree.links.new(geometry.outputs['Backfacing'], mix.inputs[0])
+    tree.links.new(incoming, mix.inputs[1])
+    tree.links.new(transparent.outputs[0], mix.inputs[2])
+    tree.links.new(mix.outputs[0], output.inputs['Surface'])
 
 
 def partition_shape(obj, limit=60000):
