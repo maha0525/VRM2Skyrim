@@ -1,155 +1,163 @@
 # VRM2Skyrim
 
-**あなたのVRMアバターを、スカイリムの旅の仲間に。**
+**English** | [日本語](README.ja.md)
 
-人型のVRM 0 / 1から、Skyrim Special Edition用フォロワーMODを作るローカルツールです。体型の比率を保つ専用種族・専用骨格を生成し、元の顔・髪・衣装でゲームへ連れていけます。5段階のウィザードで設定し、Vortex / Mod Organizer 2へ導入できるZIPを出力します。
+**Turn your VRM avatar into a companion for your Skyrim adventures.**
 
-材質の片面／両面表示と透過方式は元VRMの設定を引き継ぎます。0.6.2では全材質を両面表示にしていた処理を修正し、まつ毛の裏面が白目に重なる問題を解消する設定へ戻しました。VRM側でまつ毛や表情パーツを削除する必要はありません。
+VRM2Skyrim is a local tool that creates Skyrim Special Edition follower MODs from humanoid VRM 0/1 models. It generates a dedicated race and skeleton to preserve the avatar's proportions, face, hair, and original outfit. Configure the follower in a five-step wizard and export a ZIP for Vortex or Mod Organizer 2.
 
-初期配置は**ホワイトランのキナレス聖堂内**。標準フォロワーの派閥・プレイヤーとの友好関係・勧誘用ボイス・永続参照を設定し、会話から仲間にできる構成を作ります。
+Materials retain the original VRM's single/double-sided rendering and transparency settings. Version 0.6.2 corrected the earlier behavior that forced all materials to render double-sided, resolving eyelashes appearing over the whites of the eyes. You do not need to delete eyelashes or expression parts from the VRM.
 
-現在のバージョンは **0.8.0**。本体・導入済みDLC・公式追加コンテンツの人型装備を一括で体型に合わせます。兜・盾・指輪・首飾りも対象です。顔と髪の表示設定、Outfit Studioで仕上げた形の取り込みに対応しています。
+Followers start **inside the Temple of Kynareth in Whiterun**. The tool sets up the vanilla follower factions, a friendly relationship with the player, a recruitment-compatible voice, and a persistent placed reference, so the NPC can be recruited through dialogue.
 
-## 起動する
+The current version is **0.8.0**. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
 
-必要なもの:
+The wizard interface is currently Japanese. English descriptions of its controls below are translations; some original Japanese labels are included to help locate them.
 
-- Windows、Python **3.11 / 3.12**。
-- Skyrim Special Edition本体（`Skyrim.esm`と本体BSA）。
-- **Blender 4.5 LTS**。検証には4.5.12を使用。
-- 変換する人型VRM。
+## Getting started
 
-1. このリポジトリをclone、またはCode → Download ZIPで取得して展開します。
-2. 初回のみ **`Setup.cmd`** を実行します。専用の`.venv`へPython依存を入れ、固定バージョンのPyNifly/texconvを`dependencies/`へ取得します。
-3. **`Launch.cmd`** を実行すると、ブラウザでウィザードが開きます。
-4. VRMを選び、SkyrimのフォルダとBlenderの実行ファイルを確認します。見つかった環境は自動入力されます。
-5. 設定して「フォロワーMODを作る」。完了画面からZIPとプレビューを取得します。
+Requirements:
 
-このPC内で処理します。モデルを外部サービスへ送信しません。入力VRM、ゲームのData、セーブを変更しません。ウィザードを閉じるときは、起動したターミナルでCtrl+C。制作中のBlenderのユーザー設定も変更しません。
+- Windows and Python **3.11 or 3.12**.
+- Skyrim Special Edition, including `Skyrim.esm` and the base-game BSAs.
+- **Blender 4.5 LTS**. Validation used version 4.5.12.
+- A humanoid VRM model to convert.
 
-Blender自体は[公式サイト](https://www.blender.org/download/lts/)から別途導入してください。顔・髪を頭装備に合わせて切り替える生成MODには[SKSE64](https://skse.silverlock.org/)が必要です。固定外観や元衣装の分離だけを使う場合は不要です。Creation Kit、RaceMenu、XPMSSEは必須ではありません。
+1. Clone this repository, or use Code → Download ZIP and extract it.
+2. Run **`Setup.cmd`** once. It installs Python dependencies into a dedicated `.venv` and downloads pinned versions of PyNifly and texconv into `dependencies/`.
+3. Run **`Launch.cmd`** to open the wizard in your browser.
+4. Select the VRM and check the Skyrim folder and Blender executable. Detected locations are filled in automatically.
+5. Configure the follower and select **Create follower MOD** (`フォロワーMODを作る`). Download the ZIP and previews from the result page.
 
-## ウィザードで決められること
+Processing runs on your PC. Models are not uploaded to external services. The tool does not modify the input VRM, game Data folder, or saves, and it does not change your Blender user preferences. To stop the wizard, press Ctrl+C in the terminal that launched it.
 
-| 段階 | 設定 |
+Install Blender separately from its [official website](https://www.blender.org/download/lts/). Generated MODs that switch face/hair visibility for headgear require [SKSE64](https://skse.silverlock.org/). Fixed appearance and separation of the original outfit alone do not require it. Creation Kit, RaceMenu, and XPMSSE are not mandatory.
+
+## Wizard settings
+
+| Area | Settings |
 | --- | --- |
-| VRMと環境 | VRMファイル、Skyrim/Blenderの場所、保存済み設定の読み込み |
-| 衣服の分離 | 対応なし／あり、メッシュごとの身体・下着・常時表示・衣服の分類、原VRMの分類プレビュー |
-| 元衣装の装備 | 一品へ結合／個別に分離、装備名・占有枠・衣服／軽装／重装・防御力・重量・価値・初期装備 |
-| 名前と声 | NPC名、MOD名、固有MOD ID、作者、性別、標準フォロワー会話を持つ17種類のボイス |
-| 戦闘と能力 | 戦士/両手武器/弓/破壊魔法/召喚魔法のプリセット、クラス、戦闘スタイル、開始武器と矢 |
-| 成長と性格 | 固定/プレイヤー追従レベル、倍率・上下限、能力の自動成長/手動指定、体力・マジカ・スタミナ、18スキル、不死/保護/通常、勇敢さ・攻撃性・犯罪への対応 |
-| 詳細 | 全体の一様なサイズ倍率、対応ボイスでの結婚候補、聖堂内の配置オフセット |
-| 得意技 | Perkとランク、魔法。ゲームの名前/ID/説明から検索 |
-| 確認と出力 | 設定JSONの保存、プレビュー生成、MOD ZIPの保存 |
+| VRM and environment | VRM file, Skyrim/Blender locations, loading saved settings |
+| Clothing separation | Enable/disable support; assign meshes to body, underwear, always-visible parts, or garments; preview the original VRM assignments |
+| Original outfit equipment | Combine into one item or split into items; names, occupied slots, clothing/light/heavy armor, armor rating, weight, value, and initial equipment |
+| Name and voice | NPC name, MOD name, unique MOD ID, author, sex, and 17 voice types with vanilla follower dialogue |
+| Combat and abilities | Warrior/two-handed/archer/destruction/conjuration presets, class, combat style, starting weapon, and ammunition |
+| Growth and personality | Fixed/player-scaled level, multiplier and limits, automatic/manual stats, health/magicka/stamina, 18 skills, essential/protected/normal status, confidence, aggression, and crime behavior |
+| Details | Uniform overall size multiplier, marriage eligibility with supported voices, and placement offset inside the temple |
+| Perks and spells | Perks with ranks and spells, searchable by game name, ID, and description |
+| Review and export | Save settings JSON, generate previews, and save the MOD ZIP |
 
-Perk・魔法などの候補は、指定したゲームの`Skyrim.esm`から読みます。魔法は魔法書が教える通常の呪文に絞り、祝福・常時能力・罠の効果を除外します。DLC・追加MODのPerk/魔法・独自収録ボイスはこの版の候補に含みません。体力・マジカ・スタミナは成長前の基礎値です。種族の基礎値との差をオフセットとして書き込み、レベル追従または自動計算が有効なら、ゲーム側でクラス/レベルに応じた成長分が加わります。個別スキルの指定には手動計算を選びます。
+Perk and spell candidates are read from the selected game's `Skyrim.esm`. Spells are restricted to ordinary spells taught by spell tomes; blessings, passive abilities, and trap effects are excluded. This version does not list DLC/MOD perks and spells or independently recorded custom voices. Health, magicka, and stamina are base values before growth: the tool writes offsets relative to the race's base values, and Skyrim adds class/level growth when level scaling or automatic calculation is enabled. Choose manual calculation to specify individual skills.
 
-MOD IDからESP名・Editor ID・メッシュ/テクスチャの専用パスを生成します。複数のモデルを同時導入するときは、**異なるMOD ID**を使ってください。NPC名・表示用のMOD名は日本語でも設定できます。
+The MOD ID determines the ESP name, Editor IDs, and private mesh/texture paths. Use **different MOD IDs** when installing multiple avatars together. NPC names and display names can also use Japanese text.
 
-## 身体・下着・衣服を分ける
+## Separating body, underwear, and clothing
 
-0.6.0では、衣服を通常のNPC持ち物として追加し、初期装備欄は空にします。NPC専用スクリプトが最初の一回だけ設定された服を着せます。服を取った後に補充したり、AFTの装備セットを書き換えたりしません。
+Since version 0.6.0, clothing is added as ordinary NPC inventory, with the default-outfit field left empty. A private NPC script equips the selected initial clothing once. It does not replenish items after removal or rewrite AFT outfit sets.
 
-衣服の切替は、Skyrim本来の装備枠による排他処理を使います。胴の衣装は32、手袋は33、靴は37です。シャツ・上着・スカート・タイツを同時に着せたい場合、胴の衣装セット1品にまとめます。鎧やブーツを着せると、同じ枠の衣装と入れ替わります。装備イベントで後から衣服を外すスクリプトは使いません。変換対象一覧にない防具でも、同じ枠なら装備の排他処理は働きます。
+Clothing replacement uses Skyrim's native equipment-slot exclusion: torso outfits use 32, gloves 33, and shoes 37. To wear a shirt, jacket, skirt, and tights together, combine them into one torso outfit item. Equipping armor or boots replaces clothing in the same slots. There is no equipment-event script that removes clothing afterward. Slot exclusion also applies to equipment outside the conversion catalog when it occupies the same slot.
 
-「胴・手袋・靴に分ける」で部位ごとにまとめるか、「衣服を一品にまとめる」で胴・手袋・靴の枠を使う全身セットにできます。「部位・用途」を選ぶだけで枠が決まり、番号を指定したい場合だけ32–49／53–59から直接選べます。同じ枠の初期装備が複数ある場合、追加枠へ勝手に移さず、衣装をまとめるよう案内します。マントやアクセサリーを追加枠にした場合は、防具との併用になります。
+Use **Split into torso, gloves, and shoes** (`胴・手袋・靴に分ける`) to group meshes by region, or **Combine clothing into one item** (`衣服を一品にまとめる`) for a full-body set occupying torso/glove/shoe slots. Selecting a body region/purpose automatically chooses the slot; select a number directly only when needed, from 32–49 or 53–59. If several initial items occupy the same slot, the wizard asks you to combine them instead of silently moving them to extra slots. Cloaks and accessories assigned to extra slots coexist with armor.
 
-ARMOの装備枠と、ARMAの身体を覆う範囲を分けています。胴のアイテムは32を占有し、表示モデルは32・34・38の元の肌を保持します。全身セットは手・足の肌も保持します。52＝下着、60＝顔・髪は内部予約枠です。SkyUIの種類名・アイコンは主に装備枠で決まります。以前のスクリプト切替用設定は、読み込み時に部位ごとの衣装セットへ移行して案内を表示します。
+ARMO equipment occupancy and ARMA body coverage are handled separately. A torso item occupies slot 32, while its displayed model retains the avatar's original skin for regions 32, 34, and 38. A full-body outfit also retains hand and foot skin. Slots 52 (underwear) and 60 (face/hair) are reserved internally. SkyUI item types and icons mainly depend on equipment slots. Legacy settings for scripted clothing replacement are migrated to regional outfit sets when loaded, with a notice in the wizard.
 
-0.5.1の内部装備による頭の非表示は、AFTが初期装備を解除すると人間の顔が再出現するため廃止しました。専用種族のFaceGenによる頭の生成を無効にし、NPCと種族には空の頭部モデルを指定します。VRMの顔・髪は素肌の枠60に置きます。頭装備の設定に応じて、顔と髪を別々に含む外見へ切り替えます。専用種族の空の頭部設定は全状態で共通です。
+The hidden internal head item used in version 0.5.1 was removed because AFT could remove the default outfit and expose a human face. FaceGen head generation is disabled for the dedicated race, and the NPC and race point to an empty head model. The VRM face and hair are part of the skin in slot 60, with separate variants containing or hiding each according to headgear settings. The dedicated race's empty-head configuration is shared by every visibility state.
 
-通常の更新では、旧版と同じESPの新ZIPへ置換・デプロイ後、Skyrimを終了して再起動します。古い3D表示が残る場合だけ、コンソールで対象NPCを選択して`disable`→同じ選択のまま`enable`で再表示します。衣服の構成変更などで持ち物や装備に不具合が出た場合は、下の[更新時のリセット手順](#follower-update-reset)を使ってください。
+For a normal update, replace and deploy the new ZIP using the same ESP name, then quit and restart Skyrim. If only the old 3D appearance remains, select the NPC in the console, run `disable`, and run `enable` without changing the selection. If clothing-structure changes or other updates cause inventory/equipment problems, use the [reset procedure](#follower-update-reset) below.
 
-最初の画面で「対応あり」を選ぶと、VRMのメッシュ一覧に分類候補を表示します。候補は名前と材質からの推定なので、**身体・下着・顔や髪などの常時表示・着脱する衣服を自分で確認**してください。身体と服が一体になっているメッシュを、この版では切断・復元しません。
+Choose wardrobe support in the first screen to see suggested assignments for the VRM meshes. Suggestions are inferred from names and materials, so **check the body, underwear, always-visible parts such as face/hair, and removable garments yourself**. This version does not cut apart or reconstruct meshes where body and clothing are fused together.
 
-衣服を一品にまとめるか、個別装備へ分けられます。「生成する衣服」の「＋ 衣服を追加」でグループを増やし、各メッシュの装備グループを選ぶことで、複数メッシュを一着にもできます。装備の詳細を開いて品名・枠・能力・初期装備を調整します。「服を外す」や「一品だけ外す」を選び、「全体の見た目をプレビュー」で身体・下着が残ることを確かめてから変換します。これは原VRMの確認であり、出力NIFの画像は変換後に生成します。
+You can combine garments into a single item or split them into separate equipment. Use **+ Add clothing** (`＋ 衣服を追加`) in the **Generated clothing** (`生成する衣服`) list to add groups, then assign each mesh to an equipment group to combine several meshes into one garment. Expand equipment details to adjust names, slots, stats, and initial equipment. Use **Remove clothing** or **Remove one item**, then **Preview overall appearance** (`全体の見た目をプレビュー`) to check that the body and underwear remain before conversion. This preview shows the original VRM; output NIF images are generated after conversion.
 
-身体・下着・常時表示・各衣服は別NIFへ出力し、同じ専用骨格で動きます。下着は無装備時にも残ります。衣服は標準枠32–43と重ね着枠44–49／53–59を使えます。身体の枠を使う服には、露出部分に必要な元VRMの身体も保持します。下着52・常時表示60はこのフォロワー用に予約します。同じ枠の品を初期装備で併用する設定は拒否します。全ての品をNPCの持ち物へ追加し、初期装備設定は最初の一回の着用に使います。持ち物・地面での表示はゲーム本体の汎用衣服モデル、着用時は変換した元VRMの形状です。
+The body, underwear, always-visible parts, and each garment are exported as separate NIFs using the same dedicated skeleton. Underwear remains when no equipment is worn. Clothing can use standard slots 32–43 and layering slots 44–49 or 53–59. Garments occupying body slots also retain the original VRM body needed for exposed areas. Slots 52 and 60 are reserved for underwear and always-visible parts. Initially equipping conflicting items is rejected. All items are added to the NPC's inventory, and initial-equipment settings apply to the first equip only. Inventory/dropped-item views use a generic base-game clothing model; the equipped model uses the converted original VRM geometry.
 
-衣服の分類は入力VRMのSHA256に結び付けます。同じ設定を別VRMへ読み込んだ場合は、最初の画面の「メッシュの割り当てをやり直す」を開き、「読み込み時の自動割り当てに戻す」で新しいモデルへ割り当て直してください。この操作は手動の割り当てと衣服グループを消し、名前・材質から推定した初期状態へ戻します。全ての有効メッシュを一回だけ分類し、取りこぼしや二重登録を拒否します。
+Mesh assignments are associated with the input VRM's SHA256. If you load settings into a different VRM, open **Redo mesh assignments** (`メッシュの割り当てをやり直す`) in the first screen and choose **Restore automatic assignments from import** (`読み込み時の自動割り当てに戻す`). This clears manual assignments and clothing groups, restoring the initial suggestions based on names and materials. Every enabled mesh must be assigned exactly once; omissions and duplicates are rejected.
 
-生成READMEに、衣服のIDと装備交換の手順が入ります。元衣装は通常の持ち物会話で渡したり受け取ったりできます。
+The generated README includes clothing IDs and equipment-trading instructions. Original clothing can be given or taken through ordinary follower inventory dialogue.
 
-頭装備は検索して一つずつ選び、顔・髪を隠す設定と装着画像を確認できます。「全体デフォルト設定」は個別指定のない装備に使い、「リセット」はその装備の個別指定を消します。「この頭装備を着せてプレビュー」は、選んだ兜を実際にVRMの体型へ変換して描画します。表示設定だけを変えた場合は変換済みの形を再利用します。
+Search for and select headgear one item at a time to configure face/hair visibility and check an equipped preview. **Global defaults** (`全体デフォルト設定`) apply to items without an individual override. **Reset** (`リセット`) removes that item's override. **Preview with this headgear** (`この頭装備を着せてプレビュー`) fits the selected helmet to the VRM body and renders it. Changing only visibility settings reuses the fitted geometry.
 
-装備データの選択基準は、変換したい**装備**です。本体・DLCの標準装備には「本体・DLCの標準装備を変換」を選びます。UNP/CBBE用の装備置換やBodySlideで生成した装備には「現在導入している装備を変換」を選び、身体と装備を同じ体型プリセットで生成・デプロイしておきます。体型MODを入れているだけで後者を選ぶ必要はありません。どちらを選んでも変換先の身体は元のVRMです。
+Choose the source-data mode based on the **equipment you want to convert**. For standard base-game/DLC equipment, choose **Convert standard base-game/DLC equipment** (`本体・DLCの標準装備を変換`). For UNP/CBBE equipment replacers or BodySlide-generated equipment, choose **Convert currently installed equipment** (`現在導入している装備を変換`) after building and deploying both the body and equipment with the same body preset. Installing a body MOD alone does not require the latter option. The destination body is always the original VRM in either mode.
 
-0.7.1では、複数材質の大きなメッシュを分割した際の書き出し名の衝突も修正しました。VRM側で材質やメッシュをまとめ直す必要はありません。
+Version 0.7.1 also fixed export-name collisions when splitting large meshes with several materials. You do not need to consolidate materials or meshes in the VRM.
 
-頭装備のモデル内部の区分は、元データの130（フルフェイス兜）・131（フード）などを保持します。ESP側の装備枠30・31とは別の値であり、モデル内の131を通常の髪の31へ書き換えません。生成後は元装備と照合して検査します。
+Headgear preserves source model partition identifiers such as 130 (full-face helmet) and 131 (hood). These are separate from ESP equipment slots 30 and 31; model partition 131 is not rewritten as ordinary hair slot 31. Generated data is checked against the original equipment.
 
-## Skyrimへ導入する
+## Installing in Skyrim
 
-1. 生成ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行します。
-2. プラグイン一覧で生成された`<MOD ID>.esp`を有効にします。
-3. 起動中のSkyrimを終了してから起動し直し、テスト用セーブで**ホワイトランのキナレス聖堂**へ行きます。
-4. 話しかけて標準の勧誘会話を選びます。加入、追従、待機、解散、再勧誘を確認してください。
+1. Install and enable the generated ZIP with Vortex or MO2. In Vortex, also run Deploy.
+2. Enable the generated `<MOD ID>.esp` in the plugin list.
+3. Quit and restart Skyrim, then visit **Whiterun's Temple of Kynareth** using a test save.
+4. Talk to the NPC and choose the standard recruitment dialogue. Check recruitment, following, waiting, dismissal, and re-recruitment.
 
-標準フォロワー枠を使います。別の仲間が枠を使っている場合は、先に解散させてください。すでに聖堂へ配置されるので、通常は`player.placeatme`不要です。テスト用に聖堂へ移動するコンソールは `coc WhiterunTempleofKynareth`。
+The NPC uses the vanilla follower slot. Dismiss another follower first if that slot is occupied. A follower is already placed inside the temple, so `player.placeatme` is normally unnecessary. The console command for moving to the temple during testing is `coc WhiterunTempleofKynareth`.
 
-生成READMEには配置参照の検索コマンドと、そのロード順に応じたFormIDを使う手順も入ります。0.1/0.2のSophie試作を使っていた場合、新しいSophieFollowerとは別プラグインなので、旧試作を無効にしたテスト用セーブで確認してください。
+The generated README includes a command to find the placed reference and instructions for using its FormID with your actual load order. If you used the 0.1/0.2 Sophie prototype, it is a different plugin from SophieFollower; disable the old prototype in a test save when checking the new follower.
 
 <a id="follower-update-reset"></a>
 
-## 更新時に問題が出た場合：フォロワーをリセットする
+## Resetting a follower after a problematic update
 
-更新後に持ち物を開けない、装備がおかしくなるなどの問題が出た場合は、次の手順でフォロワーを導入し直してください。衣服の統合・分割を含む更新に使う復旧手順です。フォロワーの持ち物や管理MODで設定した状態を引き継ぐ更新ではありません。
+If an update prevents opening inventory or causes incorrect equipment behavior, use these steps to reinstall the follower. This recovery procedure can be used for updates that merge or split clothing items. It resets the follower rather than retaining its inventory and follower-manager configuration.
 
-1. **更新前のフォロワーMODと防具パッチを戻し、更新前のセーブをロードします。** このセーブと旧版ZIPはバックアップとして残してください。
-2. **預けたアイテムを引き取ります。** このフォロワーMODで追加された元衣装以外の、武器・防具・その他の持ち物を回収してください。AFTなどが別に保管している装備・荷物も確認します。元衣装をプレイヤーや保管箱へ移していた場合は、対象フォロワーへ戻します。
-3. **フォロワーを解雇し、管理MODを使っている場合はその管理から登録を解除します。** 下記のAFTの準備を含め、管理解除が終わってから対象フォロワーのいない別の場所へ移動し、新しいセーブ枠へ手動保存してゲームを終了します。
-4. **対象フォロワーMODと、それを参照する防具パッチを無効にして、③のセーブをロードします。** Vortexではデプロイも実行してください。複数フォロワー用の共通パッチは、対象フォロワーを除いて作り直すと、残りのフォロワーの体型合わせを維持できます。対象ESPを参照するパッチが残らないようにします。
-5. **その状態で別のセーブ枠へ手動保存し、ゲームを終了します。** 更新前のバックアップと③のセーブを上書きしないでください。
-6. **更新後のフォロワーMODと、新版に合わせた防具パッチを導入・有効化し、⑤のセーブをロードします。** Vortexでは再度デプロイしてください。
-7. **ホワイトランのキナレス聖堂で、フォロワーを再び仲間にします。** 回収した装備を渡し直し、使っている管理MODの設定もやり直してください。
+1. **Restore the previous follower MOD and armor patch, then load a save from before the update.** Keep that save and the old ZIPs as backups.
+2. **Recover entrusted items.** Take back weapons, armor, and other items except the original clothing added by this follower MOD. Also check equipment and cargo stored separately by AFT or another manager. If you moved the follower's original clothing to the player or a storage container, return it to that follower.
+3. **Dismiss the follower and unregister it from your follower manager, if used.** Complete the AFT preparation below where applicable. Then move to another location without the follower, save manually into a new slot, and quit the game.
+4. **Disable the follower MOD and armor patches that reference it, then load the save from step 3.** In Vortex, also deploy. For a shared multi-follower patch, rebuild it without this follower to preserve fitting for the others. Do not leave an enabled patch that depends on the disabled follower ESP.
+5. **Save manually into another slot and quit.** Do not overwrite the original backup or the save from step 3.
+6. **Install and enable the updated follower MOD and a matching armor patch, then load the save from step 5.** Deploy again in Vortex.
+7. **Recruit the follower again at Whiterun's Temple of Kynareth.** Return the recovered equipment and redo the follower-manager settings you use.
 
-**AFTを使っている場合の準備:** 単なる解雇では管理登録が残るため、③で個別の「Reset NPC」を使います。AFT作者の案内では、荷物の回収と装備管理OFF → 対象と他の活動中フォロワーを解雇 → ゲーム内で24時間待機 → 別の場所へファストトラベルして屋内へ入る → 保存してゲームを終了・再起動し、そのセーブをロード → 対象と会話してSettingsの「Reset NPC」 → 保存して終了、の順です。AFT全体をリセットする操作とは別です。翻訳によって項目名が異なります。[AFT作者の手順](https://www.nexusmods.com/skyrimspecialedition/mods/80675?tab=posts)
+**AFT preparation:** Dismissal alone leaves the management registration in place, so use the individual **Reset NPC** in step 3. The AFT author's sequence is: recover gear and turn off outfit management → dismiss this follower and all other active followers → wait 24 in-game hours → fast travel elsewhere and enter an interior → save, quit, restart, and reload that save → talk to the target NPC and choose **Settings → Reset NPC** → save and quit. This is different from resetting all of AFT. Translations may use different menu names. [AFT author's instructions](https://www.nexusmods.com/skyrimspecialedition/mods/80675?tab=posts)
 
-④のロード時に「無効なコンテンツを有効化しますか？」（`Activate now?`）と聞かれた場合は**「いいえ」**を選びます。これは抜いたMODを再度有効にする質問です。その後の「一部のオブジェクトが利用できなくなります。ロードを続けますか？」（`Continue loading?`）では**「はい」**を選んで続行します。
+If step 4 asks whether to reactivate inactive content (**Activate now?**), select **No**: this question would enable the MOD you deliberately disabled. For the subsequent warning that some objects may no longer be available (**Continue loading?**), select **Yes** to continue.
 
-この手順は不具合時にフォロワーを導入し直すためのもので、セーブや外部MODの保存データにある全参照の完全消去を保証するものではありません。復旧できなかった場合は、①のバックアップと旧版MOD・防具パッチへ戻してください。
+This is a recovery procedure for reinstalling a follower, not a guarantee that every reference in saves or external MOD data is removed. If recovery fails, restore the backup save and the old follower MOD/armor patch from step 1.
 
-## 変換の範囲
+## Conversion scope
 
-- VRM 0 / 1の人型骨格、任意のノード/メッシュ名、必要に応じた大きな形状の分割。
-- 元の体型を保つ単位変換と関節回転。標準体型への部位ごとの伸縮はしません。
-- 専用種族、専用骨格、固定外観または元衣装の分離装備、標準フォロワー設定と初期配置。
-- 位置と方向を照合した副骨格の対応付け。身体と別に作られた服や髪も、同じ出力骨格へ統合。
-- OPAQUE / MASK / BLEND材質とDDSのアルファ。表情モーフの初期値は固定外観へ焼き込みます。
-- 出力NIF/DDSの読み戻し、元VRMとの同一姿勢の頂点比較、標準歩行/片手剣アニメーションの検査と画像。
+- Humanoid VRM 0/1 skeletons, arbitrary node/mesh names, and splitting large geometry where needed.
+- Unit conversion and joint rotations preserving the original proportions, without stretching individual regions to the standard Skyrim body.
+- Dedicated race and skeleton, fixed appearance or removable original-outfit equipment, vanilla follower settings, and initial placement.
+- Secondary-rig mapping checked against position and orientation; clothing and hair made with separate rigs are integrated into the same output skeleton.
+- OPAQUE/MASK/BLEND materials and DDS alpha. Initial expression-morph values are baked into the fixed appearance.
+- NIF/DDS read-back checks, vertex comparison against the original VRM in the same pose, and standard walking/one-handed-sword animation checks and images.
 
-対応ありでは、分類した元衣装を着脱できます。「既存装備をこの身体に合わせる」では、**公式の全装備**または**選んだ装備**を変換します。本体・導入済みDawnguard／HearthFires／Dragonbornと、導入済みの`cc*.esm`／`cc*.esl`を読み込み、人型向けの装備Addonを使います。人間と獣人の専用モデルは分けて選びます。同じAddonを使う付呪違いの品は、一つの変換済みモデルを共有します。
+With wardrobe support enabled, the assigned original garments can be equipped and removed. **Fit existing equipment to this body** (`既存装備をこの身体に合わせる`) converts either **all official equipment** or **selected equipment**. It reads the base game, installed Dawnguard/HearthFires/Dragonborn, and installed `cc*.esm`/`cc*.esl` files, using equipment Addons intended for humanoids. Human and beast-race models are selected separately. Enchanted variants using the same Addon share a single fitted model.
 
-胴・手・足のほか、頭装備・サークレット・盾・指輪・首飾りを扱います。鎧側を変形し、肌の頂点・面を保ち、露出部分には元の肌を含めます。色違いのTexture Set指定、装備枠、元のアイテム性能も引き継ぎます。
+Besides torso, hand, and foot equipment, fitting covers headgear, circlets, shields, rings, and necklaces. The armor is deformed while the original skin vertices and faces are preserved, and exposed regions include the original skin. Texture Set variations, equipment slots, and original item stats are retained.
 
-頭装備の設定は**顔を隠す／髪を隠す**を独立して選べます。既定では顔を残し、髪の枠を使う装備で髪を隠します。サークレットは髪を残します。装備別の上書きは同じAddonを使う付呪品にも適用します。分類画面で顔・髪・常時表示のアクセサリーを指定できます。
+**Hide face** and **Hide hair** are independent headgear options. By default, the face remains visible and headgear occupying hair slots hides the hair. Circlets retain hair. An item override also applies to enchanted variants sharing the same Addon. In the mesh-assignment screen, identify the face, hair, and always-visible accessories.
 
-「元の体型と装備の読み込み」は、公式アーカイブの標準体型か、導入済みのデータを選びます。**UNP／CBBEでは身体と装備を同じBodySlideプリセットで出力した後、導入済みデータを選びます。**変換エンジンは元と先の頂点数が異なっても使用できます。物理用の追加ボーンは身体への追従へまとめます。
+Source body/equipment data can come from the original official archives or currently installed files. **For UNP/CBBE equipment replacements, build both the body and equipment using the same BodySlide preset before choosing installed data.** Source and destination vertex counts may differ. Additional physics bones are consolidated into body-following weights.
 
-結果画面の**Outfit Studio用編集キット**には、元のVRM身体を保った参照NIF、専用骨格、変換済み装備、テクスチャを入れます。ブラシで形を仕上げ、参照身体を含めずNIFへ書き出して「仕上げた装備を戻す」へ読み込むと、MOD ZIPを更新します。元のウェイト・UV・素材・装備枠を保ち、頂点と法線を取り込みます。頂点・面の追加削除、形名の変更、参照身体の編集は拒否します。保存した仕上げは同じVRM・装備の再変換へ引き継ぎます。
+The result page's **Outfit Studio editing kit** contains a reference NIF preserving the original VRM body, the dedicated skeleton, fitted equipment, and textures. Refine shapes with brushes, export a NIF without including the reference body, and load it through **Import finished equipment** (`仕上げた装備を戻す`) to update the MOD ZIP. It imports vertices and normals while preserving weights, UVs, materials, and equipment slots. Added/deleted vertices or faces, renamed shapes, and edits to the reference body are rejected. Saved finishing edits are reused when reconverting the same VRM and equipment.
 
-再起動後は、ウィザードの**前に作ったフォロワー**から結果と装備編集を開けます。取り込みに失敗した場合は、編集前のメッシュ・保存済みの仕上げ・ZIPへ戻します。CLIでも現在のZIPを更新できます。
+After restarting the wizard, open **Previously created followers** (`前に作ったフォロワー`) to access results and equipment editing. If importing an edit fails, the pre-edit meshes, saved edits, and ZIP are restored. You can also update the current ZIP from the CLI:
 
 ```powershell
-python outfit_edits.py --output <変換フォルダ> --mesh-key <編集キットのsource_key> --edited <編集済みNIF> --blender <Blender.exe>
+python outfit_edits.py --output <conversion-folder> --mesh-key <editing-kit-source_key> --edited <edited-NIF> --blender <Blender.exe>
 ```
 
-導入済みデータは、ゲームのDataに配置された身体・装備・骨格を読みます。MO2で管理する場合は、その仮想Dataを見られる環境で変換ツールを起動してください。追加MOD独自の装備レコードを選ぶ機能は、この公式装備用の一覧には含めていません。
+Installed-data mode reads the body, equipment, and skeleton from the game's Data folder. With MO2, run the tool in an environment that can see MO2's virtual Data folder. The official-equipment catalog does not list equipment records added by third-party MODs.
 
-CLIの取り込みは `python outfit_edits.py --output <変換フォルダ> --mesh-key <manifestのsource_key> --edited <編集NIF>`。CLIは仕上げの保存を行い、次の変換で反映します。
+Without `--blender`, the CLI imports and saves a finishing edit for the next conversion:
 
-フォロワーZIPに加え、結果画面から**防具互換パッチZIP**も導入します。フォロワーESPの後で`VRM2SkyrimArmorPatch.esp`を有効にし、Vortexではデプロイしてからゲームを再起動してください。変換した公式装備を渡すと、設定した切替グループの元衣装を外します。併用に設定した衣服は残ります。確認用のFormIDとコマンドは生成READMEへ入ります。
+```powershell
+python outfit_edits.py --output <conversion-folder> --mesh-key <manifest-source_key> --edited <edited-NIF>
+```
 
-体型合わせを使うフォロワーが複数いる場合、結果画面で対象を選び、一つの防具パッチへまとめます。インストール済み、またはこのウィザードで変換済みのフォロワーが候補になります。有効な互換パッチは一つにし、対象を追加・削除したら作り直します。元の装備の数値・表示名・元種族のAddonを保持しますが、同じ装備を上書きする他MODとはロード順や追加パッチの調整が必要な場合があります。
+In addition to the follower ZIP, install the **armor compatibility patch ZIP** from the result page. Enable `VRM2SkyrimArmorPatch.esp` after the follower ESP, deploy in Vortex, and restart the game. Equipping fitted official equipment replaces original clothing occupying the same slots; clothing deliberately assigned to extra slots remains. Test FormIDs and commands are included in the generated README.
 
-口パク・まばたき、髪/衣装の物理は未対応です。MToonの陰影と輪郭線も再現しません。指ボーンがないモデルの指は手へ固定します。転倒・死亡時のラグドール寸法/拘束は標準由来で、アバターへの調整・検証が残ります。
+For several fitted followers, select them on the result page and combine them into one armor patch. Installed followers and followers converted with this wizard appear as candidates. Keep only one compatibility patch enabled, and rebuild it when adding or removing followers. It preserves original item stats, display names, and original-race Addons, but MODs overriding the same equipment may need load-order adjustments or further compatibility patches.
 
-聖堂への配置のため、聖堂のCELLレコードは本体の内容を保ったコピーとして含まれます。同じCELLの照明などを変更するMODと併用する場合は、通常のロード順/互換パッチで調整してください。
+Lip sync, blinking, and hair/clothing physics are not supported. MToon shading and outlines are not reproduced. Fingers without finger bones are fixed to the hands. Ragdoll dimensions and constraints for falls/death are derived from the standard skeleton; avatar-specific adjustment and validation remain necessary.
 
-原VRM、作業用の基準メッシュ、依存ツールは生成ZIPへ入れません。専用に変換した骨格・外観・装備と、それらが使うテクスチャは入ります。モデルを使う/生成MODを配布する際は、そのモデルの作者の利用条件に従ってください。
+The temple CELL record is included as a copy preserving the base-game contents so the follower can be placed there. MODs changing lighting or other properties of the same CELL may require normal load-order or compatibility-patch adjustments.
 
-## CLIと再変換
+Follower ZIPs do not contain the input VRM, working reference meshes, or dependency tools. They do contain converted skeletons, appearance/equipment meshes, and the textures those meshes use. Follow the model author's terms when using a model or distributing a generated MOD; see [License](#license) and [third-party notices](THIRD_PARTY_NOTICES.md).
+
+## CLI and reconversion
 
 ```powershell
 python converter.py --doctor
@@ -158,44 +166,42 @@ python converter.py avatar.vrm --settings my-follower.json --game 'E:\SteamLibra
 python wizard.py --no-browser --port 8768
 ```
 
-`.venv`で準備した場合は`.venv\Scripts\python.exe`を使います。VRMを`Convert-VRM.cmd`へドラッグしても変換できます。出力は`build/`以下。過去の変換結果は上書きしません。明示した`--output`には空のフォルダを指定してください。
+If you used `.venv` during setup, run `.venv\Scripts\python.exe`. You can also drag a VRM onto `Convert-VRM.cmd`. Outputs are written under `build/`, and previous conversions are not overwritten. An explicitly specified `--output` must be an empty folder.
 
-生成ZIPの`vrm2skyrim/<MOD ID小文字>/settings.json`をウィザードへ読み込めば、同じ設定で再変換できます。説明書も同じフォルダの`README.txt`です。VRMを差し替えて別モデルへ使う場合は名前とMOD IDを変更します。0.3/0.4のルートにあった`VRM2Skyrim-settings.json`も引き続き読み込めます。0.4.1では説明書・設定を含む全ファイルをMODごとのパスに分け、別MOD ID同士のファイル競合を解消しました。
+Load `vrm2skyrim/<lowercase MOD ID>/settings.json` from a generated ZIP into the wizard to reconvert with the same settings. Its instructions are in `README.txt` in that same folder. Change the name and MOD ID when switching to a different avatar. The root-level `VRM2Skyrim-settings.json` from versions 0.3/0.4 can still be loaded. Since 0.4.1, all files, including instructions and settings, use MOD-specific paths to avoid conflicts between different MOD IDs.
 
-## 開発・検証
+## Development and validation
 
 ```powershell
 python -m unittest test_converter tests.test_follower tests.test_wardrobe tests.test_package tests.test_armor
 python -m ruff check --exclude dependencies,build,reference .
 ```
 
-フォロワー統合テストにはローカルのSkyrim.esmが必要です。ゲームがない環境ではそのテストだけをskipします。
+Follower integration tests require a local `Skyrim.esm`; only those tests are skipped when the game is unavailable.
 
-ブラウザE2Eは専用のヘッドレスブラウザを使い、ユーザーのブラウザプロファイルを操作しません。
+Browser E2E tests use a dedicated headless browser rather than your existing browser profile.
 
 ```powershell
 npm install
 npx playwright install chromium
-# 別ターミナルで python wizard.py --no-browser を起動
+# In another terminal, start: python wizard.py --no-browser
 $env:VRM2SKYRIM_TEST_VRM='C:\path\test-avatar.vrm'
 npm run test:ui
-# 身体・下着・複数の服が分かれたテスト用VRMでは:
+# For a test VRM with separate body, underwear, and several garments:
 npm run test:wardrobe
-# 同じ操作に装備選択と防具パッチ作成を含める:
+# To include equipment selection and armor-patch generation:
 $env:VRM2SKYRIM_TEST_FIT='true'
 npm run test:fitting
 ```
 
-既存のChromeを専用ヘッドレスプロセスとして使う場合は`VRM2SKYRIM_TEST_BROWSER=chrome`。サーバーURLは`VRM2SKYRIM_TEST_URL`で指定できます。
+To use an existing Chrome installation in a separate headless process, set `VRM2SKYRIM_TEST_BROWSER=chrome`. Set `VRM2SKYRIM_TEST_URL` to specify the server URL.
 
-ファイル構造と実装の根拠は[FORMAT.md](docs/FORMAT.md)、設計は[follower-wizard.md](docs/intent/follower-wizard.md)。PyNifly V29.1.0とDirectXTex may2026を外部依存として使用し、取得時に固定SHA256を確認します。それぞれのライセンスはGPL-3.0 / MITです。原VRMとゲーム資産をこのリポジトリへ含めません。
+See [FORMAT.md](docs/FORMAT.md) for file structures and implementation references, [follower-wizard.md](docs/intent/follower-wizard.md) for the wizard design, [armor support](docs/intent/armor-support.md) for wardrobe design, and [armor fitting](docs/intent/armor-fitting.md) for fitting. The tool uses external PyNifly V29.1.0 and DirectXTex may2026 dependencies, checking pinned SHA256 values when downloading them. Their licenses are GPL-3.0 and MIT respectively. Input VRMs and game assets are not included in this repository.
 
-## English quick start
+## License
 
-VRM2Skyrim creates fixed-appearance Skyrim SE follower MODs from humanoid VRM 0/1 avatars. The generated follower is placed inside Whiterun's Temple of Kynareth and configured for the vanilla follower system.
+Original VRM2Skyrim code and documentation are licensed under the [MIT License](LICENSE). Modification, redistribution, and commercial use are permitted with the copyright and permission notice retained.
 
-On Windows, install Python 3.11/3.12 and Blender 4.5 LTS, then run `Setup.cmd` and `Launch.cmd`. Select the VRM, configure the follower through the local wizard, and install its ZIP through Vortex/MO2. Names, voice type, combat class/style, leveling, stats, skills, perks, spells and initial equipment are configurable. Optional wardrobe mode classifies body, permanent underwear, face/hair and removable original garments. Garments can be grouped or split into separate items with configurable slots and stats. The interface is currently Japanese.
+Dependencies keep their own licenses. In particular, PyNifly is GPL-3.0 and is imported directly by this tool. The original code can remain under MIT, but distributing the assembled converter with PyNifly requires GPL compliance for the combined work, including license notices and corresponding source. The combined distribution cannot be provided under MIT-only terms.
 
-The converter keeps original proportions and private asset paths per MOD ID. With an independent body, select original-game body/hand/foot equipment for fitting. Install both the follower ZIP and its separate armor-patch ZIP; enable the patch after the follower ESP. Remove original VRM wardrobe layers before wearing game equipment. The result page can combine several fitted followers into one patch. Facial animation and physics fitting remain unimplemented. New wardrobe/equipment behavior still requires in-game verification; the earlier Sophie follower was user-confirmed. See [VERIFICATION.md](VERIFICATION.md), [wardrobe design](docs/intent/armor-support.md) and [equipment fitting](docs/intent/armor-fitting.md).
-
-If an update causes inventory or equipment problems, use the [follower reset procedure](#follower-update-reset): keep the old MODs and save as backups, recover entrusted gear, dismiss and unregister the follower from your follower manager, save and quit, disable the follower and dependent patches, load and save into a separate slot, then install the new MODs and recruit the follower again at the temple. With AFT, follow its author's individual Reset NPC instructions first. Rebuild shared armor patches without the removed follower during the reset, then include the updated follower when reinstalling. This procedure does not guarantee removal of every reference from saves or external MOD data.
+Input VRMs, Skyrim-derived assets, and resources from other equipment MODs are not covered by this MIT grant. Follow their respective authors' and rights holders' terms when distributing generated follower MODs or Outfit Studio editing kits. Include the MIT notice when redistributing original VRM2Skyrim runtime scripts. [Third-party notices and generated-asset terms](THIRD_PARTY_NOTICES.md) document dependency versions, primary sources, and redistribution requirements.
