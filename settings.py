@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import re
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 
 
 def identifier(name):
@@ -50,6 +50,7 @@ class FollowerSettings:
     spawn_offset_y: float = 0.0
     render_previews: bool = True
     armor_support: bool = False
+    wardrobe_policy: str = 'native_slots'
     appearance_source_sha256: str = ""
     appearance_parts: dict = field(default_factory=dict)
     fit_armors: list = field(default_factory=list)
@@ -109,6 +110,8 @@ class FollowerSettings:
             validate_parts(self.appearance_parts)
             if not re.fullmatch(r"[0-9a-f]{64}", self.appearance_source_sha256):
                 raise ValueError("衣服の分類を入力VRMに結び付けてください")
+        if self.wardrobe_policy != 'native_slots':
+            raise ValueError('衣服の切替にはゲーム本来の装備枠を使ってください')
         if not isinstance(self.fit_armors, list) or len(self.fit_armors) > 20000 or any(
                 not isinstance(name, str) or not re.fullmatch(r"(?:[A-Za-z][A-Za-z0-9_]{0,127}|[A-Za-z0-9_-]+\.(?:esm|esl|esp):[0-9A-Fa-f]{6})", name)
                 for name in self.fit_armors) or len(self.fit_armors) != len(set(self.fit_armors)):
@@ -146,6 +149,11 @@ class FollowerSettings:
         return self.fitting_enabled and bool(self.appearance_heads)
 
     @property
+    def skin_partition_enabled(self):
+        return self.fitting_enabled or (self.armor_support and any(
+            g['slot'] in (32, 33, 34, 37, 38) for g in self.appearance_parts['garments']))
+
+    @property
     def prefix(self):
         return "V2S_" + self.mod_id
 
@@ -159,6 +167,10 @@ class FollowerSettings:
 
     @classmethod
     def from_dict(cls, value):
+        if value.get('armor_support') and 'wardrobe_policy' not in value:
+            from wardrobe import migrate_legacy_parts
+            value = {**value, 'appearance_parts': migrate_legacy_parts(value['appearance_parts']),
+                     'wardrobe_policy': 'native_slots'}
         unknown = set(value) - {item.name for item in fields(cls)}
         if unknown:
             raise ValueError(f"Unknown settings: {', '.join(sorted(unknown))}")

@@ -22,6 +22,8 @@ def apply_alpha(path, materials):
     from custom_skeleton import NifFile
     with NifFile(str(path)) as file:
         for shape in file.shapes:
+            if shape.name not in materials:
+                raise ValueError(f'NIF exporter changed a material binding: {shape.name}; expected shapes: {list(materials)}')
             material = materials[shape.name]
             props = shape.shader.properties
             props.Shader_Flags_2 = culling_flags(props.Shader_Flags_2, material)

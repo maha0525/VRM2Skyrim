@@ -1,14 +1,51 @@
 "use strict";
-const wardrobeSlots=[53,54,55,56,57,58,59,44,45,48,49,46,47];
-const wardrobeKinds={body:'上半身・全身服',legs:'下半身（スカート・タイツなど）',hands:'手袋',feet:'靴',cloak:'マント',backpack:'バッグ',accessory:'その他のアクセサリー'};
-function wardrobeSlotLabel(slot){return slot===46?'46 · マントとして表示される枠':slot===47?'47 · バッグとして表示される枠':`${slot} · 重ね着枠`;}
+const wardrobeSlots=[32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,53,54,55,56,57,58,59];
+const wardrobeSlotNames={32:'胴',33:'手袋',34:'前腕',35:'首飾り',36:'指輪',37:'靴',38:'すね',39:'盾',40:'尻尾',41:'長い髪',42:'サークレット',43:'耳',44:'顔周り',45:'首周り',46:'マント',47:'バッグ',48:'その他',49:'下半身',53:'脚の追加パーツ',54:'タイツなど',55:'追加パーツ',56:'胴の追加パーツ',57:'肩周り',58:'腕の追加パーツ',59:'腕の追加パーツ'};
+function wardrobeOccupiedSlots(slot,kind){return slot===32&&kind==='full'?[32,33,37]:[slot];}
+function allocateWardrobeSlots(){
+  const used=new Set([...wardrobeState.garments.values()].filter(g=>g.slot_mode!=='auto'&&g.equipped).flatMap(g=>wardrobeOccupiedSlots(g.slot,wardrobeItemKind(g))));
+  for(const g of wardrobeState.garments.values()){
+    if(g.slot_mode!=='auto')continue;
+    const kind=wardrobeItemKind(g),primary={body:32,legs:32,full:32,hands:33,feet:37,cloak:46,backpack:47,accessory:48}[kind];
+    // A second torso item must not silently become a coexistence layer.
+    g.slot=kind==='accessory'?[48,49,53,54,55,56,57,58,59,44,45].find(s=>!used.has(s))??48:primary;
+    if(g.equipped)wardrobeOccupiedSlots(g.slot,kind).forEach(s=>used.add(s));
+  }
+}
+
+const wardrobeKinds={body:'胴の衣装（上下まとめて）',legs:'下半身（胴装備と同じ32番）',full:'全身セット（胴・手袋・靴）',hands:'手袋',feet:'靴',cloak:'マント',backpack:'バッグ',accessory:'その他のアクセサリー'};
+function wardrobeSlotLabel(slot){return `${slot} · ${wardrobeSlotNames[slot]||'追加の装備枠'}`;}
 function wardrobeItemKind(g){if(g.item_kind)return g.item_kind;const n=g.name.toLowerCase();for(const [kind,pattern]of [['feet',/boot|shoe|loafer|sandal|靴|ブーツ|サンダル/],['hands',/glove|gauntlet|手袋|籠手/],['backpack',/backpack|リュック|バックパック/],['cloak',/cloak|cape|マント|ケープ/],['legs',/tights|stocking|skirt|pants|trouser|タイツ|スカート|ズボン/],['accessory',/accessor|ring|necklace|bracelet|earring|眼鏡|指輪|首飾り|アクセ/]])if(pattern.test(n))return kind;return 'body';}
 const wardrobeState={nodes:new Map(),garments:new Map(),hash:'',sequence:0,preview:null,revision:0};
 const wardrobeRoles={body:'身体',underwear:'下着（無装備でも表示）',face:'顔（頭装備で切替）',hair:'髪（頭装備で切替）',fixed:'常時表示のアクセサリー',garment:'着脱する衣服'};
 function wardrobeEquipmentGroup(g){if(g.equipment_group)return g.equipment_group;const n=g.name.toLowerCase();if(/boot|shoe|loafer|sandal|靴|ブーツ|サンダル/.test(n))return 'feet';if(/glove|gauntlet|手袋|籠手/.test(n))return 'hands';if(/accessor|ring|necklace|bracelet|earring|backpack|cloak|cape|眼鏡|指輪|首飾り|アクセ|リュック|マント|ケープ/.test(n))return 'accessory';return 'body';}
-function garmentDefaults(id,name,slot=53){return {id,name,nodes:[],slot,armor_type:'clothing',armor_rating:0,weight:0,value:0,equipped:true,equipment_group:wardrobeEquipmentGroup({name}),item_kind:wardrobeItemKind({name})};}
+function garmentDefaults(id,name,slot=32){return {id,name,nodes:[],slot,slot_mode:'auto',armor_type:'clothing',armor_rating:0,weight:0,value:0,equipped:true,item_kind:wardrobeItemKind({name})};}
+function wardrobeNativeGroups(){
+  wardrobeState.garments.clear();const groups=new Map();
+  for(const [node,p]of wardrobeState.nodes){
+    if(p.role!=='garment')continue;
+    const name=state.source.parts.find(part=>part.node===node).name,kind=wardrobeItemKind({name});
+    const region=kind==='legs'?'body':kind,key=['body','hands','feet'].includes(region)?'outfit_'+region:'part_'+node;
+    if(!groups.has(key)){const g=garmentDefaults(key,{body:'胴の衣装セット',hands:'手袋',feet:'靴'}[region]||name);g.item_kind=region;groups.set(key,g);wardrobeState.garments.set(key,g);}
+    p.group=key;
+  }
+}
+function migrateLegacyWardrobe(){
+  const groups=new Map(),kept=new Map();
+  let recordIndex=0;for(const [id,g]of wardrobeState.garments){
+    g.record_index=recordIndex++;
+    const category=wardrobeEquipmentGroup(g);delete g.equipment_group;
+    if(category==='accessory'){g.slot_mode='manual';kept.set(id,g);continue;}
+    g.slot={body:32,hands:33,feet:37}[category];g.slot_mode='manual';
+    if(category==='hands'||category==='feet')g.item_kind=category;
+    if(g.equipped&&groups.has(category)){const first=groups.get(category);first.name=(first.name+' / '+g.name).slice(0,128);first.weight+=g.weight;first.value+=g.value;first.armor_rating=Math.max(first.armor_rating,g.armor_rating);for(const p of wardrobeState.nodes.values())if(p.group===id)p.group=first.id;}
+    else{kept.set(id,g);if(g.equipped)groups.set(category,g);}
+  }
+  wardrobeState.garments=kept;
+}
 function wardrobeLoad(source,settings=null){
   wardrobeState.nodes.clear();wardrobeState.garments.clear();wardrobeState.sequence=0;
+  $('wardrobe-migration').hidden=true;
   wardrobeState.revision++;
   if(!source){renderWardrobe();return;}
   const imported=settings?.armor_support&&settings.appearance_parts?.garments;
@@ -18,28 +55,34 @@ function wardrobeLoad(source,settings=null){
     for(const role of ['body','underwear','fixed'])for(const node of settings.appearance_parts[role]||[])wardrobeState.nodes.set(node,{role,group:''});
     for(const role of ['face','hair'])for(const node of settings.appearance_heads?.[role]||[])wardrobeState.nodes.set(node,{role,group:''});
     for(const g of settings.appearance_parts.garments)for(const node of g.nodes)wardrobeState.nodes.set(node,{role:'garment',group:g.id});
+    if(!settings.wardrobe_policy){migrateLegacyWardrobe();$('wardrobe-migration').hidden=false;}
   }else{
     wardrobeState.garments.set('outfit',garmentDefaults('outfit','元の衣装'));
     for(const p of source.parts){const role=p.suggested_role==='fixed'?/hair/i.test(p.name)?'hair':/face|head|eye|mouth/i.test(p.name)||p.materials.some(m=>/face|eyelash|eyebrow/i.test(m))?'face':'fixed':p.suggested_role;wardrobeState.nodes.set(p.node,{role,group:role==='garment'?'outfit':''});}
+    wardrobeNativeGroups();
   }
   $('wardrobe-preview-images').replaceChildren();$('wardrobe-preview-status').textContent='';renderWardrobe();
 }
 function wardrobeCollect(){
-  const parts={body:[],underwear:[],fixed:[],garments:[]};
+  const usedIds=new Set([...wardrobeState.garments.values()].filter(g=>g.record_index!==undefined).map(g=>g.record_index));
+  for(const g of wardrobeState.garments.values())if(g.record_index===undefined){g.record_index=Array.from({length:16},(_,i)=>i).find(i=>!usedIds.has(i));usedIds.add(g.record_index);}
+  allocateWardrobeSlots();const parts={body:[],underwear:[],fixed:[],garments:[]};
   const heads={face:[],hair:[]};
   for(const [node,p]of wardrobeState.nodes)if(p.role!=='garment'){if(p.role==='face'||p.role==='hair'){parts.fixed.push(node);heads[p.role].push(node);}else parts[p.role].push(node);}
   for(const [id,g]of wardrobeState.garments){const nodes=[...wardrobeState.nodes].filter(([,p])=>p.role==='garment'&&p.group===id).map(([node])=>node);if(nodes.length)parts.garments.push({...g,nodes});}
-  return {appearance_parts:parts,appearance_source_sha256:wardrobeState.hash,appearance_heads:heads.face.length||heads.hair.length?heads:{}};
+  return {wardrobe_policy:'native_slots',appearance_parts:parts,appearance_source_sha256:wardrobeState.hash,appearance_heads:heads.face.length||heads.hair.length?heads:{}};
 }
 function wardrobeClearPreview(){
   wardrobeState.revision++;
-  $('wardrobe-preview-images').replaceChildren();$('wardrobe-preview-status').textContent='分類を変更しました。確認画像を更新してください。';
+  $('head-preview-images').replaceChildren();$('head-preview-status').textContent='';
+  $('wardrobe-preview-images').replaceChildren();$('wardrobe-preview-status').textContent='身体や衣服の表示設定が変わりました。プレビューを更新してください。';
 }
 function renderWardrobe(){
-  $('wardrobe-editor').hidden=$('armor_support').value!=='true'||!state.source;
+  allocateWardrobeSlots();$('wardrobe-editor').hidden=$('armor_support').value!=='true'||!state.source;
+  $('wardrobe-add').disabled=wardrobeState.garments.size>=16;
   const target=$('wardrobe-parts');target.replaceChildren();
   if(!state.source)return;
-  $('wardrobe-warning').textContent=wardrobeState.hash!==state.source.sha256?'保存した分類は別VRM用です。「分類候補へ戻す」でこのモデルを分類してください。':'';
+  $('wardrobe-warning').textContent=wardrobeState.hash!==state.source.sha256?'保存した分類は別VRM用です。「読み込み時の自動割り当てに戻す」でこのVRMの割り当てをやり直してください。':'';
   for(const p of state.source.parts){
     const selection=wardrobeState.nodes.get(p.node)||{role:'fixed',group:''};const row=document.createElement('div');row.className='wardrobe-part';row.dataset.node=p.node;
     const label=document.createElement('div');const name=document.createElement('strong');name.textContent=p.name;const info=document.createElement('small');info.textContent=`${p.triangles.toLocaleString()}三角形 · ${p.materials.join(', ')}`;label.append(name,info);
@@ -54,30 +97,30 @@ function renderWardrobe(){
     const count=[...wardrobeState.nodes.values()].filter(p=>p.role==='garment'&&p.group===id).length;
     const title=document.createElement('summary');title.textContent=`${g.name} · ${count}メッシュ${count?'':'（未使用）'}`;box.append(title);
     const grid=document.createElement('div');grid.className='grid three';
-    for(const [key,caption]of [['name','装備名'],['item_kind','部位・用途'],['slot','占有する装備枠'],['equipment_group','鎧との切替'],['armor_type','防具の分類'],['armor_rating','防御力'],['weight','重量'],['value','価値'],['equipped','初期装備']]){
+    for(const [key,caption]of [['name','装備名'],['item_kind','部位・用途'],['slot','占有する装備枠'],['armor_type','防具の分類'],['armor_rating','防御力'],['weight','重量'],['value','価値'],['equipped','初期装備']]){
       const label=document.createElement('label');label.textContent=caption;let input;
-      if(['slot','armor_type','equipment_group','item_kind'].includes(key)){input=document.createElement('select');const entries=key==='slot'?wardrobeSlots.map(s=>[s,wardrobeSlotLabel(s)]):key==='item_kind'?Object.entries(wardrobeKinds):key==='equipment_group'?[['body','胴の鎧を優先して外す'],['hands','手袋を優先して外す'],['feet','靴を優先して外す'],['accessory','防具と併用']]:[['clothing','衣服（防具ではない）'],['light','軽装'],['heavy','重装']];for(const [v,text]of entries)input.add(new Option(text,v));input.value=key==='equipment_group'?wardrobeEquipmentGroup(g):key==='item_kind'?wardrobeItemKind(g):g[key];}
+      if(['slot','armor_type','item_kind'].includes(key)){input=document.createElement('select');const entries=key==='slot'?[['auto',`用途から自動（${wardrobeSlotLabel(g.slot)}）`],...wardrobeSlots.map(s=>[s,wardrobeSlotLabel(s)])]:key==='item_kind'?Object.entries(wardrobeKinds):[['clothing','衣服（防具ではない）'],['light','軽装'],['heavy','重装']];for(const [v,text]of entries)input.add(new Option(text,v));input.value=key==='slot'?(g.slot_mode==='auto'?'auto':g.slot):key==='item_kind'?wardrobeItemKind(g):g[key];}
       else {input=document.createElement('input');input.type=key==='name'?'text':key==='equipped'?'checkbox':'number';if(key==='equipped'){input.checked=g[key];label.className='checkbox';}else{input.value=g[key];if(key==='name')input.maxLength=128;else{input.min=0;input.max=key==='value'?2147483647:key==='weight'?1000:10000;input.step=key==='value'?1:.1;}}}
       input.dataset.field=key;input.setAttribute('aria-label',g.name+' '+caption);
-      input.onchange=()=>{g[key]=key==='equipped'?input.checked:['name','armor_type','equipment_group','item_kind'].includes(key)?input.value:Number(input.value);wardrobeClearPreview();if(key==='name')renderWardrobe();};label.append(input);grid.append(label);
-    }box.append(grid);const help=document.createElement('p');help.className='hint';help.textContent='部位・用途はゲーム内の衣服判定に使います。SkyUIのアイコン・種類名は主に装備枠で決まり、UI MODによって表示が異なります。46・47はマント／バッグ向け。普通の服は他の重ね着枠を選んでください。防具と併用を選ぶと重ね着できますが、形によっては重なります。元衣装に戻すときは対応する鎧・手袋・靴を先に外してください。';box.append(help);garments.append(box);
+      input.onchange=()=>{if(key==='slot'){g.slot_mode=input.value==='auto'?'auto':'manual';if(g.slot_mode==='manual')g.slot=Number(input.value);}else g[key]=key==='equipped'?input.checked:['name','armor_type','equipment_group','item_kind'].includes(key)?input.value:Number(input.value);wardrobeClearPreview();if(['name','item_kind','slot','equipped'].includes(key))renderWardrobe();};label.append(input);grid.append(label);
+    }box.append(grid);const help=document.createElement('p');help.className='hint';help.textContent='同じ装備枠を使う品は、ゲームの標準処理で入れ替わります。胴＝32、手袋＝33、靴＝37。同時に着るシャツ・上着・スカート・タイツは胴の一品にまとめます。追加枠を選ぶと鎧と併用されます。52＝下着、60＝顔・髪は内部予約枠です。';box.append(help);garments.append(box);
   }
   const preview=$('wardrobe-preview-state'), previous=preview.value;preview.replaceChildren(new Option('全ての服を着る','all'),new Option('服を外す（身体と下着）','underwear'));
   for(const g of wardrobeCollect().appearance_parts.garments)preview.add(new Option(g.name+'だけ外す','without:'+g.id));preview.value=[...preview.options].some(o=>o.value===previous)?previous:'all';
 }
 async function wardrobePreview(){
   const revision=wardrobeState.revision;
-  error();$('wardrobe-preview').disabled=true;$('wardrobe-preview-images').replaceChildren();$('wardrobe-preview-status').textContent='原VRMの分類結果を描画しています…';
+  error();$('wardrobe-preview').disabled=true;$('wardrobe-preview-images').replaceChildren();$('wardrobe-preview-status').textContent='アバターの見た目を描画しています…';
   try{
     const result=await api('/api/appearance-preview',{source_id:state.source.source_id,blender:$('blender').value,settings:collect(),wardrobe:$('wardrobe-preview-state').value});wardrobeState.preview=result.job_id;
-    for(;;){const job=await api('/api/jobs/'+result.job_id);if(job.status==='failed')throw new Error(job.error);if(job.status==='complete'){if(revision!==wardrobeState.revision){$('wardrobe-preview-status').textContent='描画中に分類を変更しました。プレビューを更新してください。';break;}for(const path of job.previews){const figure=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption');img.src=fileURL(job.id,path);img.alt='原VRMの分類プレビュー';caption.textContent='原VRMの分類確認（変換前）';figure.append(img,caption);$('wardrobe-preview-images').append(figure);}$('wardrobe-preview-status').textContent='身体・下着・服の分類を確認してください。出力NIFの検査画像は変換完了後に表示します。';break;}await new Promise(resolve=>setTimeout(resolve,1000));}
+    for(;;){const job=await api('/api/jobs/'+result.job_id);if(job.status==='failed')throw new Error(job.error);if(job.status==='complete'){if(revision!==wardrobeState.revision){$('wardrobe-preview-status').textContent='描画中に表示設定を変更しました。プレビューを更新してください。';break;}for(const path of job.previews){const figure=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption');img.src=fileURL(job.id,path);img.alt='アバターの見た目';caption.textContent='アバターの見た目（変換前）';figure.append(img,caption);$('wardrobe-preview-images').append(figure);}$('wardrobe-preview-status').textContent='服を着た状態・外した状態の見た目を確認できます。';break;}await new Promise(resolve=>setTimeout(resolve,1000));}
   }catch(e){error(e.message);$('wardrobe-preview-status').textContent='プレビューを作成できませんでした';}finally{$('wardrobe-preview').disabled=false;}
 }
 function initWardrobe(){
   $('armor_support').onchange=renderWardrobe;
   $('wardrobe-reset').onclick=()=>wardrobeLoad(state.source);
-  $('wardrobe-add').onclick=()=>{let id;do{id='item_'+(++wardrobeState.sequence);}while(wardrobeState.garments.has(id));const slot=wardrobeSlots[wardrobeState.garments.size%wardrobeSlots.length];wardrobeState.garments.set(id,garmentDefaults(id,'衣服'+wardrobeState.sequence,slot));renderWardrobe();};
-  $('wardrobe-combine').onclick=()=>{wardrobeState.garments.clear();wardrobeState.garments.set('outfit',garmentDefaults('outfit','元の衣装'));for(const p of wardrobeState.nodes.values())if(p.role==='garment')p.group='outfit';wardrobeClearPreview();renderWardrobe();};
-  $('wardrobe-split').onclick=()=>{const cloth=[...wardrobeState.nodes].filter(([,p])=>p.role==='garment');if(cloth.length>wardrobeSlots.length){error(`${wardrobeSlots.length}品以内になるよう衣服をまとめてください`);return;}wardrobeState.garments.clear();cloth.forEach(([node,p],i)=>{const id='part_'+node;p.group=id;wardrobeState.garments.set(id,garmentDefaults(id,state.source.parts.find(p=>p.node===node).name,wardrobeSlots[i]));});wardrobeClearPreview();renderWardrobe();};
+  $('wardrobe-add').onclick=()=>{if(wardrobeState.garments.size>=16)return;let id;do{id='item_'+(++wardrobeState.sequence);}while(wardrobeState.garments.has(id));const slot=wardrobeSlots[wardrobeState.garments.size%wardrobeSlots.length];wardrobeState.garments.set(id,garmentDefaults(id,'衣服'+wardrobeState.sequence,slot));wardrobeClearPreview();renderWardrobe();};
+  $('wardrobe-combine').onclick=()=>{wardrobeState.garments.clear();const g=garmentDefaults('outfit','元の全身衣装');g.item_kind='full';wardrobeState.garments.set('outfit',g);for(const p of wardrobeState.nodes.values())if(p.role==='garment')p.group='outfit';wardrobeClearPreview();renderWardrobe();};
+  $('wardrobe-split').onclick=()=>{wardrobeNativeGroups();wardrobeClearPreview();renderWardrobe();};
   $('wardrobe-preview-state').onchange=wardrobeClearPreview;$('wardrobe-preview').onclick=wardrobePreview;
 }

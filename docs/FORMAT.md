@@ -190,41 +190,39 @@ provide an empty fallback. Old cover 0x80B remains an inert FormID with mask 0
 for saved inventory references, never initial equipment. Head parts and shapes
 cannot be restored by changing the default outfit or stripping equipment.
 
-Wardrobe OTFT is empty and all garments are ordinary CNTO items. Seven FLSTs
-at 0x840-0x846 bind InitialItems, Body/Hands/FeetClothes and Body/Hands/FeetEquipment
-to a private Actor VMAD script. Garments have optional equipment_group values
-body/hands/feet/accessory; omitted old settings derive an editable suggestion
-from their names. Gear categories use actual source ARMO slot 32/33/37. Only
-selected fitted game items participate. The source and compiled PEX are under
-runtime/. Per-mod PEX string-table renaming preserves every object/function index
-and instruction. Header metadata is sanitized. Class name, script path and VMAD
-bindings are private; no common runtime path causes follower ZIP collisions.
+Wardrobe OTFT is empty and all garments are ordinary CNTO items. OnInit
+only equips configured inventory items once unless already a player teammate.
+All later equipment replacement is native ARMO slot exclusion. There is no
+OnObjectEquipped/OnLoad unequip policy. The seven legacy FLST/property names
+remain for compatibility, but only InitialItems is populated. Old replacement
+functions/events are inert, including delayed calls from saved stacks. Private
+PEX string-table renaming preserves instruction indices and sanitizes metadata.
+The Skyrim 3.2 PEX is compiled with Orvid/Caprica v0.3.0 against the user's native
+source declarations; compile-only stubs are not distributed.
 
-OnInit equips configured inventory items once unless already a player teammate.
-OnObjectEquipped only unequips that group's conflicting items, ignoring delayed
-events for already-removed items. In 0.6.1 fitted gear wins in either event order:
-a re-equipped garment removes matching clothes, never fitted gear. Original
-clothes can be worn after the corresponding gear is removed. OnLoad repairs overlapping current equipment
-without restoring clothes or changing any outfit. AFT retains ownership of its
-sets and inventory. Template PEX is Skyrim 3.2, built with Orvid/Caprica v0.3.0
-against the user's Actor/ObjectReference/FormList declarations; missing unused
-type declarations are compile-only and are not distributed. Compiler archive
-SHA256: 0037e54cf3a1021e976278d9a637e8ae541aaf9ebeb8d274b6c2cfe32f4ee559.
+`wardrobe_policy=native_slots` distinguishes new configurations. Legacy
+body/hands/feet replacement groups migrate to equip slots 32/33/37. Simultaneous
+initial garments in a region merge into one item with the union of their nodes,
+summed weight/value and maximum defense; differing armor types require an
+explicit user choice. `record_index` retains the original first item/shoe/glove
+FormIDs rather than renumbering survivors. Removed component items are not
+recreated in saved inventories. Use a save before installing the old follower
+for a clean comparison when the wardrobe grouping changes.
 
-Optional garment `item_kind` is body/legs/hands/feet/cloak/backpack/accessory.
-Omitted old settings infer usage from the name. It controls native semantic
-keywords, independently of equipment_group and the render/equip slot. Clothing
-gets ArmorClothing + VendorItemClothing and ClothingBody/Hands/Feet where relevant;
-armor gets ArmorLight/Heavy + VendorItemArmor and ArmorCuirass/Gauntlets/Boots.
-Legwear shares the native body keyword because Skyrim has no separate pants
-classification. SkyUI subtype follows its part-mask precedence, not these usage
-keywords ([upstream InventoryDataSetter](https://github.com/schlangster/skyui/blob/master/src/ItemMenus/InventoryDataSetter.as)).
-The user's UI labels layer 46 as cloak and 47 as backpack. The wizard explains
-this convention, prefers 53-59/44/45/48/49 for ordinary split clothes, and keeps
-imported explicit slots unchanged. Selecting a different slot rebuilds both
-records and NIF partitions through the normal conversion pipeline.
-The test VM reads the real PEX format using the author's Caprica/pex schema;
-its mocked native calls establish code behavior, not actual game compatibility.
+ARMO torso occupancy is 32; its ARMA geometry coverage is 32/34/38. Gloves and
+shoes use 33/37. `item_kind=full` at slot 32 occupies 32/33/37 and retains original
+body, hand and foot skin. Other extended equip slots mean intentional
+coexistence. Neither the follower nor the combined fitting patch adds global
+extra-slot conflicts to existing game armor. Automatic allocation never moves
+an extra torso item to a coexistence slot to avoid reporting a conflict.
+
+`item_kind` is body/legs/full/hands/feet/cloak/backpack/accessory and supplies
+native semantic keywords. Legwear uses the body keyword because Skyrim has no
+standard pants slot. SkyUI subtype follows slot masks rather than usage keywords.
+The wizard defaults and split control create native regional sets; manual
+layers remain available. The strict test VM executes the shipped PEX; a mocked
+native equip model uses the generated ARMO masks to check exclusion before any
+queued event executes, and confirms later events cannot change equipment.
 
 ## 0.6.2 material face culling
 

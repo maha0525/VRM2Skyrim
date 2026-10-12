@@ -11,6 +11,41 @@ from official_catalog import OfficialCatalog
 from plugin import Record, records, write_plugin
 
 
+def installed_patch_status(game_data, profile):
+    """Check actual deployed item-to-private-addon bindings, read-only."""
+    expected = set()
+    for item in profile['equipment']:
+        expected.add((item.get('origin_plugin', 'Skyrim.esm').casefold(),
+                      item.get('origin_local_id', item['original_form_id'] & 0xFFFFFF),
+                      item['addon_local_id']))
+    path = Path(game_data)/'VRM2SkyrimArmorPatch.esp'
+    installed, linked = 0, set()
+    if path.is_file():
+        parsed = list(records(path))
+        header = next(r for r in parsed if r.kind == b'TES4')
+        masters = [value.rstrip(b'\0').decode('utf8').casefold() for value in header.values(b'MAST')]
+        masters.append(path.name.casefold())
+        for record in parsed:
+            if record.kind != b'ARMO':
+                continue
+            installed += 1
+            owner = record.form_id >> 24
+            if owner >= len(masters):
+                raise ValueError('Deployed armor patch has an invalid master reference')
+            for value in record.values(b'MODL'):
+                addon = struct.unpack('<I', value)[0]
+                index = addon >> 24
+                if index < len(masters) and masters[index] == profile['plugin'].casefold():
+                    linked.add((masters[owner], record.form_id & 0xFFFFFF, addon & 0xFFFFFF))
+    missing = expected-linked
+    status = 'current' if not missing else 'needs_update' if path.is_file() else 'missing'
+    result = dict(status=status, installed_items=installed,
+                  expected_items=len({(p, i) for p, i, _ in expected}), missing_bindings=len(missing))
+    logging.info('Deployed armor patch: %s, items=%s, missing private bindings=%s, follower=%s',
+                 status, installed, len(missing), profile['plugin'])
+    return result
+
+
 def build_patch(game_data, manifests, output):
     output = Path(output)
     if not manifests:
@@ -48,6 +83,10 @@ def build_patch(game_data, manifests, output):
     for profile_index, profile in enumerate(profiles):
         index = masters.index(profile['plugin'])
         manifest = Path(manifests[profile_index]).resolve()
+        native_slots = profile.get('wardrobe_policy') == 'native_slots'
+        settings_path = manifest.parent/'settings.json'
+        if settings_path.is_file():
+            native_slots |= json.loads(settings_path.read_text(encoding='utf-8-sig')).get('wardrobe_policy') == 'native_slots'
         candidates = [manifest.parent / "mod" / profile["plugin"]]
         candidates += [parent / profile["plugin"] for parent in manifest.parents]
         plugin = next((p for p in candidates if p.is_file()), None)
@@ -57,8 +96,9 @@ def build_patch(game_data, manifests, output):
         header = next(r for r in source_records if r.kind == b'TES4')
         own_index = len(header.values(b'MAST'))
         addons = {r.form_id & 0xFFFFFF: r for r in source_records if r.kind == b'ARMA' and r.form_id >> 24 == own_index}
-        list_values = {name: set() for name in ('BodyEquipment', 'HandsEquipment', 'FeetEquipment',
-                                               'FaceHidingEquipment', 'HairHidingEquipment')}
+        list_values = {name: set() for name in (('FaceHidingEquipment', 'HairHidingEquipment') if native_slots else
+                                               ('BodyEquipment', 'HandsEquipment', 'FeetEquipment',
+                                                'FaceHidingEquipment', 'HairHidingEquipment'))}
         for equipment in profile["equipment"]:
             original = catalog.fitted_item(equipment)
             local_id = equipment["addon_local_id"]
@@ -94,7 +134,7 @@ def build_patch(game_data, manifests, output):
                     items[fitted.form_id] = fitted
             mask = equipment.get('armor_mask', sum(1 << (s-30) for s in equipment.get('slots', [])))
             for slot, name in ((32, 'BodyEquipment'), (33, 'HandsEquipment'), (37, 'FeetEquipment')):
-                if mask & (1 << (slot-30)):
+                if not native_slots and mask & (1 << (slot-30)):
                     list_values[name].add(mapped.form_id)
             for flag, name in (('hide_face', 'FaceHidingEquipment'), ('hide_hair', 'HairHidingEquipment')):
                 if equipment.get(flag):

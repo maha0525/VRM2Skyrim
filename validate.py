@@ -3,6 +3,7 @@
 import argparse
 import json
 import logging
+import locale
 from pathlib import Path
 import struct
 import subprocess
@@ -14,11 +15,12 @@ from scipy.spatial import cKDTree
 from plugin import records
 from settings import load_settings
 from build_npc import NPC_ID, RACE_ID
-from wardrobe import components, keyword_names, skin_components
+from wardrobe import components, equip_slots, keyword_names, skin_components
 from gear_head_runtime import head_variants, validate_head_models
 from head_visibility import validate_head_visibility
 from equipment_runtime import runtime_records, vmad, script_name, pex_strings, PROPERTIES
 from nif_materials import DOUBLE_SIDED
+from clothing_validation import validate_clothing_skin
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "dependencies/io_scene_nifly"))
@@ -48,6 +50,8 @@ def validate(output, skeleton=None):
             if nif.game != "SKYRIMSE":
                 raise ValueError(f"Wrong NIF target: {nif.game}")
             for shape in nif.shapes:
+                if part.get('retained_skin') and shape.name.startswith('V2SClothingSkin_'):
+                    continue  # Validated against the partitioned original skin below, not counted twice.
                 source_shape = next((s for s in part.get('shapes', []) if s['name'] == shape.name), None)
                 if source_shape is not None and 'double_sided' in source_shape:
                     if bool(shape.shader.properties.Shader_Flags_2 & DOUBLE_SIDED) != source_shape['double_sided']:
@@ -205,6 +209,8 @@ def validate(output, skeleton=None):
         expected_outfit = set()
         for index, garment in enumerate(settings.appearance_parts["garments"]):
             item = by_name[settings.prefix + "Garment_" + garment["id"]]
+            if item.form_id != 0x01000811 + garment.get('record_index', index) * 2:
+                raise ValueError('Garment record ID changed during native wardrobe migration')
             expected_keywords = keyword_manifest[garment['id']]
             names = keyword_names(garment)
             if (list(expected_keywords) != names or item.values(b'KSIZ') != [struct.pack('<I', len(names))]
@@ -215,8 +221,9 @@ def validate(output, skeleton=None):
             ]:
                 raise ValueError("Garment is not a named wearable item")
             mask, kind = struct.unpack("<II", item.values(b"BOD2")[0])
+            garment_slots = equip_slots(garment)
             if (
-                mask != 1 << (garment["slot"] - 30)
+                mask != sum(1 << (slot - 30) for slot in garment_slots)
                 or kind
                 != {"light": 0, "heavy": 1, "clothing": 2}[garment["armor_type"]]
             ):
@@ -237,6 +244,8 @@ def validate(output, skeleton=None):
         _, _, _, strings = pex_strings((mod/'scripts'/(script_name(settings)+'.pex')).read_bytes())
         if script_name(settings).encode() not in strings:
             raise ValueError('Wardrobe PEX does not declare the private script name')
+        if {s.lower() for s in strings} & {b'unequipitem', b'setoutfit', b'removeitem', b'additem', b'queueninodeupdate'}:
+            raise ValueError('Native wardrobe PEX still contains a scripted replacement/inventory mutation')
         fitting_profile = json.loads((output/'armor-fitting.json').read_text()) if settings.fitting_enabled else None
         for expected in runtime_records(settings, profile=fitting_profile):
             if by_id[expected.form_id].fields != expected.fields:
@@ -292,7 +301,7 @@ def validate(output, skeleton=None):
             str(preview),
             str(texture),
         ]
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True, encoding=locale.getencoding(), errors='replace')
         if result.returncode:
             raise RuntimeError(result.stdout + result.stderr)
     report = {
@@ -306,6 +315,7 @@ def validate(output, skeleton=None):
         "game_verified": False,
         "head_visibility": head_visibility,
         'head_models': validate_head_models(output, settings),
+        'clothing_skin': validate_clothing_skin(output, settings),
     }
     (output / "validation.json").write_text(
         json.dumps(report, indent=2), encoding="utf-8"

@@ -15,6 +15,12 @@ def partition_slot(partition, fallback):
     return slot
 
 
+def native_partition(partition, fallback):
+    """Keep helmet/hood partition semantics; map only for equipment masks."""
+    slot = partition_slot(partition, fallback)
+    return int(partition) if partition >= 100 else slot
+
+
 def official_choices(catalog, sex='female'):
     result = []
     for armor in catalog.choices(b'ARMO'):

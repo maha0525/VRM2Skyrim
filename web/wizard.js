@@ -78,21 +78,41 @@ function setupFitting() {
   if($('fit-enabled').checked&&!$('fit-armors').selectedOptions.length){for(const option of $('fit-armors').options)option.selected=['ArmorIronBandedCuirass','ArmorIronBoots'].includes(option.dataset.editorId);}
   renderHeadPolicies();
 }
+function headPreviewSignature(){return JSON.stringify([state.source?.source_id,wardrobeState.revision,$('sex').value,$('fit_source').value,$('height_scale').value]);}
 function renderHeadPolicies(){
-  const target=$('head-policies');target.replaceChildren();const rows=new Map(),filter=$('head-search').value.toLowerCase();
+  const target=$('head-policies'),selector=$('head-model'),previous=selector.value;target.replaceChildren();
+  const rows=new Map(),filter=$('head-search').value.toLowerCase();
   const selected=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));
-  for(const item of state.choices?.armors||[]){if($('fit_mode').value==='selected'&&!selected.has(item.id))continue;for(const addon of item.addons||[]){if(!(addon.mask&0x3803))continue;if(!rows.has(addon.key))rows.set(addon.key,{...addon,label:item.label});}}
-  for(const addon of rows.values()){if(filter&&!`${addon.label} ${addon.name}`.toLowerCase().includes(filter))continue;const row=document.createElement('div');row.dataset.addon=addon.key;
-    const name=document.createElement('span');name.textContent=`${addon.label} (${addon.name})`;row.append(name);
-    const policy=state.headOverrides?.[addon.key]||{hide_face:$('head-hide-face').checked,hide_hair:$('head-hide-hair').checked&&!!(addon.mask&2)};
-    for(const [key,label]of [['hide_face','顔を隠す'],['hide_hair','髪を隠す']]){const box=document.createElement('label');box.className='checkbox';box.textContent=label;const input=document.createElement('input');input.type='checkbox';input.checked=policy[key];input.dataset.policy=key;input.onchange=()=>{state.headOverrides??={};state.headOverrides[addon.key]={...policy,[key]:input.checked};renderHeadPolicies();};box.append(input);row.append(box);}const reset=document.createElement('button');reset.type='button';reset.textContent='既定値へ';reset.onclick=()=>{delete state.headOverrides[addon.key];renderHeadPolicies();};row.append(reset);target.append(row);
-  }
+  for(const item of state.choices?.armors||[]){if($('fit_mode').value==='selected'&&!selected.has(item.id))continue;for(const addon of item.addons||[]){if(!(addon.mask&0x3803))continue;if(!rows.has(addon.key))rows.set(addon.key,{...addon,label:item.label,armor:item.id});}}
+  const visible=[...rows.values()].filter(a=>!filter||`${a.label} ${a.name}`.toLowerCase().includes(filter));
+  selector.replaceChildren(...visible.map(a=>new Option(`${a.label} (${a.name})`,a.key)));
+  if(visible.some(a=>a.key===previous))selector.value=previous;
+  $('head-count').textContent=`${visible.length}モデル。装備を一つ選んで表示設定と見た目を確認できます。`;
+  if(selector.value!==previous){$('head-preview-images').replaceChildren();$('head-preview-status').textContent='';}
+  const addon=rows.get(selector.value);if(!addon)return;
+  const row=document.createElement('div');row.dataset.addon=addon.key;row.className='head-policy-card';
+  const name=document.createElement('strong');name.textContent=addon.label;const id=document.createElement('small');id.textContent=addon.name;row.append(name,id);
+  const controls=document.createElement('div');controls.className='head-controls';
+  const policy=state.headOverrides?.[addon.key]||{hide_face:$('head-hide-face').checked,hide_hair:$('head-hide-hair').checked&&!!(addon.mask&2)};
+  for(const [key,label]of [['hide_face','顔を隠す'],['hide_hair','髪を隠す']]){const box=document.createElement('label');box.className='checkbox';const input=document.createElement('input');input.type='checkbox';input.checked=policy[key];input.dataset.policy=key;input.onchange=()=>{state.headOverrides??={};state.headOverrides[addon.key]={...policy,[key]:input.checked};$('head-preview-images').replaceChildren();renderHeadPolicies();};box.append(input,document.createTextNode(label));controls.append(box);}row.append(controls);
+  const reset=document.createElement('button');reset.type='button';reset.className='secondary';reset.textContent='リセット';reset.onclick=()=>{delete state.headOverrides[addon.key];$('head-preview-images').replaceChildren();renderHeadPolicies();};
+  const preview=document.createElement('button');preview.type='button';preview.className='secondary';preview.id='head-preview';preview.textContent='この頭装備を着せてプレビュー';
+  preview.onclick=async()=>{preview.disabled=true;error();$('head-preview-images').replaceChildren();$('head-preview-status').textContent='頭装備をアバターに合わせています…';const identity=addon.key+JSON.stringify(policy),signature=headPreviewSignature();try{const result=await api('/api/head-preview',{source_id:state.source.source_id,game:$('game').value,blender:$('blender').value,settings:collect(),armor:addon.armor,policy});for(;;){const job=await api('/api/jobs/'+result.job_id);$('head-preview-status').textContent=job.stage;if(job.status==='failed')throw new Error(job.error);if(job.status==='complete'){const current=state.headOverrides?.[addon.key]||{hide_face:$('head-hide-face').checked,hide_hair:$('head-hide-hair').checked&&!!(addon.mask&2)};if($('head-model').value+JSON.stringify(current)!==identity||headPreviewSignature()!==signature){$('head-preview-status').textContent='設定が変わりました。プレビューを更新してください。';break;}for(const path of job.previews){const img=document.createElement('img');img.src=fileURL(job.id,path);img.alt=addon.label+'を装着したアバター';$('head-preview-images').append(img);}break;}await new Promise(r=>setTimeout(r,1000));}}catch(e){error(e.message);$('head-preview-status').textContent='プレビューを作成できませんでした';}finally{preview.disabled=false;}};
+  row.append(reset,preview);target.append(row);
+}
+async function checkDeployedPatch(){
+  const target=$('deployed-patch-status');
+  try{
+    const value=await api('/api/patch-status?job='+encodeURIComponent(state.resultJob)+'&game='+encodeURIComponent($('game').value));
+    target.textContent=value.status==='current'?`ゲーム内のパッチは、このフォロワーの${value.expected_items.toLocaleString()}品に対応しています。`:`ゲーム内のパッチ：${value.installed_items.toLocaleString()}品。このフォロワー用の装備登録が${value.missing_bindings.toLocaleString()}件不足しています。生成した防具互換パッチZIPを旧版と置き換え、Deployしてください。`;
+    target.className=value.status==='current'?'hint':'note';
+  }catch(e){target.textContent=e.message;}
 }
 async function showArmorPatch(job) {
   $('armor-patch-result').hidden=!job.armor_patch; if(!job.armor_patch)return;
-  $('armor-patch-download').href=fileURL(job.id,job.armor_patch);$('armor-patch-download').download='VRM2SkyrimArmorPatch.zip';
+  $('armor-patch-download').textContent='このフォロワーだけのパッチを保存';$('armor-patch-download').href=fileURL(job.id,job.armor_patch);$('armor-patch-download').download='VRM2SkyrimArmorPatch.zip';await checkDeployedPatch();
   const result=await api('/api/fitted-followers?game='+encodeURIComponent($('game').value));$('fitted-followers').replaceChildren();
-  for(const profile of result.profiles){const label=document.createElement('label'),input=document.createElement('input');label.className='checkbox';input.type='checkbox';input.value=profile.id;input.checked=profile.plugin===job.plugin_name;label.append(input,document.createTextNode(profile.plugin));$('fitted-followers').append(label);}
+  for(const profile of result.profiles){const label=document.createElement('label'),input=document.createElement('input');label.className='checkbox';input.type='checkbox';input.value=profile.id;input.checked=profile.plugin===job.plugin_name||profile.deployed;label.append(input,document.createTextNode(profile.plugin));$('fitted-followers').append(label);}
 }
 function selectedTags(kind) {
   const selected=kind==='perks'?state.perks.keys():state.spells; const target=$('selected-'+kind); target.replaceChildren();
@@ -170,13 +190,14 @@ async function init() {
   initWardrobe();
   const saved=await api('/api/jobs');
   if(saved.jobs.length){$('saved-results').hidden=false;$('saved-job').replaceChildren(...saved.jobs.map(j=>new Option(j.npc_name+' · '+j.plugin_name,j.id)));}
+  $('check-deployed-patch').onclick=checkDeployedPatch;
   $('open-saved').onclick=async()=>{try{const job=await api('/api/jobs/'+$('saved-job').value);$('wizard').hidden=true;showResult(job);}catch(e){error(e.message);}};
   $('fit-enabled').onchange=async()=>{if($('fit-enabled').checked&&!state.choices){$('next').disabled=true;try{const result=await api('/api/catalog',{game:$('game').value,blender:$('blender').value});setupChoices(result.choices);}catch(e){error(e.message);$('fit-enabled').checked=false;}finally{$('next').disabled=false;}}setupFitting();};
   $('fit-armors').onchange=()=>{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));renderHeadPolicies();};
-  $('fit_mode').onchange=setupFitting;$('head-search').oninput=renderHeadPolicies;
-  $('head-hide-face').onchange=renderHeadPolicies;$('head-hide-hair').onchange=renderHeadPolicies;
+  $('head-model').onchange=()=>{$('head-preview-images').replaceChildren();renderHeadPolicies();};$('fit_mode').onchange=setupFitting;$('head-search').oninput=renderHeadPolicies;
+  $('head-hide-face').onchange=$('head-hide-hair').onchange=()=>{$('head-preview-images').replaceChildren();$('head-preview-status').textContent='';renderHeadPolicies();};$('fit_source').onchange=()=>{$('head-preview-images').replaceChildren();$('head-preview-status').textContent='';};
   $('import-edit').onclick=async()=>{const file=$('edit-nif').files[0];if(!file){$('edit-status').textContent='編集したNIFを選んでください';return;}$('import-edit').disabled=true;try{const response=await fetch('/api/equipment-edit',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Job-Id':state.resultJob,'X-Mesh-Key':$('edit-mesh').value,'X-Blender':encodeURIComponent($('blender').value)},body:file});const result=await response.json();if(!response.ok)throw new Error(result.error);for(;;){const job=await api('/api/jobs/'+result.job_id);$('edit-status').textContent=job.stage;if(job.status==='failed')throw new Error(job.error);if(job.status==='complete'){showResult(job);$('edit-status').textContent='仕上げを反映しました。更新されたMOD ZIPを保存してください。';break;}await new Promise(r=>setTimeout(r,1000));}}catch(e){$('edit-status').textContent=e.message;}finally{$('import-edit').disabled=false;}};
-  $('merge-armor-patch').onclick=async()=>{const button=$('merge-armor-patch');button.disabled=true;$('armor-patch-status').textContent='互換パッチを作成しています…';try{const result=await api('/api/armor-patch',{game:$('game').value,profiles:[...$('fitted-followers').querySelectorAll('input:checked')].map(input=>input.value)});$('armor-patch-download').href=fileURL(result.job_id,result.archive);$('armor-patch-status').textContent='選択したフォロワー分のパッチを作成しました。このZIPに差し替えてください。';}catch(e){$('armor-patch-status').textContent=e.message;}finally{button.disabled=false;}};
+  $('merge-armor-patch').onclick=async()=>{const button=$('merge-armor-patch');button.disabled=true;$('armor-patch-status').textContent='互換パッチを作成しています…';try{const result=await api('/api/armor-patch',{game:$('game').value,profiles:[...$('fitted-followers').querySelectorAll('input:checked')].map(input=>input.value)});$('armor-patch-download').textContent='統合パッチを保存';$('armor-patch-download').href=fileURL(result.job_id,result.archive);$('armor-patch-status').textContent='選択したフォロワー分のパッチを作成しました。このZIPに差し替えてください。';}catch(e){$('armor-patch-status').textContent=e.message;}finally{button.disabled=false;}};
   $('source').onchange=()=>upload($('source').files[0]);const zone=document.querySelector('.dropzone');zone.ondragover=e=>{e.preventDefault();zone.classList.add('drag');};zone.ondragleave=()=>zone.classList.remove('drag');zone.ondrop=e=>{e.preventDefault();zone.classList.remove('drag');upload(e.dataTransfer.files[0]);};
   $('next').onclick=next;$('back').onclick=()=>showStep(state.step-1);$('create').onclick=create;$('level_mode').onchange=updateLevel;$('auto_calculate').onchange=updateLevel;$('preset').onchange=preset;
   $('mod_name').oninput=()=>{state.nameDirty=true;updateId();};$('npc_name').oninput=()=>state.nameDirty=true;$('mod_id').oninput=()=>state.idDirty=true;

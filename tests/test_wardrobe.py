@@ -11,7 +11,7 @@ from environment import find_game
 from game_catalog import GameCatalog
 from plugin import Record, records
 from settings import FollowerSettings
-from wardrobe import suggest_role, validate_source, item_kind, keyword_names, GARMENT_SLOTS, skin_components
+from wardrobe import suggest_role, validate_source, item_kind, keyword_names, GARMENT_SLOTS, skin_components, equip_slots
 from parallel_rigs import follower_links, propagate_pose
 import numpy as np
 
@@ -25,7 +25,65 @@ def wardrobe_settings(**overrides):
     return FollowerSettings(**values)
 
 
+class FakeCatalog:
+    def require(self, name, kind):
+        return Record(kind, 0x1234, 0, [])
+
+
+class ClothingSkinTests(unittest.TestCase):
+    def test_float32_seams_face_order_and_rounding_boundaries(self):
+        from clothing_validation import validate_skin_triangles
+        points = np.array([[0., 0., 78.81715, .52, .26], [1., 0., 79., .53, .27],
+                           [1., 1., 79., .54, .28], [0., 1., 79., .55, .29]])
+        expected = points[np.array([[0, 1, 2], [0, 2, 3]])]
+        actual = expected[::-1, ::-1].astype(np.float32).astype(float)
+        actual[:, :, 2] -= .00002
+        validate_skin_triangles(expected, actual)
+
+    def test_same_count_duplicate_or_different_topology_is_rejected(self):
+        from clothing_validation import validate_skin_triangles
+        points = np.array([[0., 0., 0.], [1., 0., 0.], [1., 1., 0.], [0., 1., 0.]])
+        expected = points[np.array([[0, 1, 2], [0, 2, 3]])]
+        for actual in (expected[:1], expected[[0, 0]], points[np.array([[0, 1, 3], [1, 2, 3]])]):
+            with self.assertRaises(ValueError):
+                validate_skin_triangles(expected, actual)
+
+
 class WardrobeTests(unittest.TestCase):
+    def test_legacy_scripted_groups_become_native_outfit_sets(self):
+        from dataclasses import asdict
+        saved = asdict(wardrobe_settings())
+        del saved['wardrobe_policy']
+        coat = saved['appearance_parts']['garments'][0]
+        coat.update(equipment_group='body', slot=53)
+        saved['appearance_parts']['garments'].extend([
+            {**coat, 'id': 'skirt', 'name': 'skirt', 'nodes': [5], 'slot': 55},
+            {**coat, 'id': 'shoes', 'name': 'shoes', 'nodes': [6], 'slot': 57, 'equipment_group': 'feet'},
+            {**coat, 'id': 'scarf', 'name': 'scarf', 'nodes': [7], 'slot': 45, 'equipment_group': 'accessory'}])
+        settings = FollowerSettings.from_dict(saved)
+        garments = settings.appearance_parts['garments']
+        self.assertEqual([(g['id'], g['slot'], g['nodes']) for g in garments],
+                         [('coat', 32, [4, 5]), ('shoes', 37, [6]), ('scarf', 45, [7])])
+        self.assertEqual(settings.wardrobe_policy, 'native_slots')
+        self.assertEqual(coat['slot'], 53, 'Migration must not mutate its input')
+        self.assertEqual(FollowerSettings.from_dict(asdict(settings)), settings, 'Migration is idempotent')
+
+    def test_equip_occupancy_is_distinct_from_render_coverage(self):
+        from wardrobe import components
+        settings = wardrobe_settings()
+        garment = settings.appearance_parts['garments'][0]
+        garment.update(slot=32, item_kind='body')
+        generated, _ = appearance_records(settings, FakeCatalog())
+        item = next(r for r in generated if r.editor_id.endswith('Garment_coat'))
+        addon = next(r for r in generated if r.editor_id.endswith('Garment_coatAA'))
+        self.assertEqual(struct.unpack_from('<I', item.values(b'BOD2')[0])[0], 4)
+        self.assertEqual(struct.unpack_from('<I', addon.values(b'BOD2')[0])[0], 276)
+        self.assertEqual(equip_slots(garment), [32])
+        garment['item_kind'] = 'full'
+        self.assertEqual(equip_slots(garment), [32, 33, 37])
+        part = next(p for p in components(settings) if p['role'] == 'garment')
+        self.assertEqual(part['slots'], [32, 33, 34, 37, 38])
+
     def test_classified_head_stays_combined_without_equipment_fitting(self):
         parts = copy.deepcopy(wardrobe_settings().appearance_parts)
         parts['fixed'] = [3, 5]
@@ -102,23 +160,33 @@ class WardrobeTests(unittest.TestCase):
 
     def test_duplicate_classification_and_reserved_slot_rejected(self):
         settings = wardrobe_settings()
-        for change in ("duplicate", "slot", "rating", "id", "empty", "collision"):
+        for change in ("duplicate", "slot", "rating", "id", "reserved_id", "empty", "collision"):
             parts = copy.deepcopy(settings.appearance_parts)
             garment = parts["garments"][0]
             if change == "duplicate":
                 parts["body"].append(2)
             elif change == "slot":
-                garment["slot"] = 32
+                garment["slot"] = 52
             elif change == "rating":
                 garment["armor_rating"] = float("nan")
             elif change == "id":
                 garment["id"] = "../escape"
+            elif change == 'reserved_id':
+                garment['id'] = 'feet'
             elif change == "empty":
                 parts["body"] = []
             else:
                 parts["garments"].append({**garment, "id": "other", "nodes": [5]})
             with self.subTest(change=change), self.assertRaises(ValueError):
                 wardrobe_settings(appearance_parts=parts)
+
+    def test_standard_slots_and_automatic_selection_are_supported(self):
+        for slot in range(32, 43):
+            parts = copy.deepcopy(wardrobe_settings().appearance_parts)
+            parts['garments'][0].update(slot=slot, slot_mode='auto')
+            settings = wardrobe_settings(appearance_parts=parts)
+            self.assertEqual(settings.appearance_parts['garments'][0]['slot'], slot)
+            self.assertEqual(settings.skin_partition_enabled, slot in (32, 33, 34, 37, 38))
 
     def test_source_digest_and_exact_mesh_coverage(self):
         settings = wardrobe_settings()

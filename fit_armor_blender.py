@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "dependencies"))
 from settings import load_settings  # noqa: E402
+from armor_catalog import partition_slot  # noqa: E402
 
 
 def select(objects, active):
@@ -76,6 +77,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument('--mesh-key')
+    parser.add_argument('--skin-only', action='store_true')
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
     output = args.output.resolve()
     settings = load_settings(output)
@@ -196,10 +198,11 @@ def main():
             if dropped:
                 logging.info('Blender omitted %s degenerate/duplicate source faces: %s', dropped, part['name'])
             for slot in sorted(set(face_slots)):
-                if slot not in equipment["slots"]:
+                layer = partition_slot(slot, equipment['slots'][0])
+                if layer not in equipment["slots"]:
                     raise ValueError("Armor shape partition is outside its addon")
                 faces = [i for i, value in enumerate(face_slots) if value == slot]
-                objects.append(submesh(source, faces, f"Fitted_{part['name']}_{slot}", slot, rig))
+                objects.append(submesh(source, faces, f"Fitted_{part['name']}_{layer}", slot, rig))
         for part in equipment["exposed_body"]:
             source = body[part["name"]]
             for slot in equipment["slots"]:
@@ -220,8 +223,11 @@ def main():
         bpy.data.orphans_purge(do_recursive=True)
     if not args.mesh_key:
         (output / "appearance.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf8")
+    if args.skin_only:
+        return
     geometries = {item['mesh_index']: item for item in plan['equipment']}
     fitted = {"plugin": settings.plugin_name, "race_local_id": 0x804, 'schema': 2,
+              'wardrobe_policy': settings.wardrobe_policy,
               'source_profile': plan['source_profile'], 'reference_signature': plan.get('reference_signature'), 'plugins': plan['plugins'],
               'avatar_sha256': settings.appearance_source_sha256,
               'equipment': [{**binding, **{key: geometries[binding['mesh_index']][key] for key in

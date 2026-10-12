@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "dependencies"))
 sys.path.insert(0, str(ROOT))
 from settings import load_settings, reference_root  # noqa: E402
+from armor_catalog import partition_slot  # noqa: E402
 
 
 def aim(obj, point):
@@ -25,6 +26,10 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--animation", choices=("original", "rest", "walk", "attack"), default="rest")
     parser.add_argument("--wardrobe", default="initial", help="initial, all, underwear, without:<garment-id>")
+    parser.add_argument('--hide-face', action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument('--hide-hair', action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument('--keep-clothes', action='store_true')
+    parser.add_argument('--head-closeup', action='store_true')
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
     output = args.output.resolve()
     settings = load_settings(output)
@@ -57,19 +62,23 @@ def main():
                     compatible.append(item)
                     occupied.update(slots)
             selected = compatible
-        if any(p.get('hide_face') for p in selected):
+        if args.hide_face if args.hide_face is not None else any(p.get('hide_face') for p in selected):
             parts = [p for p in parts if p['id'] != 'face']
-        if any(p.get('hide_hair') for p in selected):
+        if args.hide_hair if args.hide_hair is not None else any(p.get('hide_hair') for p in selected):
             parts = [p for p in parts if p['id'] != 'hair']
         parts += [{**p, "role": "equipment", "slot": p["slots"][0]} for p in selected]
     elif wardrobe not in ("initial", "all", "underwear") and not any(wardrobe == "without:" + p["id"] for p in parts if p["role"] == "garment"):
         raise ValueError("Unknown wardrobe state")
+    if settings.armor_support:
+        parts = [p for p in parts if p['role'] != 'garment' or not (
+            (wardrobe.startswith('armor:') and not args.keep_clothes) or wardrobe == 'underwear' or wardrobe == 'without:'+p['id'] or
+            (wardrobe == 'initial' and not p['equipped']))]
     slot_priority = {}
     for part in parts:
         for slot in part.get("slots", [part["slot"]]):
             slot_priority[slot] = max(slot_priority.get(slot, 0), part.get("priority", 0))
     nifs, rig = [], None
-    if settings.fitting_enabled:
+    if settings.skin_partition_enabled:
         # Use the complete original skin's import as the common preview rig.
         # Importers orient unweighted helper bones differently after partitioning.
         bpy.ops.import_scene.pynifly(filepath=str(output / "armor-source/body.nif"), rename_bones=False,
@@ -92,7 +101,7 @@ def main():
         rig = full
     for part in parts:
         if settings.armor_support and part["role"] == "garment":
-            if wardrobe.startswith("armor:") or wardrobe == "underwear" or wardrobe == "without:" + part["id"] or (wardrobe == "initial" and not part["equipped"]):
+            if (wardrobe.startswith("armor:") and not args.keep_clothes) or wardrobe == "underwear" or wardrobe == "without:" + part["id"] or (wardrobe == "initial" and not part["equipped"]):
                 continue
         nif = output / "mod/meshes" / settings.asset_dir / part["file"]
         nifs.append(str(nif))
@@ -103,12 +112,12 @@ def main():
                                    reference_skel=str(skel), import_animations=False,
                                    import_shapekeys=False, import_collisions=False)
         imported = [obj for obj in bpy.context.scene.objects if obj not in existing]
-        if wardrobe.startswith("armor:"):
+        if settings.armor_support:
             import re
             for obj in imported:
                 if obj.type != "MESH":
                     continue
-                slots = {int(m.group(1)) for g in obj.vertex_groups
+                slots = {partition_slot(int(m.group(1)), part['slot']) if int(m.group(1)) >= 100 else int(m.group(1)) for g in obj.vertex_groups
                          if (m := re.match(r"SBP_(\d+)_", g.name))}
                 if slots and all(slot_priority.get(s, 0) > part.get("priority", 0) for s in slots):
                     obj.hide_render = True
@@ -119,7 +128,7 @@ def main():
             weighted = {group.name for obj in imported if obj.type == "MESH" for group in obj.vertex_groups
                         if not group.name.startswith("SBP_")}
             for bone in new_rig.data.bones:
-                if settings.fitting_enabled and bone.name not in weighted:
+                if settings.skin_partition_enabled and bone.name not in weighted:
                     continue
                 if bone.name not in rig.data.bones or not np.allclose(np.array(bone.matrix_local), np.array(rig.data.bones[bone.name].matrix_local), atol=.001):
                     raise ValueError(f"Separated appearance uses inconsistent bone rest pose: {bone.name}")
@@ -230,6 +239,13 @@ def main():
     camera.data.type = "ORTHO"
     camera.data.ortho_scale = max(height * 1.45, (maximum.x - minimum.x) * 1.45 * 900 / 720)
     aim(camera, center)
+    if args.head_closeup:
+        head = rig.matrix_world @ rig.data.bones['NPC Head [Head]'].head_local
+        # Frame the head and shoulders, including fitted helmets and long ears.
+        head_center = head + Vector((0, 0, height * .035))
+        camera.location = head_center + Vector((height * .7, height * 2, height * .1))
+        camera.data.ortho_scale = height * .42
+        aim(camera, head_center)
     scene.camera = camera
     for location, power, size in [((1.8, 2.8, 3.5), 80, 3), ((-2, 1.5, 2), 45, 2), ((0, -2, 3), 60, 2)]:
         bpy.ops.object.light_add(type="AREA", location=location)

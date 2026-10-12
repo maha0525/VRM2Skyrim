@@ -355,6 +355,8 @@ def main():
             bpy.ops.object.mode_set(mode="OBJECT")
     meshes = [obj for obj in bpy.context.scene.objects if obj.type == "MESH"
               and any(mod.type == "ARMATURE" and mod.object == target_rig for mod in obj.modifiers)]
+    from export_names import stabilize_mesh_names
+    stabilize_mesh_names(meshes)
     from blender_meshes import partition_shape
     meshes = [part for obj in meshes for part in partition_shape(obj)]
     for obj in meshes:

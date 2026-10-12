@@ -5,6 +5,7 @@ from dataclasses import asdict
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import hashlib
 import logging
 import mimetypes
 from pathlib import Path
@@ -30,6 +31,7 @@ class WizardApplication:
         self.jobs = {}
         self.catalogs = {}
         self.fitting_profiles = {}
+        self.head_preview_outputs = {}
         self.lock = threading.Lock()
         self.executor = ThreadPoolExecutor(max_workers=1)
         for path in self.workspace.glob('*/wizard-job.json'):
@@ -72,7 +74,7 @@ class WizardApplication:
             seen.add(plugin.casefold())
             handle = uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())).hex
             self.fitting_profiles[handle] = path
-            profiles.append({"id": handle, "plugin": plugin})
+            profiles.append({"id": handle, "plugin": plugin, "deployed": (data/plugin).is_file()})
         return profiles
 
     def make_armor_patch(self, request):
@@ -173,6 +175,68 @@ class WizardApplication:
             self.jobs[handle] = job
         self.executor.submit(self._run_edit, job, mesh_key, path, Path(blender))
         return {'job_id': handle}
+
+    def start_head_preview(self, request):
+        source_id = request.get('source_id')
+        if source_id not in self.sources:
+            raise ValueError('先にVRMを選択してください')
+        settings = FollowerSettings.from_dict(request['settings'])
+        if not settings.armor_support:
+            raise ValueError('衣服・防具の対応を有効にしてください')
+        validate_source(settings, self.source_reports[source_id])
+        from official_catalog import OfficialCatalog
+        catalog = OfficialCatalog(Path(request['game'])/'Data')
+        armor = catalog.require(request['armor'], b'ARMO')
+        addons = catalog.addon_records(armor, settings.sex)
+        from armor_catalog import slot_mask
+        if not any(slot_mask(a) & 0x3803 for a in addons):
+            raise ValueError('プレビューする頭装備を選んでください')
+        policy = request.get('policy', {})
+        if set(policy) != {'hide_face', 'hide_hair'} or any(type(v) is not bool for v in policy.values()):
+            raise ValueError('Invalid preview visibility')
+        signature = json.dumps(dict(source=self.source_reports[source_id]['sha256'],
+                         parts=settings.appearance_parts, heads=settings.appearance_heads, sex=settings.sex,
+                         profile=settings.fit_source, height=settings.height_scale, armor=catalog.key(armor),
+                         fitting_schema='native-headwear-and-wardrobe-2'), sort_keys=True)
+        key = hashlib.sha256(signature.encode()).hexdigest()[:24]
+        output = self.head_preview_outputs.get(key, self.workspace/'head-previews'/key)
+        settings.fit_mode = 'selected'
+        settings.fit_armors = [catalog.key(armor)]
+        settings.render_previews = False
+        settings.mod_id = 'Preview_'+key
+        with self.lock:
+            if any(j['status'] in ('queued', 'running') for j in self.jobs.values()):
+                raise ValueError('変換・プレビューの完了を待ってください')
+            job_id = uuid.uuid4().hex
+            job = dict(id=job_id, kind='head_preview', status='queued', output=str(output),
+                       stage='頭装備を体型へ合わせています', events=[])
+            self.jobs[job_id] = job
+        self.executor.submit(self._run_head_preview, job, self.sources[source_id], Path(request['game']),
+                             Path(request['blender']), output, settings, armor.editor_id, policy, key)
+        return {'job_id': job_id}
+
+    def _run_head_preview(self, job, source, game, blender, output, settings, editor_id, policy, key):
+        job['status'] = 'running'
+        try:
+            complete = output/'run.json'
+            if not complete.is_file() or json.loads(complete.read_text()).get('state') != 'offline_verified':
+                if output.exists():
+                    output = output.with_name(output.name+'_'+job['id'][:8])
+                    job['output'] = str(output)
+                convert(source, game, blender, output, settings)
+            self.head_preview_outputs[key] = output
+            job['stage'] = '装着した見た目を描画しています'
+            arguments = ['--output', output, '--wardrobe', 'armor:'+editor_id, '--keep-clothes', '--head-closeup',
+                         '--hide-face' if policy['hide_face'] else '--no-hide-face',
+                         '--hide-hair' if policy['hide_hair'] else '--no-hide-hair']
+            run_blender(blender, 'render_blender.py', arguments, output, 'Headgear preview')
+            with self.lock:
+                job.update(status='complete', stage='頭装備のプレビューを更新しました',
+                           previews=[f'previews/wardrobe-armor-{editor_id}-rest-01.png'])
+        except Exception as error:
+            logging.exception('Headgear preview failed')
+            with self.lock:
+                job.update(status='failed', error=str(error))
 
     def _run_edit(self, job, mesh_key, path, blender):
         job['status'] = 'running'
@@ -286,6 +350,12 @@ def handler_for(app):
                 if url.path == "/api/fitted-followers":
                     game = parse_qs(url.query).get("game", [""])[0]
                     return self.reply({"profiles": app.fitted_profiles(game)})
+                if url.path == '/api/patch-status':
+                    query = parse_qs(url.query)
+                    job = app.snapshot(query.get('job', [''])[0])
+                    profile = json.loads((Path(job['output'])/'armor-fitting.json').read_text(encoding='utf8'))
+                    from armor_patch import installed_patch_status
+                    return self.reply(installed_patch_status(Path(query.get('game', [''])[0])/'Data', profile))
                 if url.path.startswith("/api/jobs/"):
                     job_id = url.path.split("/")[3]
                     job = app.snapshot(job_id)
@@ -338,6 +408,8 @@ def handler_for(app):
                     return self.reply(app.start(request), 202)
                 if self.path == "/api/appearance-preview":
                     return self.reply(app.start_preview(request), 202)
+                if self.path == '/api/head-preview':
+                    return self.reply(app.start_head_preview(request), 202)
                 if self.path == "/api/armor-patch":
                     return self.reply(app.make_armor_patch(request))
                 raise ValueError("Unknown API")

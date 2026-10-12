@@ -1,0 +1,51 @@
+/* Actual UI grouping, collision rejection, legacy migration and saved settings. */
+const {chromium}=require('playwright');
+const fs=require('node:fs');
+const path=require('node:path');
+const assert=require('node:assert/strict');
+(async()=>{
+ const root=path.resolve(__dirname,'../build/ui-native-wardrobe');fs.mkdirSync(root,{recursive:true});
+ const browser=await chromium.launch({headless:true,channel:'chrome'});
+ try{
+  const page=await browser.newPage({acceptDownloads:true,viewport:{width:1440,height:1100}});
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(process.env.VRM2SKYRIM_TEST_URL||'http://127.0.0.1:8791');
+  await page.waitForFunction(()=>document.querySelector('#game').value.length>0);
+  await page.locator('#source').setInputFiles(process.env.VRM2SKYRIM_TEST_VRM);
+  await page.waitForFunction(()=>document.querySelector('#source-status').textContent.includes('三角形'));
+  await page.locator('#armor_support').selectOption('true');
+  assert.equal(await page.locator('.wardrobe-item').count(),2);
+  await page.locator('#wardrobe-combine').click();
+  const whole=page.locator('.wardrobe-item').first();await whole.locator('summary').click();
+  assert.equal(await whole.locator('[data-field="item_kind"]').inputValue(),'full');
+  await page.locator('#wardrobe-split').click();
+  assert.equal(await page.locator('.wardrobe-item').count(),2);
+  await page.locator('#wardrobe-add').click();
+  await page.locator('.wardrobe-part select[aria-label$="装備グループ"]:enabled').first().selectOption('item_1');
+  const extra=page.locator('[data-garment="item_1"]');await extra.locator('summary').click();
+  assert.match(await extra.locator('[data-field="slot"] option[value="auto"]').textContent(),/32/);
+  await page.locator('#next').click();
+  await page.waitForFunction(()=>!document.querySelector('#error').hidden);
+  assert.match(await page.locator('#error').textContent(),/同じ枠/);
+  await extra.locator('[data-field="slot"]').selectOption('54');
+  await page.locator('#next').click();
+  await page.waitForFunction(()=>!document.querySelector('[data-step="1"]').hidden);
+  await page.locator('#back').click();
+  await page.locator('#import-settings').setInputFiles(process.env.VRM2SKYRIM_TEST_SETTINGS);
+  await page.waitForFunction(()=>document.querySelector('#import-status').textContent.includes('読み込みました'));
+  assert.ok(await page.locator('#wardrobe-migration').isVisible());
+  assert.equal(await page.locator('.wardrobe-item').count(),2);
+  for(let i=0;i<4;i++)await page.locator('#next').click();
+  const download=page.waitForEvent('download');await page.locator('#export-settings').click();
+  const file=path.join(root,'native-settings.json');await(await download).saveAs(file);
+  const settings=JSON.parse(fs.readFileSync(file,'utf8'));
+  assert.equal(settings.wardrobe_policy,'native_slots');
+  assert.deepEqual(settings.appearance_parts.garments.map(g=>g.slot),[32,37]);
+  assert.deepEqual(settings.appearance_parts.garments.map(g=>g.record_index),[0,4]);
+  assert.deepEqual(settings.appearance_parts.garments.map(g=>g.nodes.length),[4,1]);
+  assert.ok(settings.appearance_parts.garments.every(g=>!('equipment_group' in g)));
+  assert.equal(errors.length,0,errors.join('\n'));
+  await page.screenshot({path:path.join(root,'native-wardrobe.png'),fullPage:true});
+  console.log('Native defaults/full set, no slot fallback, collision rejection, explicit legacy migration and export PASS');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

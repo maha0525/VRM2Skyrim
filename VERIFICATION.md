@@ -1,5 +1,53 @@
 # VRM2Skyrim verification
 
+## 0.8.0 native wardrobe and wizard corrections (2026-10-13)
+
+Retired the asynchronous OnObjectEquipped clothing-removal policy. Native ARMO
+slot masks now exclude torso outfits (32), gloves (33) and shoes (37); ARMA
+coverage separately retains displaced original skin. Simultaneously worn torso
+clothes form one inventory item. Extended slots mean intentional coexistence.
+Only the one-time initial equip remains. The shipped PEX and every generated
+private wardrobe PEX are checked for absence of unequip/outfit/inventory-reset
+calls. Delayed events are inert. Native profiles do not populate replacement
+lists through the combined armor patch; legacy profiles remain supported.
+
+49 Python tests and Ruff pass. Deferred equip-event tests use the actual
+generated ARMO masks and execute shipped PEX bytes. Tests reject same-count
+duplicated faces and changed triangulation. Original skin face matching uses
+one-to-one geometric/UV correspondence rather than rounded bins, avoiding the
+48 false mismatches observed on float32 re-export of the second private avatar.
+Coordinate/UV, normal and normalized-weight checks retain their thresholds.
+
+Two ordinary full official-equipment outputs retain respectively 222399/279116
+source triangles and 20464/39832 original skin faces. Each has 483 fitted models,
+3076 bindings and a 2986-item armor patch; 75 sampled animation frames preserve
+limb lengths. Standard clothing copies preserve original source skin. The first
+avatar's five legacy garments become a torso set and shoes, retaining survivor
+record indices 0/4. The second keeps separate torso, hands, accessory and feet.
+All source inputs and generated game/avatar assets remain local.
+
+Special native head partitions (130/131/141/142/143) survive export and native
+readback, including meshes with both 31 and 131. Large/multi-material duplicate
+names are normalized before PyNifly export; the original second-avatar model
+conversion no longer loses its material mapping. Its full generated output was
+completed after correcting the readback checker, without mesh repair. A fresh
+real wizard Create-button run with the same VRM/wardrobe and three representative
+fitted items separately completed with the final checker and native policy.
+
+Headless Chrome exercised native regional defaults, a full outfit, conflict
+rejection without slot fallback, manual standard/extended slots, legacy migration
+notice and export/reimport. The actual head-preview button generated fitted
+helmet close-ups; face/hair changes reused geometry and changed rendered parts.
+The resulting image was inspected. Compact head settings/reset, class wording
+and learned-spell filtering were exercised. Generated garment IDs avoid the
+body/hands/feet component namespace; conflicting manual IDs fail before export.
+
+Per-avatar patch status checks compare deployed ARMO-to-private-ARMA bindings.
+Single/combined patch downloads retain original armor masks/stats. The wizard
+explains source-body selection, labels inferred assignments clearly, places
+grouping/add controls with generated garments, and shows a single selected
+headgear policy rather than expanding all helmets at once.
+
 ## 0.7.0 official equipment / head policies / finishing (2026-10-12)
 
 The final private Erys conversion covers 2986 distinct playable humanoid ARMO

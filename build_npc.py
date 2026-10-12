@@ -11,7 +11,7 @@ from head_visibility import HEAD_COVER_ID, configure_native_head, head_records
 from equipment_runtime import runtime_records, vmad, write_runtime
 from plugin import Record, records, write_plugin
 from settings import SKILLS, load_settings
-from wardrobe import components, keyword_names, skin_components
+from wardrobe import components, equip_slots, keyword_names, skin_components
 
 NPC_ID = 0x01000800
 ARMOR_ID = 0x01000801
@@ -73,24 +73,25 @@ def appearance_records(settings, catalog):
     garment_index = 0
     for part in [*skin_components(settings), *[p for p in components(settings) if p['role'] == 'garment']]:
         wearable = part["role"] == "garment"
-        addon_id = 0x01000810 + garment_index * 2 if wearable else skin_ids[part["id"]]
+        addon_id = 0x01000810 + part.get('record_index', garment_index) * 2 if wearable else skin_ids[part["id"]]
         armor_id = addon_id + 1
         item_name = settings.prefix + ("Garment_" + part["id"] if wearable else part["id"].title())
         mask = sum(1 << (slot - 30) for slot in part.get("slots", [part["slot"]]))
         armor_type = {"light": 0, "heavy": 1, "clothing": 2}[part.get("armor_type", "clothing")]
         result.append(Record(b"ARMA", addon_id, 0, [
             (b"EDID", text(item_name + "AA")), (b"BOD2", struct.pack("<II", mask, armor_type)),
-            (b"RNAM", uint(RACE_ID)), (b"DNAM", bytes((0, 0, 0, 0, 2, 0, 0, 0)) + struct.pack("<f", 0.)),
+            (b"RNAM", uint(RACE_ID)), (b"DNAM", bytes((int(wearable), int(wearable), 0, 0, 2, 0, 0, 0)) + struct.pack("<f", 0.)),
             (b"MOD2", text(path + "\\" + part["file"])), (b"MOD3", text(path + "\\" + part["file"]))]))
         if not wearable:
             skin_addons.append(addon_id)
             skin_mask |= mask
             continue
         keywords = [catalog.require(name, b"KYWD").form_id for name in keyword_names(part)]
+        wear_mask = sum(1 << (slot - 30) for slot in equip_slots(part))
         result.append(Record(b"ARMO", armor_id, 0, [
             (b"EDID", text(item_name)), (b"OBND", bytes(12)), (b"FULL", text(part["name"])),
             *inventory_fields,
-            (b"BOD2", struct.pack("<II", mask, armor_type)), (b"RNAM", uint(RACE_ID)),
+            (b"BOD2", struct.pack("<II", wear_mask, armor_type)), (b"RNAM", uint(RACE_ID)),
             (b"KSIZ", uint(len(keywords))), (b"KWDA", b''.join(uint(k) for k in keywords)), (b"MODL", uint(addon_id)),
             (b"DATA", struct.pack("<If", part["value"], part["weight"])),
             (b"DNAM", struct.pack("<i", round(part["armor_rating"] * 100)))]))

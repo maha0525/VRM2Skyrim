@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import locale
 from pathlib import Path
 import subprocess
 
@@ -25,7 +26,7 @@ def convert_textures(output):
         if not source.get("normal"):
             command += ["-srgb"]
         command.append(source["png"])
-        result = subprocess.run(command, text=True, capture_output=True)
+        result = subprocess.run(command, text=True, capture_output=True, encoding=locale.getencoding(), errors='replace')
         if result.returncode:
             raise RuntimeError(result.stdout + result.stderr)
         if not dest.exists():

@@ -6,13 +6,30 @@ from plugin import records
 from bsa import BSA
 
 KINDS = {b"NPC_", b"ARMO", b"ARMA", b"RACE", b"FACT", b"VTYP", b"WEAP", b"PACK",
-         b"CLAS", b"CSTY", b"PERK", b"SPEL", b"FLST", b"CELL", b"REFR", b"AMMO", b"KYWD"}
+         b"CLAS", b"CSTY", b"PERK", b"SPEL", b"FLST", b"CELL", b"REFR", b"AMMO", b"KYWD", b'BOOK'}
+
+
+def castable_spell(record):
+    values = record.values(b'SPIT')
+    if not values or len(values[0]) < 24 or not record.values(b'FULL'):
+        return False
+    kind = struct.unpack_from('<I', values[0], 8)[0]
+    casting = struct.unpack_from('<I', values[0], 16)[0]
+    return kind == 0 and casting in (1, 2) and not record.flags & 0x20
+
+
+CLASS_LABELS = {'Blade': 'ブレイズの戦士（デルフィンのクラス）'}
 
 
 class GameCatalog:
     def __init__(self, data):
         self.path = Path(data) / "Skyrim.esm"
         self.by_editor_id = {r.editor_id: r for r in records(self.path, KINDS) if r.editor_id}
+        # Spell type alone also includes shrine/script/trap effects. The books
+        # identify the ordinary spells that actors can learn and cast.
+        self.learnable_spells = {struct.unpack_from('<I', value, 4)[0] for r in self.by_editor_id.values()
+                                 if r.kind == b'BOOK' for value in r.values(b'DATA')
+                                 if len(value) >= 8 and value[0] & 4}
         follower_list = self.require("VoicesFollowerAll", b"FLST")
         self.follower_voice_ids = {struct.unpack("<I", value)[0] for value in follower_list.values(b"LNAM")}
         marriage_list = self.require("VoicesMarriageAll", b"FLST")
@@ -111,7 +128,10 @@ class GameCatalog:
             result[key] = [{"id": r.editor_id, "label": self.label(r), "description": self.label(r, b"DESC"),
                             "ranks": r.values(b"DATA")[0][2] if kind == b"PERK" else None}
                            for r in self.choices(kind)
-                           if kind != b"VTYP" or r.form_id in self.follower_voice_ids]
+                           if (kind != b"VTYP" or r.form_id in self.follower_voice_ids)
+                           and (kind != b'SPEL' or (castable_spell(r) and r.form_id in self.learnable_spells))]
+        for item in result['classes']:
+            item['label'] = CLASS_LABELS.get(item['id'], item['label'])
         result["marriage_voices"] = [r.editor_id for r in self.choices(b"VTYP") if r.form_id in self.marriage_voice_ids]
         from armor_catalog import official_choices, slot_mask
         from official_catalog import OfficialCatalog

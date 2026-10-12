@@ -1,5 +1,6 @@
 """Source material contracts without Blender or private avatars."""
 import unittest
+from export_names import stable_shape_name
 import os
 from pathlib import Path
 import tempfile
@@ -7,6 +8,12 @@ from nif_materials import culling_flags, lighting_flags_2, DOUBLE_SIDED
 
 
 class MaterialTests(unittest.TestCase):
+    def test_split_primary_does_not_rename_other_material_to_its_base(self):
+        names = ['VRMNode_00634.001', 'VRMNode_00634_Part000', 'VRMNode_00634_Part001']
+        actual = [stable_shape_name(name) for name in names]
+        self.assertEqual(actual, ['VRMNode_00634_Primitive001', 'VRMNode_00634_Part000', 'VRMNode_00634_Part001'])
+        self.assertEqual(len(set(actual)), len(actual))
+        self.assertTrue(all('.001' not in name for name in actual))
     def test_source_culling_is_independent_of_alpha_mode(self):
         unrelated = 0x80000021
         for mode in ('OPAQUE', 'MASK', 'BLEND'):

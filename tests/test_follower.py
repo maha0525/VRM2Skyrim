@@ -47,6 +47,16 @@ class FollowerIntegrationTests(unittest.TestCase):
         parsed = list(records(path))
         return parsed, {record.kind: record for record in parsed}
 
+    def test_wizard_spells_are_castable_and_blade_is_the_faction_class(self):
+        choices = self.catalog.json_choices('female')
+        spells = {s['id'] for s in choices['spells']}
+        self.assertIn('Firebolt', spells)
+        self.assertIn('FastHealing', spells)
+        self.assertNotIn('AbWolfIce', spells)
+        self.assertNotIn('AltarAkatoshSpell', spells)
+        blade = next(c for c in choices['classes'] if c['id'] == 'Blade')
+        self.assertIn('ブレイズ', blade['label'])
+
     def test_recruitment_relationship_and_temple_group(self):
         settings = FollowerSettings(npc_name="ソフィー", mod_name="TempleFollower")
         parsed, by_kind = self.build(settings)

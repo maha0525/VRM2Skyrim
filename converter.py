@@ -86,13 +86,14 @@ def package(output, settings=None):
         appearance_description = "Separate body, permanent underwear, fixed face/hair, and removable original garments."
         rows = []
         for index, garment in enumerate(settings.appearance_parts["garments"]):
-            rows.append(f"  {garment['name']}: {settings.prefix}Garment_{garment['id']}; local FormID {0x811 + index * 2:06X}; slot {garment['slot']}")
+            rows.append(f"  {garment['name']}: {settings.prefix}Garment_{garment['id']}; local FormID {0x811 + garment.get('record_index', index) * 2:06X}; slot {garment['slot']}")
         wardrobe_help = """Original garments:
 """ + "\n".join(rows) + f"""
 
 All original garments are ordinary NPC inventory items. The default outfit is
 empty. A private Actor script equips the configured initial garments once;
-it never restores them after removal or changes AFT's outfit assignments.
+it never handles later equipment replacement, restores removed items or
+changes AFT's outfit assignments. Native ARMO slot masks own replacement.
 Native FaceGen head generation is disabled on the private race. Empty private
 head/FaceGen assets also avoid human geometry if head data is regenerated.
 VRM face/hair remain in Skin slot 60; no head-cover item needs to remain worn.
@@ -100,9 +101,11 @@ Base body/underwear are non-playable race Skin, independent of all equipment.
 For updates, retain the same follower plugin and deploy, then restart Skyrim.
 If old 3D geometry persists, select this NPC in the console and use disable,
 then enable on that same selected reference. Do not delete/recycle the NPC.
-Original clothing uses layers 44-49/53-59; underwear=52, fixed face/hair=60.
-These slots are reserved within this follower MOD. Existing Skyrim armor has
-not been fitted to this avatar and is not supported by this build.
+Clothing replacement uses native equip slots: torso=32, hands=33, feet=37.
+Full outfit items occupy 32/33/37. Extended slots mean intentional coexistence.
+Underwear=52 and fixed face/hair=60 are reserved within this follower MOD.
+There is no script that removes clothes after an equip event.
+{'Converted existing equipment is listed below.' if settings.fitting_enabled else 'Existing Skyrim equipment has not been fitted in this build.'}
 Inventory/dropped-item previews use Skyrim's generic farm-clothing model;
 the worn appearance uses the actual converted VRM garment meshes.
 
@@ -257,6 +260,13 @@ def convert(source, game, blender, output, settings, progress=None):
             stage("既存装備の体型合わせと身体部位の分離")
             from armor_fitting import fit
             fit(output, Path(game) / "Data", blender)
+        elif settings.skin_partition_enabled:
+            from armor_fitting import fit
+            stage('標準装備枠用の身体部位の分離')
+            fit(output, Path(game)/'Data', blender, skin_only=True)
+        if settings.skin_partition_enabled and any(g['slot'] in (32, 33, 34, 37, 38) for g in settings.appearance_parts['garments']):
+            stage('衣服に元の身体を保持')
+            run_blender(blender, 'standard_clothing_blender.py', ['--output', output], output, 'Standard clothing')
         stage("フォロワーと初期配置の作成")
         build_npc(Path(game) / "Data", output, settings, catalog)
         from head_visibility import write_head_assets

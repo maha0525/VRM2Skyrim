@@ -10,7 +10,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from armor_geometry import BodyField, canonical_bone, canonical_weights
-from armor_catalog import HUMAN_SLOTS, head_policy, official_choices, partition_slot, slot_mask
+from armor_catalog import HUMAN_SLOTS, head_policy, official_choices, partition_slot, slot_mask, native_partition
 from game_assets import GameAssets
 from custom_skeleton import NifFile, matrix
 from official_catalog import OfficialCatalog
@@ -58,11 +58,11 @@ def combine(parts, parents):
     return np.concatenate(points), np.concatenate(tris), np.concatenate(partitions), weights
 
 
-def fit(output, game_data, blender):
+def fit(output, game_data, blender, skin_only=False):
     """Called after original conversion; modifies only the new output folder."""
     output, game_data = Path(output).resolve(), Path(game_data).resolve()
     settings = load_settings(output)
-    if not settings.fitting_enabled:
+    if not settings.fitting_enabled and not skin_only:
         return
     catalog = OfficialCatalog(game_data)
     refs = reference_root(output)
@@ -105,8 +105,8 @@ def fit(output, game_data, blender):
     for part in target_parts:
         plan["body"].append({"name": part["name"], "face_slots": body_slots[offset:offset + len(part["tris"])].tolist()})
         offset += len(part["tris"])
-    selected = official_choices(catalog, settings.sex)
-    if settings.fit_mode != 'all_official':
+    selected = [] if skin_only else official_choices(catalog, settings.sex)
+    if not skin_only and settings.fit_mode != 'all_official':
         allowed = {r.form_id for r in selected}
         selected = [catalog.require(key, b'ARMO') for key in settings.fit_armors]
         if any(r.form_id not in allowed for r in selected):
@@ -205,8 +205,8 @@ def fit(output, game_data, blender):
             raise ValueError(f"Unsupported addon partitions: {editor_id}")
         for part in data:
             if not part['skin']:
-                part['partitions'] = np.array([partition_slot(n, slots[0]) for n in part['partitions']], dtype=int)
-        slots = sorted(set(slots) | {int(n) for p in data if not p['skin'] for n in p['partitions']})
+                part['partitions'] = np.array([native_partition(n, slots[0]) for n in part['partitions']], dtype=int)
+        slots = sorted(set(slots) | {partition_slot(int(n), slots[0]) for p in data if not p['skin'] for n in p['partitions']})
         token = hashlib.sha256((key+settings.sex+settings.fit_source+reference_signature+
                                 hashlib.sha256(source_path.read_bytes()).hexdigest()).encode()).hexdigest()[:16]
         equipment = {**binding, 'mesh_index': item_index, 'source_key': token,
@@ -298,4 +298,4 @@ def fit(output, game_data, blender):
     if not (work / "body.nif").exists():
         (work / "body.nif").write_bytes(original_body.read_bytes())
     from converter import run_blender
-    run_blender(blender, "fit_armor_blender.py", ["--output", output], output, "Fit armor")
+    run_blender(blender, "fit_armor_blender.py", ["--output", output, *(['--skin-only'] if skin_only else [])], output, "Fit armor")

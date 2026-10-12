@@ -11,6 +11,7 @@ from scipy.spatial import cKDTree
 from custom_skeleton import NifFile
 from plugin import records
 from settings import load_settings
+from armor_catalog import partition_slot, native_partition
 
 
 def validate_fitting(output):
@@ -18,6 +19,8 @@ def validate_fitting(output):
     settings = load_settings(output)
     root = output / "mod/meshes" / settings.asset_dir
     profile = json.loads((output / "armor-fitting.json").read_text())
+    plan = json.loads((output/'armor-fit-plan.json').read_text(encoding='utf8'))
+    planned = {item['source_key']: item for item in plan['equipment']}
     points, triangles, offset = [], [], 0
     original_normals = {}
     with NifFile(str(output / "armor-source/body.nif")) as source:
@@ -85,13 +88,27 @@ def validate_fitting(output):
         if struct.unpack_from("<I", addon.values(b"BOD2")[0])[0] != sum(1 << (s - 30) for s in item["slots"]):
             raise ValueError("Fitted addon slot mismatch")
         count, exposed, maximum = 0, 0, 0.
+        special_partitions = {}
+        if set(item['slots']) & {30, 31, 41, 42, 43}:
+            with NifFile(planned[item['source_key']]['source']) as original:
+                for shape in original.shapes:
+                    assigned = {native_partition(shape.partitions[i].id, item['slots'][0]) for i in shape.partition_tris}
+                    if assigned & {130, 131, 141, 142, 143}:
+                        special_partitions[f'Fitted_{shape.name}_'] = assigned
+        observed_partitions = {prefix: set() for prefix in special_partitions}
         with NifFile(str(path)) as nif:
             if nif.game != "SKYRIMSE":
                 raise ValueError("Fitted equipment is not an SE NIF")
             for shape in nif.shapes:
+                for prefix, expected in special_partitions.items():
+                    if shape.name.startswith(prefix):
+                        observed = {p.id for p in shape.partitions}
+                        if not observed.issubset(expected):
+                            raise ValueError(f'Fitted headwear changed its original partition: {item["editor_id"]}/{shape.name}: {observed} vs {expected}')
+                        observed_partitions[prefix].update(observed)
                 if set(shape.bone_names) - bones or len(shape.verts) > 65535:
                     raise ValueError("Invalid fitted equipment bones or vertex count")
-                if not {p.id for p in shape.partitions}.issubset(item["slots"]):
+                if not {partition_slot(p.id, item['slots'][0]) for p in shape.partitions}.issubset(item["slots"]):
                     raise ValueError("Fitted equipment partition mismatch")
                 totals = np.zeros(len(shape.verts))
                 influences = np.zeros(len(shape.verts), dtype=int)
@@ -116,6 +133,8 @@ def validate_fitting(output):
                     if maximum > .001:
                         raise ValueError("Exposed skin is not the original VRM body")
                 count += len(shape.tris)
+        if observed_partitions != special_partitions:
+            raise ValueError(f'Fitted headwear lost an original partition: {item["editor_id"]}: {observed_partitions} vs {special_partitions}')
         row = {"editor_id": item["editor_id"], "triangles": count,
                "original_exposed_skin_triangles": exposed, "original_skin_max_distance": maximum}
         cache[item['addon_local_id']] = row

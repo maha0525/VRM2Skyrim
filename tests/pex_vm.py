@@ -152,11 +152,12 @@ class PexVM:
 
 
 class Actor:
-    def __init__(self, inventory, teammate=False):
+    def __init__(self, inventory, teammate=False, equip_masks=None):
         self.inventory, self.teammate = dict(inventory), teammate
         self.worn, self.logs, self.events = set(), [], []
         self.skin, self.refreshes, self.registered = None, 0, False
         self.worn_slots = {}
+        self.equip_masks = equip_masks or {}
 
     def call(self, name, values):
         if name == 'getactorbase':
@@ -183,6 +184,9 @@ class Actor:
             return values[0] in self.worn
         if name == 'equipitem':
             assert values[1:] == [0, 1]
+            mask = self.equip_masks.get(values[0], 0)
+            self.worn.difference_update(item for item in tuple(self.worn)
+                                        if self.equip_masks.get(item, 0) & mask)
             self.worn.add(values[0])
             self.events.append(values[0])
             return None

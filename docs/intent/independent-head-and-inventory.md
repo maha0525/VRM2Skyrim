@@ -1,5 +1,9 @@
 # Independent head and ordinary equipment
 
+The equipment-event replacement policy described below is historical and has
+been retired in 0.8.0. [native-wardrobe.md](native-wardrobe.md) defines the current
+ARMO slot policy, regional outfit sets and initialization-only runtime.
+
 The user observed three 0.5.1 failures: original garments are hidden from normal
 follower inventory, fitted armor overlaps them, and AFT outfit management removes
 the native-head cover and exposes an unwanted dark human face. The deployed AFT

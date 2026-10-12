@@ -20,6 +20,9 @@ def main():
     settings = load_settings(output)
     bpy.ops.preferences.addon_enable(module='io_scene_nifly')
     bpy.ops.wm.open_mainfile(filepath=str(output/'converted.blend'))
+    from export_names import stabilize_mesh_names
+    stabilize_mesh_names([o for o in bpy.context.scene.objects if o.type == 'MESH'
+                          and o.get('v2s_part') in ('fixed', 'face', 'hair')])
     from gear_head_runtime import head_variants
     from convert_blender import select_only
     from inspect_vrm import read_glb

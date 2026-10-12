@@ -5,9 +5,10 @@ import re
 
 BODY_SLOT, UNDERWEAR_SLOT, FIXED_SLOT = 32, 52, 60
 # Prefer generic layers; 46/47 are commonly displayed as cloak/backpack by UI mods.
-GARMENT_SLOTS = tuple(range(53, 60)) + (44, 45, 48, 49, 46, 47)
+GARMENT_SLOTS = tuple(range(53, 60)) + (44, 45, 48, 49, 46, 47) + tuple(range(32, 44))
 ROLES = ("body", "underwear", "fixed")
-ITEM_KINDS = ("body", "legs", "hands", "feet", "cloak", "backpack", "accessory")
+ITEM_KINDS = ("body", "legs", "full", "hands", "feet", "cloak", "backpack", "accessory")
+MAX_GARMENTS = 16  # 0x810..0x82f; 0x830 and later are reserved runtime/head records.
 
 
 def suggest_role(name, materials):
@@ -42,13 +43,17 @@ def validate_parts(parts):
     if not parts["body"]:
         raise ValueError("無装備の身体に含めるメッシュを選んでください")
     garments = parts["garments"]
-    if not isinstance(garments, list) or not 1 <= len(garments) <= len(GARMENT_SLOTS):
-        raise ValueError(f"衣服を1〜{len(GARMENT_SLOTS)}品にまとめてください")
-    ids, equipped = set(), set()
-    for garment in garments:
+    if not isinstance(garments, list) or not 1 <= len(garments) <= MAX_GARMENTS:
+        raise ValueError(f"衣服を1〜{MAX_GARMENTS}品にまとめてください")
+    ids, equipped, record_indices = set(), set(), set()
+    for index, garment in enumerate(garments):
         keys = {"id", "name", "nodes", "slot", "armor_type", "armor_rating", "weight", "value", "equipped"}
-        if not isinstance(garment, dict) or set(garment) - {"equipment_group", "item_kind"} != keys:
+        if not isinstance(garment, dict) or set(garment) - {"equipment_group", "item_kind", "slot_mode", "record_index"} != keys:
             raise ValueError("Invalid garment settings")
+        record_index = garment.get('record_index', index)
+        if type(record_index) is not int or not 0 <= record_index < MAX_GARMENTS or record_index in record_indices:
+            raise ValueError('Invalid or duplicate garment record index')
+        record_indices.add(record_index)
         if item_kind(garment) not in ITEM_KINDS:
             raise ValueError("Invalid garment item kind")
         if equipment_group(garment) not in {"body", "hands", "feet", "accessory"}:
@@ -57,13 +62,17 @@ def validate_parts(parts):
         if not isinstance(item_id, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", item_id) or item_id.lower() in ids:
             raise ValueError("Garment IDs must be unique ASCII identifiers")
         ids.add(item_id.lower())
+        if item_id.lower() in {'body', 'underwear', 'fixed', 'hands', 'feet', 'face', 'hair', 'appearance'}:
+            raise ValueError('Garment ID is reserved for a body component; prefix the ID with outfit_')
         if not isinstance(name, str) or not name.strip() or len(name) > 128 or any(ord(c) < 32 for c in name):
             raise ValueError("Invalid garment name")
         nodes(garment["nodes"])
         if not garment["nodes"]:
             raise ValueError("装備に含めるメッシュを選んでください")
         if type(garment["slot"]) is not int or garment["slot"] not in GARMENT_SLOTS:
-            raise ValueError("元衣装には44–49または53–59の重ね着枠を使ってください")
+            raise ValueError("衣服には32–49または53–59の装備枠を使ってください。52・60は内部予約枠です")
+        if garment.get('slot_mode', 'manual') not in ('auto', 'manual'):
+            raise ValueError('Invalid garment slot mode')
         if garment["armor_type"] not in ("clothing", "light", "heavy"):
             raise ValueError("Invalid garment armor type")
         for key, maximum in (("armor_rating", 10000), ("weight", 1000)):
@@ -75,10 +84,54 @@ def validate_parts(parts):
         if type(garment["equipped"]) is not bool:
             raise ValueError("Garment equipped must be true or false")
         if garment["equipped"]:
-            if garment["slot"] in equipped:
-                raise ValueError("初期装備の衣服が同じ枠を使っています。枠を分けるか一品にまとめてください")
-            equipped.add(garment["slot"])
+            slots = set(equip_slots(garment))
+            if slots.intersection(equipped):
+                raise ValueError("初期装備の衣服が同じ枠を使っています。同時に着る胴の衣服は一品にまとめてください。重ね着する場合だけ追加枠を選んでください")
+            equipped.update(slots)
     return seen
+
+
+def equip_slots(garment):
+    """Inventory mutual exclusion, distinct from ARMA skin coverage."""
+    if garment['slot'] == 32 and item_kind(garment) == 'full':
+        return [32, 33, 37]
+    return [garment['slot']]
+
+
+def migrate_legacy_parts(parts):
+    """Replace legacy scripted groups with real native outfit items."""
+    import copy
+    parts = copy.deepcopy(parts)
+    garments, combined = [], {}
+    for index, garment in enumerate(parts.get('garments', [])):
+        garment['record_index'] = index
+        category = equipment_group(garment)
+        if category == 'accessory':
+            garment.pop('equipment_group', None)
+            garments.append(garment)
+            continue
+        garment.update(slot={'body': 32, 'hands': 33, 'feet': 37}[category], slot_mode='auto')
+        if category in ('hands', 'feet'):
+            garment['item_kind'] = category
+        garment.pop('equipment_group', None)
+        # Only simultaneous initial clothes need merging; alternatives stay separate.
+        if garment['equipped'] and category in combined:
+            target = combined[category]
+            if target['armor_type'] != garment['armor_type']:
+                raise ValueError('以前の衣服設定に同じ部位の衣服と軽装・重装が混在しています。ウィザードで衣装セットの防具分類を選び直してください')
+            target['nodes'].extend(garment['nodes'])
+            target['weight'] += garment['weight']
+            target['value'] += garment['value']
+            target['armor_rating'] = max(target['armor_rating'], garment['armor_rating'])
+            target['name'] += ' / ' + garment['name']
+            target['name'] = target['name'][:128]
+            logging.info('Native wardrobe: merged %s into %s at slot %s', garment['id'], target['id'], target['slot'])
+        else:
+            garments.append(garment)
+            if garment['equipped']:
+                combined[category] = garment
+    parts['garments'] = garments
+    return parts
 
 
 def validate_source(settings, report):
@@ -127,9 +180,9 @@ def keyword_names(garment):
     armor_type, kind = garment["armor_type"], item_kind(garment)
     result = [{"clothing": "ArmorClothing", "light": "ArmorLight", "heavy": "ArmorHeavy"}[armor_type],
               "VendorItemClothing" if armor_type == "clothing" else "VendorItemArmor"]
-    keyword = ({"body": "ClothingBody", "legs": "ClothingBody", "hands": "ClothingHands", "feet": "ClothingFeet"}
+    keyword = ({"body": "ClothingBody", "legs": "ClothingBody", "full": "ClothingBody", "hands": "ClothingHands", "feet": "ClothingFeet"}
                if armor_type == "clothing" else
-               {"body": "ArmorCuirass", "legs": "ArmorCuirass", "hands": "ArmorGauntlets", "feet": "ArmorBoots"}).get(kind)
+               {"body": "ArmorCuirass", "legs": "ArmorCuirass", "full": "ArmorCuirass", "hands": "ArmorGauntlets", "feet": "ArmorBoots"}).get(kind)
     if keyword:
         result.append(keyword)
     return result
@@ -158,7 +211,7 @@ def components(settings, fitting=True):
         for name, nodes in [('fixed', remaining), *settings.appearance_heads.items()]:
             if nodes:
                 result.append({'id': name, 'file': name+'.nif', 'nodes': nodes, 'slot': FIXED_SLOT, 'role': 'fixed'})
-    if settings.fitting_enabled and fitting:
+    if settings.skin_partition_enabled and fitting:
         result[0]["slots"] = [32, 34, 38]
         result[0]["partial_source"] = True
         result += [{"id": role, "file": role + ".nif", "nodes": parts["body"], "slot": slot,
@@ -166,4 +219,9 @@ def components(settings, fitting=True):
                    for role, slot in (("hands", 33), ("feet", 37))]
     result += [{**garment, "file": "garment_" + garment["id"].lower() + ".nif", "role": "garment"}
                for garment in parts["garments"]]
+    for part in result:
+        if part['role'] == 'garment':
+            part['priority'] = 1
+            if part['slot'] == 32:
+                part['slots'] = [32, 33, 34, 37, 38] if item_kind(part) == 'full' else [32, 34, 38]
     return result

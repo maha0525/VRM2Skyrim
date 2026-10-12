@@ -4,7 +4,6 @@ from pathlib import Path
 import struct
 
 from plugin import Record
-from wardrobe import equipment_group
 
 ROOT = Path(__file__).resolve().parent
 TEMPLATE_NAME = 'V2SInitialWardrobe'
@@ -72,28 +71,11 @@ def vmad(settings):
 def runtime_records(settings, catalog=None, profile=None):
     groups = {name: [] for name in PROPERTIES}
     for i, garment in enumerate(settings.appearance_parts['garments']):
-        form_id = 0x01000811 + 2*i
+        form_id = 0x01000811 + 2*garment.get('record_index', i)
         if garment['equipped']:
             groups['InitialItems'].append(form_id)
-        category = equipment_group(garment)
-        if category != 'accessory':
-            groups[category.title()+'Clothes'].append(form_id)
-    equipment = profile['equipment'] if profile else []
-    names = list(dict.fromkeys(item['editor_id'] for item in equipment)) if profile else settings.fit_armors
-    for name in names:
-        if catalog is not None:
-            armor = catalog.require(name, b'ARMO')
-            form_id = armor.form_id
-            mask = struct.unpack_from('<I', armor.values(b'BOD2')[0])[0]
-        else:
-            item = next(i for i in equipment if i['editor_id'] == name)
-            if item.get('origin_plugin', 'Skyrim.esm').lower() != 'skyrim.esm':
-                continue  # Combined patch supplies DLC references in its own master order.
-            form_id = item['original_form_id']
-            mask = item.get('armor_mask', sum(1 << (slot-30) for slot in item['slots']))
-        for slot, category in ((32, 'Body'), (33, 'Hands'), (37, 'Feet')):
-            if mask & (1 << (slot-30)) and form_id not in groups[category+'Equipment']:
-                groups[category+'Equipment'].append(form_id)
+    # The six old replacement lists stay empty. Native ARMO masks own exclusion,
+    # including armor unknown to this conversion; no equip event scans/unequips.
     return [Record(b'FLST', LIST_IDS[name], 0, [
         (b'EDID', (settings.prefix+name+'\0').encode()),
         *[(b'LNAM', struct.pack('<I', form_id)) for form_id in groups[name]]]) for name in PROPERTIES]
@@ -110,4 +92,4 @@ def write_runtime(output, settings):
     source_dir.mkdir(parents=True, exist_ok=True)
     source = (ROOT/'runtime'/(TEMPLATE_NAME+'.psc')).read_text(encoding='utf8').replace(TEMPLATE_NAME, name)
     (source_dir/(name+'.psc')).write_text(source, encoding='utf8')
-    logging.info('Private wardrobe runtime: %s; equip conflicts only, no inventory/outfit resets', name)
+    logging.info('Private initial equip: %s; replacement is native ARMO slot exclusion', name)
