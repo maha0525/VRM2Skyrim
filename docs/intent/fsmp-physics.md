@@ -2,7 +2,7 @@
 
 ## User intent
 
-Keep the released 0.8.0 converter stable on `main`. Develop hair and cloth
+Keep the released converter stable on `main` (currently 0.8.1). Develop hair and cloth
 physics on `codex/fsmp-physics`. Physics must be optional in the wizard;
 generated physics-enabled followers use [Faster HDT-SMP](https://www.nexusmods.com/skyrimspecialedition/mods/57339)
 as a runtime prerequisite. The immediate example is Quon's furisode sleeves,

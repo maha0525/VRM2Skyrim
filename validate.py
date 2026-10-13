@@ -20,6 +20,7 @@ from gear_head_runtime import head_variants, validate_head_models
 from head_visibility import validate_head_visibility
 from equipment_runtime import runtime_records, vmad, script_name, pex_strings, PROPERTIES
 from nif_materials import DOUBLE_SIDED
+from dds import validate_dds
 from clothing_validation import validate_clothing_skin
 
 ROOT = Path(__file__).resolve().parent
@@ -290,7 +291,9 @@ def validate(output, skeleton=None):
         )
     preview = output / "dds-preview"
     preview.mkdir(exist_ok=True)
+    texture_reports = []
     for texture in sorted(textures):
+        texture_reports.append({'path': texture.relative_to(mod).as_posix(), **validate_dds(texture)})
         command = [
             str(ROOT / "dependencies/texconv.exe"),
             "-nologo",
@@ -308,6 +311,7 @@ def validate(output, skeleton=None):
         "nif_shapes": shapes,
         "total_triangles": sum(shape["triangles"] for shape in shapes),
         "textures_resolved": len(textures),
+        "texture_headers": texture_reports,
         "new_plugin_records": len(local_ids),
         "source_pose_max_vertex_distance": error,
         "private_skeleton_nodes": len(bone_set),

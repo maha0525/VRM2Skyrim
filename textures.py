@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 
 from PIL import Image
+from dds import texture_format, validate_dds
 from settings import load_settings
 
 ROOT = Path(__file__).resolve().parent
@@ -21,8 +22,17 @@ def convert_textures(output):
     for source in sources:
         dest = output / "mod" / source["relative"]
         dest.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(source['png']) as image:
+            size = image.size
+        format_name = texture_format(size)
+        if format_name != 'BC7_UNORM':
+            logging.info('DDS %s: %sx%s uses uncompressed RGBA8 to preserve original pixels',
+                         dest.name, *size)
         command = [str(ROOT / "dependencies/texconv.exe"), "-nologo", "-y", "-m", "0",
-                   "-f", "BC7_UNORM", "-o", str(dest.parent)]
+                   "-f", format_name]
+        if format_name != 'BC7_UNORM':
+            command += ['-dx10']
+        command += ['-o', str(dest.parent)]
         if not source.get("normal"):
             command += ["-srgb"]
         command.append(source["png"])
@@ -31,7 +41,9 @@ def convert_textures(output):
             raise RuntimeError(result.stdout + result.stderr)
         if not dest.exists():
             raise RuntimeError(f"Texture not produced: {dest}")
-        logging.info("DDS ready: %s (%s bytes)", dest.name, dest.stat().st_size)
+        validate_dds(dest, expected_size=size, expected_format=format_name)
+        logging.info("DDS ready: %s (%sx%s %s, %s bytes)", dest.name, *size,
+                     format_name, dest.stat().st_size)
 
 
 if __name__ == "__main__":

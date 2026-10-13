@@ -10,7 +10,9 @@ Materials retain the original VRM's single/double-sided rendering and transparen
 
 Followers start **inside the Temple of Kynareth in Whiterun**. The tool sets up the vanilla follower factions, a friendly relationship with the player, a recruitment-compatible voice, and a persistent placed reference, so the NPC can be recruited through dialogue.
 
-The current version is **0.8.0**. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
+The current version is **0.8.1**. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
+
+Version 0.8.1 fixes Engine Fixes texture-load warnings caused by compressing small or unaligned images as BC7. These images now use uncompressed RGBA8 DDS, keeping their original dimensions and pixels. DDS format, dimensions, and mip storage are checked during conversion and output validation. This is a texture-only correction; existing followers do not need a save reset for this update.
 
 The wizard interface is currently Japanese. English descriptions of its controls below are translations; some original Japanese labels are included to help locate them.
 
@@ -173,7 +175,7 @@ Load `vrm2skyrim/<lowercase MOD ID>/settings.json` from a generated ZIP into the
 ## Development and validation
 
 ```powershell
-python -m unittest test_converter tests.test_follower tests.test_wardrobe tests.test_package tests.test_armor
+python -m unittest test_converter tests.test_follower tests.test_wardrobe tests.test_package tests.test_armor tests.test_textures
 python -m ruff check --exclude dependencies,build,reference .
 ```
 
