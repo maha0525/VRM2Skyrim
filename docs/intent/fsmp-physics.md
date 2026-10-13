@@ -94,6 +94,15 @@ than creating an avatar-specific tuning patch. Account for true runtime frame
 coordinates, game-unit gravity, geometry-dependent inertia/damping and ordinary
 solver settings in the verification. Retain adjustable softer/firmer choices.
 
+### Attached sleeves versus hanging cloth
+
+The 0.9.1 game test showed sleeves folding through the arms even after sway
+decreased. The garment roots and close-fitting arm sleeves must follow the
+animated body instead of being simulated as free cloth. Protect attachment
+roots and the contiguous arm-adjacent prefix, while retaining moving distal
+cloth. Use source hierarchy, actual skin influences and the avatar's collision
+geometry; do not hard-code Quon's bone names or require a character-only patch.
+
 ## Primary references
 
 - [FSMP source and runtime loader](https://github.com/DaymareOn/hdtSMP64/blob/dev/src/hdtDefaultBBP.cpp)

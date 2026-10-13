@@ -47,7 +47,8 @@ def plan_bones(parents, direct, influences, mod_id, hints=(), fixed_bones=(), ro
     """influences maps component IDs to positively weighted source bones.
 
     Preserve complete non-humanoid paths. Hair scalp roots remain kinematic;
-    weighted cloth roots can pivot directly on their humanoid anchor. Shared paths remain kinematic, so
+    weighted cloth roots are retained as candidates. The XML stage classifies
+    fixed garment attachments using the exported skin/body geometry. Shared paths remain kinematic, so
     removing one outfit cannot leave another system controlling the same joint.
     """
     owners = {}

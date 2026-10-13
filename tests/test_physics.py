@@ -6,7 +6,7 @@ import tempfile
 import numpy as np
 
 from fsmp import (GRAVITY, INERTIA_DIVISOR, LINK, MASS, PROXY, add_collision_proxy,
-                  attach, joint_profile, local_points, system_xml)
+                  attach, joint_profile, local_points, protect_attachments, system_xml)
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
 from physics_rig import plan_bones, selected_meshes, spring_nodes
 from settings import FollowerSettings
@@ -38,7 +38,7 @@ class PhysicsTests(unittest.TestCase):
         self.assertEqual(plan_bones(parents, {'head': 'NPC Head'}, {'hair': {'end'}},
                                     'One', fixed_bones={'end'}), {})
 
-    def test_weighted_sleeve_root_can_pivot_on_animated_arm(self):
+    def test_weighted_sleeve_root_is_retained_before_attachment_classification(self):
         parents = {'arm': None, 'sleeve': 'arm', 'tip': 'sleeve'}
         plan = plan_bones(parents, {'arm': 'NPC Arm'}, {'cloth': {'sleeve', 'tip'}},
                           'One', root_components={'cloth'})
@@ -116,6 +116,36 @@ class PhysicsTests(unittest.TestCase):
         self.assertGreater(float(limits['x']), np.pi/2)  # horizontal sleeve may drop
         self.assertLess(float(limits['y']), np.pi/2)  # Euler middle-axis singularity
         self.assertLess(float(limits['z']), .3)  # avoid free axial spin
+
+    def test_garment_cuff_follows_arm_while_free_tail_keeps_physics(self):
+        from itertools import product
+        anchor = 'NPC L Forearm [LLar]'
+        box = list(product((-1., 1.), (-1., 1.), (0., 20.)))
+        globals_ = {anchor: np.eye(4)}
+        def bone(parent, component='sleeve'):
+            return {'parent': parent, 'dynamic': True, 'components': [component], 'matrix': np.eye(4).tolist()}
+        bones = {'root': bone(anchor), 'cuff': bone('root'), 'tail': bone('cuff'),
+                 'bridge': {**bone('tail'), 'dynamic': False},
+                 'tip': bone('bridge'), 'hair': bone('NPC Head', 'hair')}
+        samples = {'cuff': [[1.2, 0, 10], [1.3, 0, 11]], 'tail': [[10, 0, 15]],
+                   'tip': [[1.1, 0, 10]]}
+        result, protected = protect_attachments(bones, samples, {anchor: box}, globals_, {'sleeve'})
+        self.assertFalse(result['root']['dynamic'])
+        self.assertFalse(result['cuff']['dynamic'])
+        self.assertTrue(result['tail']['dynamic'])
+        self.assertTrue(result['tip']['dynamic'])  # also cannot freeze through a fixed helper below a mover
+        self.assertTrue(result['hair']['dynamic'])
+        self.assertTrue(bones['root']['dynamic'])  # do not mutate source rig metadata
+        xml = system_xml(result, samples, {})
+        self.assertEqual(xml.find("bone[@name='cuff']/mass").text, '0')
+        self.assertFalse(any(j.attrib['bodyB'] in protected for j in xml.findall('generic-constraint')))
+
+    def test_small_root_and_tip_stay_distinct_even_without_body_hulls(self):
+        bones = {'root': {'parent': 'NPC Spine', 'dynamic': True, 'components': ['cape'], 'matrix': np.eye(4).tolist()},
+                 'tip': {'parent': 'root', 'dynamic': True, 'components': ['cape'], 'matrix': np.eye(4).tolist()}}
+        result, _ = protect_attachments(bones, {}, {}, {}, {'cape'})
+        self.assertFalse(result['root']['dynamic'])
+        self.assertTrue(result['tip']['dynamic'])
 
     def test_native_proxy_and_link_survive_save_and_rebuild(self):
         with tempfile.TemporaryDirectory() as directory:

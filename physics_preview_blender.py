@@ -36,11 +36,22 @@ def main():
     parser.add_argument('--fps', type=int, default=60, choices=(30, 60, 120))
     parser.add_argument('--result', default='physics-preview.json')
     parser.add_argument('--allow-failure', action='store_true')
+    parser.add_argument('--articulate-arms', action='store_true')
     args = parser.parse_args(sys.argv[sys.argv.index('--')+1:])
     output = args.output.resolve()
     settings = load_settings(output)
     with NifFile(str(output/'mod/meshes'/settings.asset_dir/'skeleton.nif')) as file:
         globals_ = {n: matrix(node.global_transform) for n, node in file.nodes.items()}
+        parents = {n: node.parent.name if node.parent else None for n, node in file.nodes.items()}
+
+    def ancestors(name):
+        chain = set()
+        while name is not None:
+            chain.add(name)
+            name = parents[name]
+        return chain
+
+    lineage = {n: ancestors(n) for n in globals_}
     systems = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems']
     # Appearance parts equip only one face/hair variant at a time.
     systems = [s for s in systems if Path(s['nif']).stem not in ('fixed_full', 'fixed_no_face')]
@@ -96,7 +107,15 @@ def main():
                 pulse = (1-math.cos(math.pi*(t-2)))/2 if 2 <= t <= 4 else 0
                 move = Matrix.Translation((30*pulse, 0, 3*math.sin(4*math.pi*pulse)))
                 rotate = Matrix.Rotation(math.radians(35)*pulse, 4, 'Z')
-                obj.matrix_world = move @ rotate @ original
+                pose = Matrix.Identity(4)
+                if args.articulate_arms:
+                    for side, sign in (('L', 1), ('R', -1)):
+                        for part, angle in (('UpperArm', 35), ('Forearm', 50)):
+                            anchor = next((n for n in globals_ if n.startswith(f'NPC {side} {part} ')), None)
+                            if anchor in lineage[name]:
+                                rest = Matrix(globals_[anchor].tolist())
+                                pose = pose @ rest @ Matrix.Rotation(math.radians(angle)*sign*pulse, 4, 'X') @ rest.inverted()
+                obj.matrix_world = move @ rotate @ pose @ original
                 obj.keyframe_insert(data_path='location', frame=frame)
                 obj.keyframe_insert(data_path='rotation_euler', frame=frame)
     substeps = max(1, 60//args.fps)
@@ -187,6 +206,7 @@ def main():
               'worst_joint': worst_joint,
               'fastest_bone': dynamic[int(np.argmax(np.linalg.norm(positions[-1]-positions[-2], axis=1)))],
               'gravity_game_units': GRAVITY, 'fps': args.fps, 'solver_iterations': 16, 'substeps_per_frame': substeps,
+              'arm_articulation': args.articulate_arms,
               'settled_rms_speed': float(np.sqrt(np.square(np.diff(positions[-args.fps:], axis=0)*args.fps).sum(axis=2).mean())),
               'settled_rms_rotation_change': float(np.sqrt(np.square(np.diff(angles[-args.fps:], axis=0)*args.fps).mean())),
               'limits': {'solver_joint_gap': 1., 'settled_joint_gap': .4, 'settling_speed': 1.},

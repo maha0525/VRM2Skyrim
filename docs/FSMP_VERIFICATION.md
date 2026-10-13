@@ -4,10 +4,12 @@ Foundation verified on 2026-10-13; calm profile verified on 2026-10-14 with
 Blender 4.5.12 and the local pinned PyNifly runtime.
 Private VRMs and generated game assets remain outside Git.
 
-- 60 Python tests pass, including native NIF save/reload, hidden collision
+- 62 Python tests pass, including native NIF save/reload, hidden collision
   proxy skinning, preserved skeleton transforms, private links, component
   ownership, source spring formats, bone-local joint frames, long-cloth damping,
   gravity-aligned swing/twist limits and lighter distal-chain mass.
+  Attachment tests also check fixed garment roots, arm-adjacent prefixes,
+  moving tails, unchanged hair policy and absence of springs on protected nodes.
 - Ruff passes for all changed Python modules.
 - A separate headless browser exercises the actual wizard FSMP checkbox,
   mesh selection, stiffness control and settings download. Defaults are off.
@@ -67,3 +69,37 @@ Private VRMs and generated game assets remain outside Git.
 Local evidence: `build/physics/Quon_FSMP_0.9.1/`, the old `Quon_FSMP_210325/` comparison, the fixed-outfit test build,
 `build/physics/ui/`, and the local FSMP author schema. The installer does not
 modify the game folder or install FSMP.
+
+## Fixed attachments in 0.9.2-dev (2026-10-14)
+
+The game feedback showed that sleeve openings still collapsed through the arm.
+Native skin inspection identified moving `K_AccSleeve_Root_L/R` bones carrying
+the upper sleeve weights, plus moving lower-arm garment roots. The new common
+export policy protects the original animated attachment instead of increasing
+damping again or changing Quon-specific settings.
+
+- Quon's removable wardrobe protects 19 sleeve-group and 7 outfit-group bones
+  (two were already kinematic). The active systems retain 192 movers instead of
+  216. Hair and both head-visibility XMLs are byte-identical to 0.9.1-dev.
+- Every protected bone is declared with mass zero and no spring constraint.
+  The same body-hull proximity/prefix rules also protect 26 bones in the
+  fixed-outfit pipeline; its single XML and all five wardrobe XMLs pass schema
+  validation and native link, bind, weight and collision-proxy checks.
+- The delivered-mesh settled render preserves the arm sleeve openings while
+  the long panels hang below. Meshes, skin weights and skeleton rest poses are
+  unchanged; their difference in appearance is caused by the protected roots.
+- 15-second, 16-iteration Spring2 diagnostics pass at 30/60/120 fps. Their final
+  maximum speeds are 0.04344 / 0.06340 / 0.03739 game units/s. Maximum settled
+  pivot gaps are 0.31694 / 0.31694 / 0.07924 game units.
+- A separate 60 fps diagnostic bends each shoulder through 35 degrees and each
+  elbow through 50 degrees while translating/turning the actor. Kinematic sleeve
+  nodes inherit the corresponding arm FK transforms; distal nodes remain
+  simulated. It passes with final maximum speed 0.09106 and maximum solver gap
+  0.87799 game units (using the documented kinematic-frame travel allowance).
+- The 0.9.2-dev ZIP passes CRC checks. Compared with 0.9.1-dev, only the two
+  garment XMLs and generated README differ. All ESPs, NIFs, textures, other XMLs
+  and DLLs have matching SHA256, so existing saves and the combined armor patch
+  retain the same records and files.
+
+Evidence: `build/physics/Quon_FSMP_0.9.2/`,
+`build/physics/Quon_FSMP_fixed_0.9.2/` and `tests/test_physics.py`.

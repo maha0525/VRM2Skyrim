@@ -24,8 +24,9 @@ It does not invent cloth weights for an entirely rigid mesh.
 
 - Secondary bones retain their source rest transforms and vertex weights in
   the private skeleton. Humanoid animation bones retain their existing locals.
-- Hair scalp roots stay fixed. Weighted cloth roots can pivot on an animated
-  humanoid anchor. Rigid single-bone accessories are excluded.
+- Hair scalp roots and garment attachment roots stay fixed to the animated
+  body. Sleeve bones close to the arm extend that fixed prefix; hanging distal
+  cloth retains its independent motion. Rigid single-bone accessories are excluded.
 - Separate clothing components receive distinct copies of shared secondary
   chains. Removing one piece cannot stop another piece's simulation, and two
   systems do not drive the same dynamic bone.
@@ -80,6 +81,30 @@ and one step per 60 Hz frame, translating anchors by 30 game units and turning
 them through 35 degrees before measuring settling. These settings do not modify
 the user's global FSMP configuration.
 
+### Protected attachments (0.9.2-dev)
+
+The game test revealed that lower sway alone could not preserve sleeve openings:
+their attachment bones were still free movers. The shared XML stage now fixes
+the first secondary garment root to its animated parent. For an arm-attached
+chain, it extends the fixed prefix while 90% of strongly influenced vertices
+(weight above 0.2) lie inside the avatar arm hulls expanded by 4% of body height.
+Only the corresponding left/right upper arm, forearm and hand hulls are used;
+nearby torso surfaces cannot accidentally pin a hanging sleeve tail.
+
+The prefix stops at the first moving bone. A fixed node beneath a mover would
+inherit the mover's displacement, so distal cloth is never frozen in isolation.
+Hair keeps its existing policy. This rule uses source ancestry, weights and
+geometry, without character-specific names. Protected bones have mass zero and
+no spring constraint. Their original NIF hierarchy, rest transforms and weights
+remain intact; the body animation supplies their movement. Each XML can also
+retain a fully fixed selected component, replacing its previous linked physics
+system instead of leaving a stale dynamic XML behind.
+
+`physics.json` records `protected_bones` and the reason for each pin. Readback
+verifies that they have no dynamic mass or spring constraint. The diagnostic's
+`--articulate-arms` option bends shoulders and elbows while moving/turning the
+actor, applying the same arm motion to the newly fixed sleeve nodes.
+
 ## Diagnostics and editing
 
 `skeleton.json` records the source-to-private bone identities and full rest
@@ -110,6 +135,10 @@ and keep bone names, skinning and the root XML link together.
 揺れの硬さは「穏やか（標準）」から始めてください。長さに合わせた減衰、
 ねじれの制限、風なしの設定を全プリセットで使います。柔らかめ・硬めへ
 変更しても減衰は自動調整します。横に伸びた布が垂れる方向は残しています。
+
+衣服の付け根と腕に沿う袖の部分は、身体のアニメーションに追従させます。
+その先の布を揺らすので、袖口そのものが重力でずれたり回ったりするのを
+防ぎます。元VRMや各キャラクターの設定を手で書き換える必要はありません。
 
 身体との接触には、元の身体から作る非表示の衝突メッシュを使います。
 XML、骨、衝突タグはフォロワー・衣服ごとの専用です。脱いだ衣服は自身の

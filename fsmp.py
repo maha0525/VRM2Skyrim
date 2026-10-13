@@ -117,6 +117,67 @@ def collision_hulls(mesh_dir, appearance, globals_, body_nodes=()):
     return result
 
 
+def protect_attachments(bones, samples, hulls, globals_, cloth_components):
+    """Keep garment attachment roots and nearby arm sleeves in animated FK.
+
+    Proximity uses the actual avatar's arm hulls and positively weighted skin,
+    never source bone/mesh names. Extend only the fixed prefix of a chain:
+    pinning a distal node below a simulated parent would still move its cuff.
+    """
+    result = {n: dict(i) for n, i in bones.items()}
+    protected = {}
+    if not cloth_components:
+        return result, protected
+    world_hulls = {}
+    for name, local in hulls.items():
+        value = globals_[name]
+        points = np.asarray(local) @ value[:3, :3].T + value[:3, 3]
+        world_hulls[name] = ConvexHull(points)
+    height = float(np.ptp(np.concatenate([h.points for h in world_hulls.values()]), axis=0)[2]) if world_hulls else 0.
+    tolerance = height * .04
+
+    def classify(name):
+        info = result[name]
+        parent = info['parent']
+        if parent in result and parent not in visited:
+            classify(parent)
+        visited.add(name)
+        if not set(info['components']) <= cloth_components:
+            return
+        if parent not in result:
+            info['dynamic'] = False
+            protected[name] = 'garment attachment root'
+            return
+        if result[parent]['dynamic'] or not info['dynamic'] or name not in samples:
+            return
+        anchor = parent
+        while anchor in result:
+            if result[anchor]['dynamic']:
+                return  # an unweighted kinematic helper may still inherit a mover
+            anchor = result[anchor]['parent']
+        side = next((s for s in ('L', 'R') if anchor.startswith(f'NPC {s} ') and
+                     any(p in anchor for p in ('UpperArm', 'Forearm', 'Hand'))), None)
+        if side is None or not world_hulls:
+            return
+        arm = [h.equations for n, h in world_hulls.items() if n.startswith(f'NPC {side} ') and
+               any(p in n for p in ('UpperArm', 'Forearm', 'Hand'))]
+        if not arm:
+            return
+        points = np.asarray(samples[name])
+        # Membership in outward-offset hull planes is a conservative proximity
+        # region; use the 90th percentile so a stray tiny influence is not a pin.
+        proximity = np.min([(points @ p[:, :3].T + p[:, 3]).max(axis=1) for p in arm], axis=0)
+        if float(np.quantile(proximity, .9)) <= tolerance:
+            info['dynamic'] = False
+            protected[name] = 'arm-adjacent fixed attachment prefix'
+
+    visited = set()
+    for name in result:
+        if name not in visited:
+            classify(name)
+    return result, protected
+
+
 def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag='V2SBody'):
     root = ET.Element('system', xmlns='FSMP-Validator')
     scalar(ET.SubElement(root, 'bone-default'), 'mass', 0)
@@ -277,6 +338,7 @@ def build_physics(output):
     body_nodes = [p['node'] for p in source['parts'] if p['suggested_role'] == 'body' or
                   ('face' in p['name'].lower() and 'hair' not in p['name'].lower())]
     hulls = collision_hulls(mesh_dir, appearance, globals_, body_nodes)
+    cloth_components = {p['id'] for p in appearance['components'] if p['role'] == 'garment'} | {'appearance_cloth'}
     paths = [mesh_dir / p['file'] for p in appearance['components']]
     paths += sorted(mesh_dir.glob('fixed_*.nif'))
     systems = []
@@ -292,6 +354,8 @@ def build_physics(output):
                     used.add(parent)
                     parent = all_bones[parent]['parent']
             bones = {n: all_bones[n] for n in all_bones if n in used}
+            bones, protected = protect_attachments(bones, weighted_points(nif, minimum_weight=.2),
+                                                   hulls, globals_, cloth_components)
             relative = f'SKSE/Plugins/hdtSkinnedMeshConfigs/{settings.asset_dir}/{path.stem}.xml'
             xml_path = output / 'mod' / relative
             xml_path.parent.mkdir(parents=True, exist_ok=True)
@@ -307,10 +371,15 @@ def build_physics(output):
             attach(nif, relative.replace('/', '\\'))
             systems.append({'nif': path.relative_to(output / 'mod').as_posix(), 'xml': relative,
                             'dynamic_bones': [n for n in bones if bones[n]['dynamic']],
+                            'protected_bones': protected,
                             'body_hulls': len(hulls)})
+            logging.info('FSMP %s: %s garment attachment bones fixed, %s movers',
+                         path.name, len(protected), sum(i['dynamic'] for i in bones.values()))
     if not systems:
         raise ValueError('FSMP enabled but no appearance NIF retained movable bone weights')
-    result = {'enabled': True, 'systems': systems, 'profile': 'calm_v1',
+    result = {'enabled': True, 'systems': systems, 'profile': 'calm_fixed_attachments_v2',
+              'attachment_policy': {'arm_margin_body_height': .04, 'weight_threshold': .2,
+                                    'proximity_quantile': .9, 'fixed_prefix_only': True},
               'stiffness': settings.physics_stiffness,
               'collision_source': 'weighted original avatar body vertices'}
     (output / 'physics.json').write_text(json.dumps(result, indent=2), encoding='utf8')
@@ -346,11 +415,16 @@ def validate_physics(output):
         for joint in root.findall('generic-constraint'):
             if {joint.attrib['bodyA'], joint.attrib['bodyB']} - bones:
                 raise ValueError('FSMP constraint references undeclared bodies')
+        for name in system.get('protected_bones', {}):
+            if root.find(f"bone[@name='{name}']/mass").text != '0':
+                raise ValueError('Garment attachment bone is simulated: '+name)
+            if any(j.attrib['bodyB'] == name for j in root.findall('generic-constraint')):
+                raise ValueError('Garment attachment bone has a physics constraint: '+name)
         with NifFile(str(output / 'mod' / system['nif'])) as nif:
             links = list(nif.rootNode.extra_data(name=LINK))
             if len(links) != 1 or links[0].string_data.replace('\\', '/') != system['xml']:
                 raise ValueError('FSMP NIF link does not match its private system')
-            if not set(system['dynamic_bones']) & set(weighted_points(nif)):
+            if system['dynamic_bones'] and not set(system['dynamic_bones']) & set(weighted_points(nif)):
                 raise ValueError('Physics system has no movable mesh weights')
             shape_names = {s.name for s in nif.shapes}
             for tag in ('per-triangle-shape', 'per-vertex-shape'):
