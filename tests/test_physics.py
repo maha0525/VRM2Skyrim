@@ -5,7 +5,8 @@ import tempfile
 
 import numpy as np
 
-from fsmp import LINK, PROXY, add_collision_proxy, attach, local_points, system_xml
+from fsmp import (GRAVITY, INERTIA_DIVISOR, LINK, MASS, PROXY, add_collision_proxy,
+                  attach, joint_profile, local_points, system_xml)
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
 from physics_rig import plan_bones, selected_meshes, spring_nodes
 from settings import FollowerSettings
@@ -69,7 +70,7 @@ class PhysicsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             selected_meshes(FollowerSettings(physics_nodes=[5]), {}, [1])
 
-    def test_joint_pivot_cancels_center_of_mass(self):
+    def test_fsmp_converts_bone_frame_to_rigid_frame_once(self):
         value = np.eye(4)
         value[:3, 3] = [4, 5, 6]
         bones = {'root': {'parent': 'NPC Head', 'dynamic': False, 'matrix': value.tolist()},
@@ -77,9 +78,44 @@ class PhysicsTests(unittest.TestCase):
         root = system_xml(bones, {'tip': [[7, 9, 11]]}, {})
         com = root.find("bone[@name='tip']/centerOfMassTransform/origin").attrib
         pivot = root.find('generic-constraint/frameInB/origin').attrib
-        np.testing.assert_allclose([float(com[a]) + float(pivot[a]) for a in 'xyz'], [0, 0, 0])
+        # Runtime: worldBone * CoM * inverse(CoM) * boneLocalFrame.
+        offset = np.eye(4)
+        offset[:3, 3] = [float(com[a]) for a in 'xyz']
+        frame = np.eye(4)
+        frame[:3, 3] = [float(pivot[a]) for a in 'xyz']
+        np.testing.assert_allclose(value @ offset @ np.linalg.inv(offset) @ frame, value)
         self.assertEqual(root.find("bone[@name='NPC Head']/mass").text, '0')
         np.testing.assert_allclose(local_points([[7, 9, 11]], value), [[3, 4, 5]])
+
+    def test_long_horizontal_cloth_can_fall_but_not_spin(self):
+        for com in ([20, 0, 0], [0, 20, 0], [0, 0, -20], [0, 0, 0]):
+            basis, spring, damping = joint_profile(com, 3., np.eye(4))
+            np.testing.assert_allclose(basis.T @ basis, np.eye(3), atol=1e-7)
+            self.assertAlmostEqual(np.linalg.det(basis), 1.)
+            self.assertTrue(np.isfinite(damping).all())
+            self.assertTrue((spring > 0).all())
+            if np.linalg.norm(com):
+                np.testing.assert_allclose(basis[:, 2], np.asarray(com)/np.linalg.norm(com))
+        _, spring, damping = joint_profile([20, 0, 0], 3., np.eye(4))
+        inertia = .4 * MASS * 3**2 / INERTIA_DIVISOR + MASS * 20**2
+        ratio = damping[0] / (2*np.sqrt(inertia*(spring[0] + MASS*GRAVITY*20)))
+        self.assertGreaterEqual(ratio, 1.)
+        short = joint_profile([2, 0, 0], 3., np.eye(4))[2]
+        self.assertGreater(damping[0], short[0]*10)
+
+    def test_distal_chain_does_not_overload_its_root(self):
+        bones = {'a': {'parent': 'NPC Arm', 'dynamic': True, 'matrix': np.eye(4).tolist()},
+                 'b': {'parent': 'a', 'dynamic': True, 'matrix': np.eye(4).tolist()}}
+        root = system_xml(bones, {'a': [[10, 0, 0]], 'b': [[0, 2, 0]]}, {})
+        self.assertGreater(float(root.find("bone[@name='a']/mass").text),
+                           float(root.find("bone[@name='b']/mass").text))
+        radius = float(root.find("bone[@name='a']/shape/radius").text)
+        self.assertGreaterEqual(radius, 10.)
+        joint = root.find('generic-constraint')
+        limits = joint.find('angularUpperLimit').attrib
+        self.assertGreater(float(limits['x']), np.pi/2)  # horizontal sleeve may drop
+        self.assertLess(float(limits['y']), np.pi/2)  # Euler middle-axis singularity
+        self.assertLess(float(limits['z']), .3)  # avoid free axial spin
 
     def test_native_proxy_and_link_survive_save_and_rebuild(self):
         with tempfile.TemporaryDirectory() as directory:

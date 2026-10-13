@@ -85,6 +85,15 @@ The development implementation now includes retained component-specific chains,
 private XMLs, hidden skinned body collision proxies, wizard settings and native
 readback checks. See `docs/FSMP.md`. The stable release remains on `main`.
 
+### Calm-default feedback
+
+The user confirmed that the first FSMP output moves in Skyrim, but hair and
+cloth oscillate excessively. The standard preset must suppress repeated sway
+while allowing horizontal sleeves to fall. Fix the shared converter rather
+than creating an avatar-specific tuning patch. Account for true runtime frame
+coordinates, game-unit gravity, geometry-dependent inertia/damping and ordinary
+solver settings in the verification. Retain adjustable softer/firmer choices.
+
 ## Primary references
 
 - [FSMP source and runtime loader](https://github.com/DaymareOn/hdtSMP64/blob/dev/src/hdtDefaultBBP.cpp)

@@ -9,7 +9,9 @@ The stable `main` branch remains 0.8.1.
 2. Select the hair and cloth meshes that should move. Leave rigid accessories,
    shoes and the avatar's body out of this selection. With no explicit selection,
    assigned hair/clothing and actually weighted VRM spring meshes are candidates.
-3. Choose **揺れの硬さ**: soft 0.3, normal 1, firm 3.
+3. Choose **揺れの硬さ**: softer 0.3, calm (default) 1, firmer 3.
+   All choices use geometry-scaled damping and restricted twist. The default
+   adds no wind force; it lets long cloth fall without encouraging repeated sway.
 4. Generate the follower ZIP and install it normally. Enable Faster HDT-SMP and
    the SKSE64 build matching your game, then launch through SKSE64.
 
@@ -45,6 +47,39 @@ VRM parameters are not copied as if they were equivalent Bullet parameters.
 Quon and Erys's inspected VRMs have dedicated weighted chains without spring
 metadata, so presets also work for that case.
 
+### Calm default (0.9.1-dev)
+
+The first game test reported excessive hair and sleeve oscillation. The shared
+generator now uses the following profile, including for imported settings:
+
+- Angular stiffness scales with geometric sphere inertia, using a nominal
+  0.65 Hz coefficient at the standard multiplier rather than constant torque.
+  The inertia divisor 0.2 increases actual rotational resistance fivefold
+  without increasing restoring stiffness; this slows abrupt rotations without
+  pulling gravity-draped sleeves back into a horizontal pose.
+- Constraint damping targets a damping ratio of 1.1 using the pivot's
+  parallel-axis inertia and gravitational restoring torque. Long sleeves
+  therefore receive more damping than short hair tips. Bullet timestep safety
+  caps remain enabled for connected moving bodies.
+- Bone velocity damping is 0.85 linear / 0.95 angular; wind factor is zero.
+- Dynamic mass tapers from 0.1 by 0.6 per dynamic ancestor (floor 0.0025).
+  Lighter tips reduce upstream loads in long chains. The inertia sphere covers
+  both the influenced surface and pivot-to-centre-of-mass lever, without the
+  former radius cap of eight game units.
+- Constraint Z follows the influenced surface. X permits up to 1.7 radians of
+  gravity-plane swing (so horizontal sleeves can fall), Y up to 1.1 radians of
+  lateral swing, Z only 0.25 radians of twist. The middle Euler axis stays below
+  its singularity. This replaces unrestricted 2.4-radian motion on every axis.
+- `frameInB` has zero origin in **bone-local** coordinates. FSMP itself applies
+  the inverse centre-of-mass transform when constructing the rigid-body joint.
+  Subtracting the centre twice, as the initial generator did, moves the pivot.
+
+The offline diagnostic uses FSMP's gravity conversion, `9.8 / 0.01425` game
+units/s², rather than treating game units as metres. It uses 16 solver iterations
+and one step per 60 Hz frame, translating anchors by 30 game units and turning
+them through 35 degrees before measuring settling. These settings do not modify
+the user's global FSMP configuration.
+
 ## Diagnostics and editing
 
 `skeleton.json` records the source-to-private bone identities and full rest
@@ -72,6 +107,10 @@ and keep bone names, skinning and the root XML link together.
 身体・硬いアクセサリー・靴は選択から外し、髪や振袖などを選んでください。
 未選択なら分類した髪・衣服を候補にします。
 
+揺れの硬さは「穏やか（標準）」から始めてください。長さに合わせた減衰、
+ねじれの制限、風なしの設定を全プリセットで使います。柔らかめ・硬めへ
+変更しても減衰は自動調整します。横に伸びた布が垂れる方向は残しています。
+
 身体との接触には、元の身体から作る非表示の衝突メッシュを使います。
 XML、骨、衝突タグはフォロワー・衣服ごとの専用です。脱いだ衣服は自身の
 物理システムごと外れ、他の衣服や別フォロワーの骨を制御しません。
@@ -81,4 +120,6 @@ XML、骨、衝突タグはフォロワー・衣服ごとの専用です。脱�
 - [Faster HDT-SMP](https://www.nexusmods.com/skyrimspecialedition/mods/57339)
 - [FSMP source](https://github.com/DaymareOn/hdtSMP64/tree/dev)
 - [FSMP author XML guide](https://github.com/DaymareOn/FSMP-Validator/wiki)
+- [Spring and damping units](https://github.com/DaymareOn/FSMP-Validator/wiki/33-%E2%80%90-Springs-stiffness-and-damping)
+- [Runtime frame conversion](https://github.com/DaymareOn/hdtSMP64/blob/dev/src/hdtSkinnedMesh/hdtGeneric6DofConstraint.cpp)
 - [VRM spring-bone specification](https://vrm.dev/en/vrm1/springbone/)

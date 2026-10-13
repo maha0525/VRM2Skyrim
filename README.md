@@ -12,7 +12,7 @@ Followers start **inside the Temple of Kynareth in Whiterun**. The tool sets up 
 
 The stable version on `main` is **0.8.1**. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
 
-The `codex/fsmp-physics` branch is **0.9.0-dev** and adds optional hair/cloth physics. Enable **髪・布を揺らす** in the wizard, select the meshes, and choose stiffness. Generated followers require [Faster HDT-SMP](https://www.nexusmods.com/skyrimspecialedition/mods/57339) and matching SKSE64 when physics is enabled. See [physics setup and implementation](docs/FSMP.md).
+The `codex/fsmp-physics` branch is **0.9.1-dev** and adds optional hair/cloth physics. Enable **髪・布を揺らす** in the wizard, select the meshes, and start with the calm default. Damping adjusts to hair/cloth length, with restricted twist and no wind force. Generated followers require [Faster HDT-SMP](https://www.nexusmods.com/skyrimspecialedition/mods/57339) and matching SKSE64 when physics is enabled. See [physics setup and implementation](docs/FSMP.md).
 
 Version 0.8.1 fixes Engine Fixes texture-load warnings caused by compressing small or unaligned images as BC7. These images now use uncompressed RGBA8 DDS, keeping their original dimensions and pixels. DDS format, dimensions, and mip storage are checked during conversion and output validation. This is a texture-only correction; existing followers do not need a save reset for this update.
 

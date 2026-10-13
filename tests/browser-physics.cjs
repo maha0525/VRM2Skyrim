@@ -15,6 +15,9 @@ const fs=require('node:fs');const path=require('node:path');const assert=require
   await page.locator('#physics_enabled').check();
   assert.ok(await page.locator('#physics-panel').isVisible());
   assert.match(await page.locator('#physics-panel').textContent(),/SKSE64/);
+  assert.equal(await page.locator('#physics_stiffness').inputValue(),'1');
+  assert.match(await page.locator('#physics_stiffness option:checked').textContent(),/穏やか/);
+  assert.match(await page.locator('#physics-panel').textContent(),/減衰を自動調整/);
   await page.locator('#physics_stiffness').selectOption('0.3');
   await page.locator('#physics-meshes input[data-node="639"]').check();
   await page.screenshot({path:path.join(root,'physics-controls.png'),fullPage:true});

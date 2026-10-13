@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 from scipy.spatial import ConvexHull, QhullError
+from scipy.spatial.transform import Rotation
 
 from custom_skeleton import NifFile, matrix, rigid_buffer, nifly
 from settings import load_settings
@@ -19,6 +20,39 @@ from pyn.structs import TransformBuf
 
 LINK = 'HDT Skinned Mesh Physics Object'
 PROXY = 'V2SCollision_Body'
+GRAVITY = 9.8 / .01425  # FSMP scaleSkyrim: game units per second squared
+MASS = .1
+INERTIA_DIVISOR = .2  # FSMP divides automatic inertia: resist abrupt rotation
+
+
+def joint_profile(com, radius, global_matrix, stiffness=1., mass=MASS):
+    """Geometry-scaled restoring torque and near-critical pendulum damping.
+
+    Z follows the influenced surface, X permits falling towards gravity.
+    Restrict sideways swing and axial twist without freezing horizontal cloth.
+    Angular coefficients have inertia units; a constant .6 cannot damp both
+    tiny hair tips and long sleeves. Include the pivot's parallel-axis inertia.
+    """
+    length = float(np.linalg.norm(com))
+    z = np.asarray(com) / length if length > .001 else np.array([0., 0., 1.])
+    gravity = np.asarray(global_matrix)[:3, :3].T @ np.array([0., 0., -1.])
+    y = gravity - z * np.dot(gravity, z)
+    if np.linalg.norm(y) < .001:
+        axis = np.eye(3)[np.argmin(np.abs(z))]
+        y = axis - z * np.dot(axis, z)
+    y /= np.linalg.norm(y)
+    basis = np.column_stack((np.cross(y, z), y, z))
+    geometric_inertia = .4 * mass * radius**2
+    inertia = geometric_inertia / INERTIA_DIVISOR
+    lever = basis.T @ np.asarray(com)
+    pivot_inertia = inertia + mass * (length**2 - lever**2)
+    omega = 2 * np.pi * .65 * np.sqrt(stiffness)
+    spring = np.full(3, geometric_inertia * omega**2)
+    # Gravity supplies a restoring torque as a hanging chain moves; damping
+    # must account for that too, not only the deliberately gentle rest spring.
+    gravity_torque = mass * GRAVITY * length * np.array([1., 1., 0.])
+    damping = 2 * 1.1 * np.sqrt(pivot_inertia * (spring + gravity_torque))
+    return basis, spring, damping
 
 
 def vector(parent, tag, value):
@@ -91,41 +125,58 @@ def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag
     for name in sorted(set(colliders) | set(anchors)):
         bone = ET.SubElement(root, 'bone', name=name)
         scalar(bone, 'mass', 0)
-    coms = {}
+    profiles = {}
     for name, info in bones.items():
+        depth, parent = 0, info['parent']
+        while parent in bones and bones[parent]['dynamic']:
+            depth += 1
+            parent = bones[parent]['parent']
+        # A lighter distal chain puts less load on upstream joints and reduces
+        # stretching at the ordinary 16-iteration runtime solver setting.
+        mass = max(.0025, MASS * .6**depth)
         bone = ET.SubElement(root, 'bone', name=name)
-        scalar(bone, 'mass', .1 if info['dynamic'] else 0)
+        scalar(bone, 'mass', mass if info['dynamic'] else 0)
         if not info['dynamic']:
-            coms[name] = [0., 0., 0.]
             continue
         points = local_points(samples.get(name, [np.asarray(info['matrix'])[:3, 3]]), info['matrix'])
         com = points.mean(axis=0)
-        coms[name] = com.tolist()
         transform(bone, 'centerOfMassTransform', com)
-        vector(bone, 'inertia', [1., 1., 1.])
-        scalar(bone, 'linearDamping', .35)
-        scalar(bone, 'angularDamping', .65)
+        vector(bone, 'inertia', [INERTIA_DIVISOR] * 3)
+        scalar(bone, 'linearDamping', .85)
+        scalar(bone, 'angularDamping', .95)
         scalar(bone, 'gravity-factor', 1)
-        scalar(bone, 'wind-factor', .05)
+        scalar(bone, 'wind-factor', 0)
         # This sphere sets rotational inertia, not contact geometry: FSMP
         # disables rigid bone collisions. Match its radius to the influenced
         # surface rather than giving long cloth a tiny unstable inertia.
-        radius = max(.65, min(8., float(np.sqrt(np.square(points-com).sum(axis=1).mean()))))
+        # Include the pivot-to-CoM lever. A tiny tip sphere on a long joint
+        # lever can rotate explosively while the positional constraint catches
+        # up, especially at ordinary runtime solver iteration counts.
+        radius = max(.65, float(np.linalg.norm(com)),
+                     float(np.sqrt(np.square(points-com).sum(axis=1).mean())))
         scalar(ET.SubElement(bone, 'shape', type='sphere'), 'radius', round(radius, 6))
+        profiles[name] = joint_profile(com, radius, info['matrix'], stiffness, mass)
     for name, info in bones.items():
         if not info['dynamic']:
             continue
         joint = ET.SubElement(root, 'generic-constraint', bodyA=info['parent'], bodyB=name)
-        # FSMP derives frame A from B at load. The joint stays at the original
-        # bone head rather than the displaced centre of mass.
-        transform(joint, 'frameInB', -np.asarray(coms[name]))
+        # frameInB is BONE-local, not rigid-body-local. FSMP applies rigToLocal
+        # itself. Subtracting CoM here would apply the offset twice.
+        transform(joint, 'frameInB', [0, 0, 0])
+        basis, spring, damping = profiles[name]
+        ET.SubElement(joint.find('frameInB'), 'basis',
+                      {a: f'{n:.9f}' for a, n in zip('xyzw', Rotation.from_matrix(basis).as_quat())})
         vector(joint, 'linearLowerLimit', [0, 0, 0])
         vector(joint, 'linearUpperLimit', [0, 0, 0])
-        vector(joint, 'angularLowerLimit', [-2.4, -2.4, -2.4])
-        vector(joint, 'angularUpperLimit', [2.4, 2.4, 2.4])
-        vector(joint, 'angularStiffness', [.4 * stiffness] * 3)
-        vector(joint, 'angularDamping', [.6] * 3)
+        vector(joint, 'angularLowerLimit', [-1.7, -1.1, -.25])
+        vector(joint, 'angularUpperLimit', [1.7, 1.1, .25])
+        vector(joint, 'angularStiffness', spring)
+        vector(joint, 'angularDamping', damping)
+        scalar(joint, 'enableLinearSprings', 'false')
         scalar(joint, 'enableAngularSprings', 'true')
+        # Retain Bullet's timestep safety caps when chains share moving bodies.
+        scalar(joint, 'angularStiffnessLimited', 'true')
+        scalar(joint, 'springDampingLimited', 'true')
     if hulls:
         proxy = ET.SubElement(root, 'per-triangle-shape', name=PROXY)
         scalar(proxy, 'margin', .35)
@@ -259,10 +310,13 @@ def build_physics(output):
                             'body_hulls': len(hulls)})
     if not systems:
         raise ValueError('FSMP enabled but no appearance NIF retained movable bone weights')
-    result = {'enabled': True, 'systems': systems, 'collision_source': 'weighted original avatar body vertices'}
+    result = {'enabled': True, 'systems': systems, 'profile': 'calm_v1',
+              'stiffness': settings.physics_stiffness,
+              'collision_source': 'weighted original avatar body vertices'}
     (output / 'physics.json').write_text(json.dumps(result, indent=2), encoding='utf8')
     validate_physics(output)
-    logging.info('FSMP: %s private systems, %s avatar collision hulls', len(systems), len(hulls))
+    logging.info('FSMP calm profile: %s systems, %s body hulls, stiffness %.3f; gravity %.3f',
+                 len(systems), len(hulls), settings.physics_stiffness, GRAVITY)
     return result
 
 

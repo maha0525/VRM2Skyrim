@@ -23,7 +23,7 @@
         <p id="source-status" class="source-status" aria-live="polite">まだ選択されていません</p>
         <label>衣服・防具の扱い<select id="armor_support"><option value="false">対応なし：元の衣服を着脱しない</option><option value="true">対応あり：身体・下着・衣服を分けて着脱</option></select></label>
         <label class="checkbox"><input id="physics_enabled" type="checkbox">髪・布を揺らす（FSMP・開発版）</label>
-        <div id="physics-panel" hidden><p class="hint">使用時にFaster HDT-SMPと、ゲームに対応するSKSE64が必要です。元VRMの独立した骨がある髪・衣服を変換します。外すと従来どおり固定した外観になります。</p><label>揺れの硬さ<select id="physics_stiffness"><option value="0.3">柔らかい</option><option value="1">標準</option><option value="3">硬い</option></select></label><p class="hint">揺らすメッシュを選んでください。未選択の場合は、分類した髪・衣服を自動で対象にします。身体や硬いアクセサリーは対象から外してください。</p><div id="physics-meshes" class="choices"></div></div>
+        <div id="physics-panel" hidden><p class="hint">使用時にFaster HDT-SMPと、ゲームに対応するSKSE64が必要です。元VRMの独立した骨がある髪・衣服を変換します。外すと従来どおり固定した外観になります。</p><label>揺れの硬さ<select id="physics_stiffness"><option value="0.3">柔らかめ（揺れが大きめ）</option><option value="1">穏やか（標準）</option><option value="3">硬め（揺れが小さめ）</option></select></label><p class="hint">標準は揺れが続きにくい設定です。髪・布の長さに合わせて減衰を自動調整し、ねじれを抑えます。風による揺れは加えません。</p><p class="hint">揺らすメッシュを選んでください。未選択の場合は、分類した髪・衣服を自動で対象にします。身体や硬いアクセサリーは対象から外してください。</p><div id="physics-meshes" class="choices"></div></div>
         <div id="wardrobe-editor" hidden>
           <h3>身体と衣服を分類する</h3><p class="hint">名前から分類候補を出しています。身体、下着、顔・髪などの常時表示、着脱する衣服を確認してください。身体と服が一体のメッシュは、この画面では切断しません。</p>
           <p class="hint">元VRMの服を着脱する装備にできます。身体が独立しているモデルでは、本体ゲームの鎧・手袋・靴を体型へ合わせることもできます。</p>
