@@ -1,5 +1,30 @@
 # VRM2Skyrim verification
 
+## 0.8.1 Direct3D texture dimensions (2026-10-13)
+
+The installed Erys 2x2 BC7 DDS reproduced E_INVALIDARG (0x80070057) when its
+actual mip payloads were submitted to a hardware D3D11 device. Engine Fixes
+records that code as "texture load failed unexpectedly". Conversion now uses
+uncompressed RGBA8 for top-level dimensions not divisible by four, without
+resizing or changing the source image. Aligned images keep the previous BC7
+encoding. Emitted and referenced DDS headers are checked for dimensions,
+format, mip count, and recognized-format payload length before preview decode.
+
+56 Python tests and Ruff pass. Native texconv tests cover 1x1, 2x2, 3x5, 6x2,
+4x4 and 8x4 sources, preserve exact RGBA pixels in uncompressed output, and
+retain source PNG hashes on repeated conversion. Regression fixtures reject
+the previously accepted 2x2 BC7 case and truncated/invalid mip storage, while
+accepting the legal 2x2/1x1 lower mips of aligned compressed textures.
+
+The final Erys 0.8.1 archive passes existing NIF/plugin validation (56 shapes,
+222399 triangles, 515 records). All 17 regenerated avatar DDSs, including the
+corrected 2x2 RGBA8 image, load successfully through D3D11 texture creation.
+Archive comparison shows only the corrected DDS and generated version readme
+changed; the ESP, skeleton, meshes, equipment assets, remaining textures and
+settings retain their original bytes. The corrected image retains exact source
+pixels. Original archives and game Data were preserved. Local evidence is in
+build/texture-load and build/texture-fix/ErysWardrobe_0.8.1_final.
+
 ## 0.8.0 native wardrobe and wizard corrections (2026-10-13)
 
 Retired the asynchronous OnObjectEquipped clothing-removal policy. Native ARMO

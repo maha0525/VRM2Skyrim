@@ -10,7 +10,9 @@
 
 初期配置は**ホワイトランのキナレス聖堂内**。標準フォロワーの派閥・プレイヤーとの友好関係・勧誘用ボイス・永続参照を設定し、会話から仲間にできる構成を作ります。
 
-現在のバージョンは **0.8.0**。本体・導入済みDLC・公式追加コンテンツの人型装備を一括で体型に合わせます。兜・盾・指輪・首飾りも対象です。顔と髪の表示設定、Outfit Studioで仕上げた形の取り込みに対応しています。
+現在のバージョンは **0.8.1**。本体・導入済みDLC・公式追加コンテンツの人型装備を一括で体型に合わせます。兜・盾・指輪・首飾りも対象です。顔と髪の表示設定、Outfit Studioで仕上げた形の取り込みに対応しています。
+
+0.8.1では、小さい画像や寸法が4の倍数でない画像をBC7圧縮していたために出るEngine Fixesのテクスチャ読み込み警告を修正しました。該当画像は元の寸法・画素を保つ非圧縮RGBA8 DDSで出力し、変換時と出力検査でDDSの形式・寸法・ミップデータも確認します。テクスチャだけの修正なので、この更新で既存フォロワーのセーブをリセットする必要はありません。
 
 ## 起動する
 
@@ -167,7 +169,7 @@ python wizard.py --no-browser --port 8768
 ## 開発・検証
 
 ```powershell
-python -m unittest test_converter tests.test_follower tests.test_wardrobe tests.test_package tests.test_armor
+python -m unittest test_converter tests.test_follower tests.test_wardrobe tests.test_package tests.test_armor tests.test_textures
 python -m ruff check --exclude dependencies,build,reference .
 ```
 
