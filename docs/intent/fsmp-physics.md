@@ -81,8 +81,9 @@ the source models are not committed or distributed.
   require FSMP for existing fixed-appearance followers or install it into the
   user's game automatically.
 
-This document records feasibility findings and the intended implementation;
-it does not mark FSMP support as released or implemented.
+The development implementation now includes retained component-specific chains,
+private XMLs, hidden skinned body collision proxies, wizard settings and native
+readback checks. See `docs/FSMP.md`. The stable release remains on `main`.
 
 ## Primary references
 

@@ -4,7 +4,7 @@ const state = {step:0, source:null, choices:null, defaults:null, job:null, impor
 const skills = ["OneHanded","TwoHanded","Marksman","Block","Smithing","HeavyArmor","LightArmor","Pickpocket","Lockpicking","Sneak","Alchemy","Speechcraft","Alteration","Conjuration","Destruction","Illusion","Restoration","Enchanting"];
 const skillLabels = ["片手武器","両手武器","弓術","防御","鍛冶","重装","軽装","スリ","開錠","隠密","錬金術","話術","変性","召喚","破壊","幻惑","回復","付呪"];
 const integers = new Set(["level","min_level","max_level","health","magicka","stamina","confidence","aggression","morality"]);
-const floats = new Set(["level_multiplier","height_scale","spawn_offset_x","spawn_offset_y"]);
+const floats = new Set(["level_multiplier","height_scale","spawn_offset_x","spawn_offset_y","physics_stiffness"]);
 function error(message="") {$('error').hidden=!message; $('error').textContent=message;}
 async function api(path, data) {
   if(path==='/api/catalog')data={...data,sex:$('sex').value};
@@ -13,6 +13,7 @@ async function api(path, data) {
 }
 function download(name, value) {const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"})); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function applySettings(settings) {
+  if(settings.physics_stiffness!==undefined&&!Array.from($('physics_stiffness').options).some(o=>o.value===String(settings.physics_stiffness)))$('physics_stiffness').add(new Option('指定値 '+settings.physics_stiffness,String(settings.physics_stiffness)));
   for(const [key,value] of Object.entries(settings)) {const input=$(key); if(!input)continue; if(input.type==='checkbox') input.checked=value; else input.value=String(value);}
   state.perks=new Map((settings.perks||[]).map(item=>[item.editor_id,item.rank])); state.spells=new Set(settings.spells||[]);
   state.fitArmors=new Set(settings.fit_armors||[]); $('fit-enabled').checked=state.fitArmors.size>0||settings.fit_mode==='all_official';
@@ -20,6 +21,7 @@ function applySettings(settings) {
   $('head-hide-face').checked=settings.head_defaults?.hide_face??false; $('head-hide-hair').checked=settings.head_defaults?.hide_hair??true; setupFitting();
   for(const key of skills) $('skill-'+key).value=settings.skills?.[key]??20;
   if(state.source)wardrobeLoad(state.source,settings);
+  state.physicsNodes=new Set(!state.source||settings.appearance_source_sha256===state.source.sha256?settings.physics_nodes||[]:[]); renderPhysics();
   updateLevel(); updateMarriage(); renderChoices();
 }
 function collect() {
@@ -35,6 +37,7 @@ function collect() {
   settings.head_defaults={hide_face:$('head-hide-face').checked,hide_hair:$('head-hide-hair').checked};
   settings.head_overrides=state.headOverrides||{};
   if(settings.fit_mode==='all_official')settings.fit_armors=[];
+  settings.physics_nodes=[...(state.physicsNodes||[])];
   if(settings.armor_support&&$('fit-enabled').checked&&settings.fit_mode==='selected'&&!settings.fit_armors.length)throw new Error('体型合わせする装備を選んでください'); return settings;
 }
 async function updateId() {
@@ -50,11 +53,24 @@ async function upload(file) {
     const response=await fetch('/api/source',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Filename':encodeURIComponent(file.name)},body:file});
     const result=await response.json(); if(!response.ok)throw new Error(result.error); state.source=result;
     wardrobeLoad(result,state.imported);
+    state.physicsNodes=new Set(state.imported?.appearance_source_sha256===result.sha256?state.imported.physics_nodes||[]:[]); renderPhysics();
     $('source-status').textContent=`${result.filename} · ${result.mesh_count}メッシュ · ${result.triangles.toLocaleString()}三角形`;
     if(!state.nameDirty&&!state.imported){$('npc_name').value=result.suggested_name; $('mod_name').value=result.suggested_name+'Follower'; await updateId();}
   }catch(e){state.source=null; error(e.message); $('source-status').textContent='読み込めませんでした';}
   finally{$('next').disabled=false;}
 }
+function renderPhysics(){
+  $('physics-panel').hidden=!$('physics_enabled').checked;
+  const target=$('physics-meshes');target.replaceChildren();
+  for(const part of state.source?.parts||[]){
+    const row=document.createElement('label');row.className='checkbox';
+    const input=document.createElement('input');input.type='checkbox';input.dataset.node=part.node;
+    input.checked=state.physicsNodes?.has(part.node)||false;
+    input.addEventListener('change',()=>{state.physicsNodes??=new Set();if(input.checked)state.physicsNodes.add(part.node);else state.physicsNodes.delete(part.node);});
+    row.append(input,document.createTextNode(part.name));target.append(row);
+  }
+}
+$('physics_enabled').addEventListener('change',renderPhysics);
 function fillSelect(id, choices, allowNone=false) {
   const selected=$(id).value||String(state.defaults[id]??''); $(id).replaceChildren();
   if(allowNone)$(id).add(new Option('なし',''));
@@ -142,7 +158,8 @@ function showStep(step) {
 function summarize(settings) {
   const voice=state.choices.voices.find(item=>item.id===settings.voice);
   const rows=[['アバター',state.source.filename],['NPC名',settings.npc_name],['MOD',settings.mod_name+' / '+settings.mod_id+'.esp'],['ボイス',voice?.label||settings.voice],['戦闘',settings.combat_class+' / '+settings.combat_style],['レベル',settings.level_mode==='player'?`プレイヤー×${settings.level_multiplier}（${settings.min_level}〜${settings.max_level}）`:String(settings.level)],['生存',{'protected':'保護','essential':'不死','mortal':'通常'}[settings.protection]],['体力 / マジカ / スタミナ',`${settings.health} / ${settings.magicka} / ${settings.stamina}${settings.auto_calculate?'（自動成長の補正に使用）':''}`],['Perk / 魔法',`${settings.perks.length} / ${settings.spells.length}`],['初期配置','ホワイトラン · キナレス聖堂']];
-  rows.push(['衣服',settings.armor_support?`${settings.appearance_parts.garments.length}品を着脱可能（初期装備${settings.appearance_parts.garments.filter(g=>g.equipped).length}品）`:'元の外観を固定']);
+  rows.push(['衣服',settings.armor_support?`${settings.appearance_parts.garments.length}品を着脱可能（初期装備${settings.appearance_parts.garments.filter(g=>g.equipped).length}品）`:'元の衣服を着脱しない']);
+  rows.push(['髪・布の物理演算',settings.physics_enabled?`FSMPを使用 · 硬さ${settings.physics_stiffness} · ${settings.physics_nodes.length?settings.physics_nodes.length+'メッシュを選択':'髪・衣服を自動選択'}`:'固定']);
   rows.push(['既存装備の体型合わせ',settings.fit_armors.length?settings.fit_armors.join('、'):'なし']);
   const dl=document.createElement('dl');for(const [title,value]of rows){const dt=document.createElement('dt');dt.textContent=title;const dd=document.createElement('dd');dd.textContent=value;dl.append(dt,dd);}$('summary').replaceChildren(dl);
 }

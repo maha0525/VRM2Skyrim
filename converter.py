@@ -80,7 +80,7 @@ def package(output, settings=None):
     mod = output / "mod"
     metadata = mod / settings.asset_dir
     metadata.mkdir(parents=True, exist_ok=True)
-    appearance_description = "Fixed original appearance; clothing is not removable."
+    appearance_description = "Original outfit stays together; clothing is not removable."
     wardrobe_help = ""
     if settings.armor_support:
         appearance_description = "Separate body, permanent underwear, fixed face/hair, and removable original garments."
@@ -162,7 +162,7 @@ Install this ZIP with Vortex or Mod Organizer 2. Enable {settings.plugin_name}.
 Restart Skyrim. Meet {settings.npc_name} inside the Temple of Kynareth in Whiterun.
 The standard 'Follow me. I need your help.' dialogue recruits this follower.
 Standard wait, dismiss and inventory dialogue use Skyrim's follower system.
-{('Headgear visibility uses SKSE64; launch Skyrim through skse64_loader.exe.' if settings.head_switch_enabled else 'No additional prerequisite MOD is required.')}
+{('Physics requires Faster HDT-SMP and matching SKSE64; launch through skse64_loader.exe.' if settings.physics_enabled else 'Headgear visibility uses SKSE64; launch Skyrim through skse64_loader.exe.' if settings.head_switch_enabled else 'No additional prerequisite MOD is required.')}
 
 To locate the placed follower using the console:
   help "{settings.prefix}FollowerREF" 4
@@ -174,7 +174,7 @@ The original VRM appearance uses a private race/skeleton.
 {appearance_description}
 {wardrobe_help}
 {fitting_help}
-Lip sync, blinking and hair physics are not included. Equipment supported by
+Lip sync and blinking are not included. {('Optional FSMP hair/cloth physics is enabled.' if settings.physics_enabled else 'Hair/cloth physics is disabled.')} Equipment supported by
 this build is listed above; the all-official option includes installed DLC and Creations.
 Ragdoll collision shapes/constraints still require fitting to the avatar.
 
@@ -239,6 +239,10 @@ def convert(source, game, blender, output, settings, progress=None):
             settings.appearance_heads = {'face': face, 'hair': hair}
             if not face:
                 raise ValueError('頭装備を合わせるため、顔のメッシュを分類してください')
+        if settings.physics_enabled:
+            if settings.physics_nodes and settings.appearance_source_sha256 not in ('', report['sha256']):
+                raise ValueError('物理演算のメッシュ選択は別のVRM用です。対象を選び直してください。')
+            settings.appearance_source_sha256 = report['sha256']
         settings.save(output / 'settings.json')
         from wardrobe import validate_source
         validate_source(settings, report)
@@ -267,6 +271,10 @@ def convert(source, game, blender, output, settings, progress=None):
         if settings.skin_partition_enabled and any(g['slot'] in (32, 33, 34, 37, 38) for g in settings.appearance_parts['garments']):
             stage('衣服に元の身体を保持')
             run_blender(blender, 'standard_clothing_blender.py', ['--output', output], output, 'Standard clothing')
+        if settings.physics_enabled:
+            stage('FSMPの髪・布物理設定')
+            from fsmp import build_physics
+            build_physics(output)
         stage("フォロワーと初期配置の作成")
         build_npc(Path(game) / "Data", output, settings, catalog)
         from head_visibility import write_head_assets

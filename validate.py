@@ -32,6 +32,9 @@ def validate(output, skeleton=None):
     output = Path(output).resolve()
     mod = output / "mod"
     settings = load_settings(output)
+    if settings.physics_enabled:
+        from fsmp import validate_physics
+        validate_physics(output)
     skeleton = mod / "meshes" / settings.asset_dir / "skeleton.nif"
     with NifFile(str(skeleton)) as reference:
         bone_set = set(reference.nodes)
@@ -51,6 +54,8 @@ def validate(output, skeleton=None):
             if nif.game != "SKYRIMSE":
                 raise ValueError(f"Wrong NIF target: {nif.game}")
             for shape in nif.shapes:
+                if settings.physics_enabled and shape.name == 'V2SCollision_Body':
+                    continue  # Checked separately by validate_physics, never rendered.
                 if part.get('retained_skin') and shape.name.startswith('V2SClothingSkin_'):
                     continue  # Validated against the partitioned original skin below, not counted twice.
                 source_shape = next((s for s in part.get('shapes', []) if s['name'] == shape.name), None)

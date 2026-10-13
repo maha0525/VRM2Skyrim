@@ -26,7 +26,7 @@ def main():
     bpy.ops.preferences.addon_enable(module='io_scene_nifly')
     rig = None
 
-    def load(path):
+    def load(path, clothing=False):
         nonlocal rig
         before = set(bpy.context.scene.objects)
         bpy.context.view_layer.objects.active = None
@@ -35,16 +35,23 @@ def main():
                                    import_shapekeys=False, import_collisions=False)
         imported = [o for o in bpy.context.scene.objects if o not in before]
         armature = next(o for o in imported if o.type == 'ARMATURE')
+        imported_rigs = [o for o in imported if o.type == 'ARMATURE']
         meshes = [o for o in imported if o.type == 'MESH' and any(m.type == 'ARMATURE' for m in o.modifiers)]
+        for obj in list(meshes):
+            if (obj.name.startswith('V2SCollision_Body') or
+                    (clothing and obj.name.startswith('V2SClothingSkin_'))):
+                meshes.remove(obj)
+                bpy.data.objects.remove(obj, do_unlink=True)
         if rig is None:
             rig = armature
         else:
             for obj in meshes:
+                owner = next(m.object for m in obj.modifiers if m.type == 'ARMATURE')
                 for group in obj.vertex_groups:
                     if group.name.startswith('SBP_'):
                         continue
                     if group.name not in rig.data.bones or not np.allclose(
-                            np.asarray(armature.data.bones[group.name].matrix_local),
+                            np.asarray(owner.data.bones[group.name].matrix_local),
                             np.asarray(rig.data.bones[group.name].matrix_local), atol=.001):
                         raise ValueError('Standard clothing skin has a different bind pose: '+group.name)
                 world = obj.matrix_world.copy()
@@ -53,7 +60,9 @@ def main():
                 for modifier in obj.modifiers:
                     if modifier.type == 'ARMATURE':
                         modifier.object = rig
-            bpy.data.objects.remove(armature, do_unlink=True)
+            for obj in imported_rigs:
+                if obj != rig:
+                    bpy.data.objects.remove(obj, do_unlink=True)
         return meshes
 
     # Complete original body rig contains fingers/toes omitted by a torso-only import.
@@ -74,7 +83,7 @@ def main():
     for part in manifest['components']:
         if part['role'] != 'garment' or part['slot'] not in (32, 33, 34, 37, 38):
             continue
-        clothing = load(root/part['file'])
+        clothing = load(root/part['file'], clothing=True)
         copies = []
         slots = part.get('slots', [part['slot']])
         sources = (['body.nif', 'hands.nif', 'feet.nif'] if part.get('item_kind') == 'full' and part['slot'] == 32

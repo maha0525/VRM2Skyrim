@@ -238,8 +238,59 @@ def main():
     transforms, custom_positions, segment_stats = preserved_transforms(
         source_positions, bone_names, source_parents, target_positions, CORE)
     propagate_pose(transforms, source_parents, source_owners, secondary_links)
+    physics_plan = {}
+    physics_bones = {}
+    physics_mesh_maps = {}
+    if settings.physics_enabled:
+        from physics_rig import plan_bones, selected_meshes, spring_nodes
+        selected_nodes = selected_meshes(settings, original_names, [o['v2s_source_node'] for o in meshes])
+        hints = spring_nodes(document)
+        if not settings.physics_nodes:
+            selected_nodes.update(o['v2s_source_node'] for o in meshes if any(
+                o.vertex_groups[g.group].name in hints and g.weight > .001
+                for v in o.data.vertices for g in v.groups))
+        influences = {}
+        mesh_components = {}
+        fixed_bones = set()
+        for obj in meshes:
+            component = obj['v2s_part']
+            if not settings.armor_support:
+                component = ('appearance_hair' if 'hair' in original_names[obj['v2s_source_node']].lower()
+                             else 'appearance_cloth')
+            mesh_components[obj['v2s_source_node']] = component
+            weights = (influences.setdefault(component, set())
+                       if obj['v2s_source_node'] in selected_nodes else fixed_bones)
+            for vertex in obj.data.vertices:
+                weights.update(obj.vertex_groups[g.group].name for g in vertex.groups if g.weight > .001)
+        for component, weighted in influences.items():
+            # Split equipment can share source bones. Give each equipped
+            # component its own copy rather than two physics systems writing
+            # the same joint, or freezing a shared cloth chain.
+            physics_plan = plan_bones(source_parents, direct, {component: weighted},
+                                      settings.mod_id+'|'+component, hints, fixed_bones,
+                                      {p['id'] for p in output_parts if p['role'] == 'garment'} | {'appearance_cloth'})
+            for node in selected_nodes:
+                if mesh_components[node] == component:
+                    physics_mesh_maps[node] = {n: i['name'] for n, i in physics_plan.items()}
+            for rig in source_rigs:
+                for bone in rig.data.bones:
+                    if bone.name not in physics_plan:
+                        continue
+                    info = physics_plan[bone.name]
+                    value = np.asarray(Matrix(transforms[bone.name].tolist()) @ orient @ rig.matrix_world @ bone.matrix_local)
+                    u, _, vt = np.linalg.svd(value[:3, :3])
+                    rotation = u @ vt
+                    if np.linalg.det(rotation) < 0:
+                        raise ValueError(f'Reflected physics bone: {bone.name}')
+                    value[:3, :3] = rotation
+                    physics_bones[info['name']] = {**info, 'source': bone.name, 'label': source_labels[bone.name],
+                                                 'matrix': value.tolist()}
+        if not any(i['dynamic'] for i in physics_bones.values()):
+            raise ValueError('選んだメッシュに揺らせる独立した骨がありません。髪・布のメッシュを選び直してください。')
+        LOG.info('FSMP: preserving %s secondary bones, %s dynamic', len(physics_bones),
+                 sum(i['dynamic'] for i in physics_bones.values()))
     custom_path = output / "mod/meshes" / settings.asset_dir / "skeleton.nif"
-    skeleton_report = create_skeleton(args.skeleton, custom_path, custom_positions)
+    skeleton_report = create_skeleton(args.skeleton, custom_path, custom_positions, physics_bones)
     save_report(skeleton_report, output)
     bpy.data.objects.remove(target_rig, do_unlink=True)
     bpy.context.view_layer.objects.active = None
@@ -292,6 +343,7 @@ def main():
     unweighted = {}
     for obj in meshes:
         LOG.info("Posing without stretch: %s (%s vertices)", obj.name, len(obj.data.vertices))
+        mesh_mapping = {**mapping, **physics_mesh_maps.get(obj['v2s_source_node'], {})}
         vertices = np.empty(len(obj.data.vertices) * 3, dtype=np.float64)
         obj.data.vertices.foreach_get("co", vertices)
         vertices = vertices.reshape((-1, 3))
@@ -319,7 +371,7 @@ def main():
             values = np.array([weight for _, weight in pairs])
             matrix = np.asarray(transforms[name])
             fitted[indices] += (points[indices] @ matrix[:3, :3].T + matrix[:3, 3]) * values[:, None]
-            target_name = mapping[name]
+            target_name = mesh_mapping[name]
             for index, weight in pairs:
                 target_weights[index][target_name] = target_weights[index].get(target_name, 0) + weight
         obj.parent = None
@@ -387,6 +439,7 @@ def main():
     (output / "conversion.json").write_text(json.dumps({
         "source_sha256": source_hash, "bone_mapping": mapping, "preserved_segment_lengths": segment_stats,
         "source_node_names": original_names,
+        "physics_mesh_mappings": physics_mesh_maps,
         "secondary_rigs": secondary_report, "secondary_bone_links": secondary_links,
         "pose_changes_are_rigid": True,
         "mesh_parts": [{"name": obj.name, "vertices": len(obj.data.vertices)} for obj in meshes],

@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import re
 
-VERSION = "0.8.1"
+VERSION = "0.9.0-dev"
 
 
 def identifier(name):
@@ -59,6 +59,9 @@ class FollowerSettings:
     head_defaults: dict = field(default_factory=lambda: {'hide_face': False, 'hide_hair': True})
     head_overrides: dict = field(default_factory=dict)
     appearance_heads: dict = field(default_factory=dict)
+    physics_enabled: bool = False
+    physics_nodes: list = field(default_factory=list)  # [] selects assigned hair/clothing automatically
+    physics_stiffness: float = 1.0
 
     def __post_init__(self):
         if not isinstance(self.mod_id, str) or not isinstance(self.author, str):
@@ -100,9 +103,16 @@ class FollowerSettings:
                 raise ValueError("Perks require editor_id and a zero-based integer rank")
         if any(not isinstance(spell, str) for spell in self.spells):
             raise ValueError("Spell IDs must be strings")
-        for name in ("auto_calculate", "marriage", "render_previews", "armor_support"):
+        for name in ("auto_calculate", "marriage", "render_previews", "armor_support", "physics_enabled"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be true or false")
+        if (not isinstance(self.physics_nodes, list) or
+                any(type(n) is not int or n < 0 for n in self.physics_nodes) or
+                len(set(self.physics_nodes)) != len(self.physics_nodes)):
+            raise ValueError('Physics mesh nodes must be distinct nonnegative integers')
+        if (type(self.physics_stiffness) not in (int, float) or
+                not math.isfinite(self.physics_stiffness) or not .1 <= self.physics_stiffness <= 5):
+            raise ValueError('Physics stiffness must be between 0.1 and 5')
         if not isinstance(self.appearance_parts, dict) or not isinstance(self.appearance_source_sha256, str):
             raise ValueError("Invalid appearance classification")
         if self.armor_support:

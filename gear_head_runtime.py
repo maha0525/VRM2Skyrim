@@ -106,6 +106,8 @@ def validate_head_models(output, settings):
         result = Counter()
         with NifFile(str(path)) as nif:
             for shape in nif.shapes:
+                if settings.physics_enabled and shape.name == 'V2SCollision_Body':
+                    continue  # Physics-only body; validated by the FSMP readback.
                 digest = hashlib.sha256()
                 for value in (shape.verts, shape.tris, shape.uvs, shape.normals, matrix(shape.transform)):
                     digest.update(np.asarray(value).tobytes())

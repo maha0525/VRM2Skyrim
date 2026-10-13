@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--hide-hair', action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument('--keep-clothes', action='store_true')
     parser.add_argument('--head-closeup', action='store_true')
+    parser.add_argument('--physics-frame', type=int)
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
     output = args.output.resolve()
     settings = load_settings(output)
@@ -112,6 +113,9 @@ def main():
                                    reference_skel=str(skel), import_animations=False,
                                    import_shapekeys=False, import_collisions=False)
         imported = [obj for obj in bpy.context.scene.objects if obj not in existing]
+        for obj in imported:
+            if obj.type == 'MESH' and obj.name.startswith('V2SCollision_Body'):
+                obj.hide_render = True
         if settings.armor_support:
             import re
             for obj in imported:
@@ -208,6 +212,13 @@ def main():
             if obj.parent is None:
                 obj.parent = weapon
     # Scale the whole hierarchy for lighting; keep imported bone bind transforms.
+    physics_sample = None
+    if args.physics_frame is not None:
+        sample = json.loads((output/'physics-preview.json').read_text(encoding='utf8'))['frames'][str(args.physics_frame)]
+        physics_sample = sample
+        logging.info('Physics preview rig %s: %s matched bones; deform flags %s', rig.name,
+                     len(set(sample) & set(rig.pose.bones.keys())),
+                     [(b.name, b.use_deform) for b in rig.data.bones if b.name in sample][:4])
     roots = [obj for obj in bpy.context.scene.objects if obj.parent is None]
     parent = bpy.data.objects.new("Preview Units", None)
     bpy.context.scene.collection.objects.link(parent)
@@ -255,8 +266,17 @@ def main():
         light.data.size = size
         aim(light, (0, 0, 0.8))
     prefix = args.animation if wardrobe == "initial" else "wardrobe-" + wardrobe.replace(":", "-") + "-" + args.animation
+    if args.physics_frame is not None:
+        prefix = 'physics-'+str(args.physics_frame)
     for frame in frames:
         scene.frame_set(frame)
+        if physics_sample is not None:
+            for bone in rig.pose.bones:
+                if bone.name in physics_sample:
+                    # Physics matrices are in unscaled game space; preview
+                    # hierarchy scaling is a lighting-only transform.
+                    bone.matrix = Matrix(physics_sample[bone.name]) @ bone.bone.matrix_local
+                    bpy.context.view_layer.update()
         if weapon is not None:
             hand = rig.pose.bones["NPC R Hand [RHnd]"]
             # The mesh importer omits unweighted attachment bones. Recover the

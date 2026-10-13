@@ -197,6 +197,7 @@ class WizardApplication:
         signature = json.dumps(dict(source=self.source_reports[source_id]['sha256'],
                          parts=settings.appearance_parts, heads=settings.appearance_heads, sex=settings.sex,
                          profile=settings.fit_source, height=settings.height_scale, armor=catalog.key(armor),
+                         physics=(settings.physics_enabled, settings.physics_nodes, settings.physics_stiffness),
                          fitting_schema='native-headwear-and-wardrobe-2'), sort_keys=True)
         key = hashlib.sha256(signature.encode()).hexdigest()[:24]
         output = self.head_preview_outputs.get(key, self.workspace/'head-previews'/key)

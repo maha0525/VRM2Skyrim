@@ -43,7 +43,7 @@ def set_children(file, node, ids):
     nifly.setNodeChildren(file._handle, node.id, buf, len(ids))
 
 
-def create_skeleton(source, destination, positions):
+def create_skeleton(source, destination, positions, extra_bones=None):
     """positions is a dict of original bone names to desired global joint positions.
 
     The unanimated proxy transform P satisfies P @ V = C, where V is the
@@ -89,6 +89,21 @@ def create_skeleton(source, destination, positions):
         # Remove original links and the temporary links added by add_node.
         for name, node in original.items():
             set_children(file, node, [replacement.get(index, index) for index in original_children[name]])
+        extra_bones = extra_bones or {}
+        added = {}
+
+        def add_extra(name):
+            if name in added:
+                return added[name]
+            info = extra_bones[name]
+            parent = info['parent']
+            parent_node = add_extra(parent) if parent in extra_bones else original[parent]
+            parent_global = np.asarray(extra_bones[parent]['matrix']) if parent in extra_bones else desired[parent]
+            added[name] = file.add_node(name, rigid_buffer(np.linalg.inv(parent_global) @ info['matrix']), parent_node)
+            return added[name]
+
+        for name in extra_bones:
+            add_extra(name)
         file.filepath = str(destination)
         file.save()
     errors = {}
@@ -102,11 +117,15 @@ def create_skeleton(source, destination, positions):
             if not np.allclose(matrix(file.nodes[name].transform), local[name], atol=1e-5):
                 raise ValueError(f"Animation-controlled transform changed: {name}")
         node_count = len(file.nodes)
+        for name, info in extra_bones.items():
+            if not np.allclose(matrix(file.nodes[name].global_transform), info['matrix'], atol=5e-4):
+                raise ValueError(f'Physics bone transform changed: {name}')
     if errors:
         raise ValueError(f"Custom skeleton hierarchy mismatch: {errors}")
     report = {"source": str(source), "skeleton": str(destination), "nodes": node_count,
               "proxy_offsets": offsets, "joint_positions": {key: list(value) for key, value in positions.items()},
               "animation_local_transforms_unchanged": True, "bone_scale": 1.0,
+              "physics_bones": extra_bones,
               "game_verified": False, "ragdoll_fit_verified": False}
     logging.info("Custom skeleton: %s nodes, %s rigid offsets", node_count, len(offsets))
     return report
