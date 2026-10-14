@@ -11,7 +11,7 @@ from head_visibility import HEAD_COVER_ID, configure_native_head, head_records
 from equipment_runtime import runtime_records, vmad, write_runtime
 from plugin import Record, records, write_plugin
 from settings import SKILLS, load_settings
-from wardrobe import components, equip_slots, keyword_names, skin_components
+from wardrobe import components, equip_slots, keyword_names, skin_components, is_headwear
 
 NPC_ID = 0x01000800
 ARMOR_ID = 0x01000801
@@ -87,10 +87,15 @@ def appearance_records(settings, catalog):
             skin_mask |= mask
             continue
         keywords = [catalog.require(name, b"KYWD").form_id for name in keyword_names(part)]
+        worn_inventory_fields = inventory_fields
+        if is_headwear(part):
+            hat_template = catalog.require('ClothesFarmHat01', b'ARMO')
+            worn_inventory_fields = [(tag, data) for tag, data in hat_template.fields
+                                    if tag in {b'MOD2', b'MOD4', b'YNAM', b'ZNAM', b'ETYP'}]
         wear_mask = sum(1 << (slot - 30) for slot in equip_slots(part))
         result.append(Record(b"ARMO", armor_id, 0, [
             (b"EDID", text(item_name)), (b"OBND", bytes(12)), (b"FULL", text(part["name"])),
-            *inventory_fields,
+            *worn_inventory_fields,
             (b"BOD2", struct.pack("<II", wear_mask, armor_type)), (b"RNAM", uint(RACE_ID)),
             (b"KSIZ", uint(len(keywords))), (b"KWDA", b''.join(uint(k) for k in keywords)), (b"MODL", uint(addon_id)),
             (b"DATA", struct.pack("<If", part["value"], part["weight"])),

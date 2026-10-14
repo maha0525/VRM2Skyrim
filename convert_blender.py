@@ -391,7 +391,9 @@ def main():
                     groups[name] = obj.vertex_groups.new(name=name)
                 groups[name].add([index], weight / total, "REPLACE")
         slot = node_parts[obj["v2s_source_node"]]["slot"] if settings.armor_support else 32
-        obj.vertex_groups.new(name=f"SBP_{slot}_" + ("BODY" if slot == 32 else "BODYADDON")).add(list(range(len(points))), 1.0, "REPLACE")
+        from wardrobe import nif_partition
+        partition = nif_partition(slot)
+        obj.vertex_groups.new(name=f"SBP_{partition}_" + ("BODY" if slot == 32 else "BODYADDON")).add(list(range(len(points))), 1.0, "REPLACE")
         armature = obj.modifiers.new("Skyrim Skin", "ARMATURE")
         armature.object = target_rig
         obj.data.update()

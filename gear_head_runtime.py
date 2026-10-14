@@ -68,9 +68,13 @@ def head_skin_records(settings, skin, profile, fixed_addon):
             result.append(addon)
     for name, flag in (('FaceHidingEquipment', 'hide_face'), ('HairHidingEquipment', 'hide_hair')):
         ids = sorted({i['original_form_id'] for i in (profile or {}).get('equipment', [])
-                      if i.get(flag) and i.get('origin_plugin', 'Skyrim.esm').lower() == 'skyrim.esm'})
+                      if i.get(flag) and i.get('origin_plugin', 'Skyrim.esm').lower() == 'skyrim.esm'} |
+                     {0x01000811 + 2 * g.get('record_index', index)
+                      for index, g in enumerate(settings.appearance_parts['garments']) if g.get(flag, False)})
         result.append(Record(b'FLST', IDS[name], 0, [(b'EDID', (settings.prefix+name+'\0').encode()),
                                                   *[(b'LNAM', struct.pack('<I', n)) for n in ids]]))
+        logging.info('Head visibility %s: %s items, %s original headwear', flag, len(ids),
+                     sum(n >> 24 == 1 for n in ids))
     return result
 
 

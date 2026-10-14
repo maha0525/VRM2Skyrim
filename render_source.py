@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 from inspect_vrm import inspect, read_glb, write_glb  # noqa: E402
 from settings import load_settings  # noqa: E402
-from wardrobe import validate_source  # noqa: E402
+from wardrobe import validate_source, original_head_visibility  # noqa: E402
 
 
 def main():
@@ -29,9 +29,15 @@ def main():
     selected = set(parts["body"] + parts["underwear"] + parts["fixed"])
     if args.wardrobe not in ("all", "underwear") and args.wardrobe not in {"without:" + g["id"] for g in parts["garments"]}:
         raise ValueError("Unknown preview wardrobe state")
+    visible_garments = []
     for garment in parts["garments"]:
         if args.wardrobe != "underwear" and args.wardrobe != "without:" + garment["id"]:
             selected.update(garment["nodes"])
+            visible_garments.append(garment)
+    policy = original_head_visibility(visible_garments)
+    for part in ('face', 'hair'):
+        if policy['hide_' + part]:
+            selected.difference_update(settings.appearance_heads.get(part, []))
     document, binary = read_glb(args.source)
     for index, node in enumerate(document["nodes"]):
         node["name"] = f"VRMNode_{index:05}"

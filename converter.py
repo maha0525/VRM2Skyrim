@@ -106,7 +106,7 @@ Full outfit items occupy 32/33/37. Extended slots mean intentional coexistence.
 Underwear=52 and fixed face/hair=60 are reserved within this follower MOD.
 There is no script that removes clothes after an equip event.
 {'Converted existing equipment is listed below.' if settings.fitting_enabled else 'Existing Skyrim equipment has not been fitted in this build.'}
-Inventory/dropped-item previews use Skyrim's generic farm-clothing model;
+Inventory/dropped-item previews use Skyrim's generic farm hat for headwear and farm clothing for other items;
 the worn appearance uses the actual converted VRM garment meshes.
 
 To verify clothing changes on a test save, select the placed NPC in the console:

@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import re
 
-VERSION = "0.9.9-dev"
+VERSION = "0.10.0-dev"
 
 
 def identifier(name):
@@ -154,6 +154,13 @@ class FollowerSettings:
                 selected.extend(values)
             if len(set(selected)) != len(selected) or not set(selected).issubset(self.appearance_parts.get('fixed', [])):
                 raise ValueError('Face/hair must be distinct subsets of permanent meshes')
+        if self.armor_support:
+            from wardrobe import original_head_visibility
+            policy = original_head_visibility(self.appearance_parts['garments'])
+            for part in ('face', 'hair'):
+                if policy['hide_' + part] and not self.appearance_heads.get(part):
+                    label = '顔' if part == 'face' else '髪'
+                    raise ValueError(f'{label}を隠す頭装備には、別メッシュの{label}を分類してください')
 
     @property
     def fitting_enabled(self):
@@ -161,7 +168,9 @@ class FollowerSettings:
 
     @property
     def head_switch_enabled(self):
-        return self.fitting_enabled and bool(self.appearance_heads)
+        from wardrobe import original_head_visibility
+        own = self.armor_support and any(original_head_visibility(self.appearance_parts['garments']).values())
+        return bool(self.appearance_heads) and (self.fitting_enabled or own)
 
     @property
     def skin_partition_enabled(self):

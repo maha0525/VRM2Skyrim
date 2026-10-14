@@ -1,24 +1,25 @@
 "use strict";
-const wardrobeSlots=[32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,53,54,55,56,57,58,59];
-const wardrobeSlotNames={32:'胴',33:'手袋',34:'前腕',35:'首飾り',36:'指輪',37:'靴',38:'すね',39:'盾',40:'尻尾',41:'長い髪',42:'サークレット',43:'耳',44:'顔周り',45:'首周り',46:'マント',47:'バッグ',48:'その他',49:'下半身',53:'脚の追加パーツ',54:'タイツなど',55:'追加パーツ',56:'胴の追加パーツ',57:'肩周り',58:'腕の追加パーツ',59:'腕の追加パーツ'};
+const wardrobeSlots=[30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,53,54,55,56,57,58,59];
+const wardrobeSlotNames={30:'頭（帽子・兜）',31:'髪',32:'胴',33:'手袋',34:'前腕',35:'首飾り',36:'指輪',37:'靴',38:'すね',39:'盾',40:'尻尾',41:'長い髪',42:'サークレット',43:'耳',44:'顔周り',45:'首周り',46:'マント',47:'バッグ',48:'その他',49:'下半身',53:'脚の追加パーツ',54:'タイツなど',55:'追加パーツ',56:'胴の追加パーツ',57:'肩周り',58:'腕の追加パーツ',59:'腕の追加パーツ'};
 function wardrobeOccupiedSlots(slot,kind){return slot===32&&kind==='full'?[32,33,37]:[slot];}
 function allocateWardrobeSlots(){
   const used=new Set([...wardrobeState.garments.values()].filter(g=>g.slot_mode!=='auto'&&g.equipped).flatMap(g=>wardrobeOccupiedSlots(g.slot,wardrobeItemKind(g))));
   for(const g of wardrobeState.garments.values()){
     if(g.slot_mode!=='auto')continue;
-    const kind=wardrobeItemKind(g),primary={body:32,legs:32,full:32,hands:33,feet:37,cloak:46,backpack:47,accessory:48}[kind];
+    const kind=wardrobeItemKind(g),primary={head:30,body:32,legs:32,full:32,hands:33,feet:37,cloak:46,backpack:47,accessory:48}[kind];
     // A second torso item must not silently become a coexistence layer.
     g.slot=kind==='accessory'?[48,49,53,54,55,56,57,58,59,44,45].find(s=>!used.has(s))??48:primary;
     if(g.equipped)wardrobeOccupiedSlots(g.slot,kind).forEach(s=>used.add(s));
   }
 }
 
-const wardrobeKinds={body:'胴の衣装（上下まとめて）',legs:'下半身（胴装備と同じ32番）',full:'全身セット（胴・手袋・靴）',hands:'手袋',feet:'靴',cloak:'マント',backpack:'バッグ',accessory:'その他のアクセサリー'};
+const wardrobeKinds={head:'帽子・兜',body:'胴の衣装（上下まとめて）',legs:'下半身（胴装備と同じ32番）',full:'全身セット（胴・手袋・靴）',hands:'手袋',feet:'靴',cloak:'マント',backpack:'バッグ',accessory:'その他のアクセサリー'};
+function wardrobeHeadwear(g){return wardrobeItemKind(g)==='head'||[30,31,41,42,43].includes(g.slot);}
 function wardrobeSlotLabel(slot){return `${slot} · ${wardrobeSlotNames[slot]||'追加の装備枠'}`;}
-function wardrobeItemKind(g){if(g.item_kind)return g.item_kind;const n=g.name.toLowerCase();for(const [kind,pattern]of [['feet',/boot|shoe|loafer|sandal|靴|ブーツ|サンダル/],['hands',/glove|gauntlet|手袋|籠手/],['backpack',/backpack|リュック|バックパック/],['cloak',/cloak|cape|マント|ケープ/],['legs',/tights|stocking|skirt|pants|trouser|タイツ|スカート|ズボン/],['accessory',/accessor|ring|necklace|bracelet|earring|眼鏡|指輪|首飾り|アクセ/]])if(pattern.test(n))return kind;return 'body';}
+function wardrobeItemKind(g){if(g.item_kind)return g.item_kind;const n=g.name.toLowerCase();for(const [kind,pattern]of [['feet',/boot|shoe|loafer|sandal|靴|ブーツ|サンダル/],['head',/helmet|helm|hood|hat|(?:^|[_ .-])cap(?:$|[_ .-])|帽子|兜|フード/],['hands',/glove|gauntlet|手袋|籠手/],['backpack',/backpack|リュック|バックパック/],['cloak',/cloak|cape|マント|ケープ/],['legs',/tights|stocking|skirt|pants|trouser|タイツ|スカート|ズボン/],['accessory',/accessor|ring|necklace|bracelet|earring|眼鏡|指輪|首飾り|アクセ/]])if(pattern.test(n))return kind;return 'body';}
 const wardrobeState={nodes:new Map(),garments:new Map(),hash:'',sequence:0,preview:null,revision:0};
 const wardrobeRoles={body:'身体',underwear:'下着（無装備でも表示）',face:'顔（頭装備で切替）',hair:'髪（頭装備で切替）',fixed:'常時表示のアクセサリー',garment:'着脱する衣服'};
-function wardrobeEquipmentGroup(g){if(g.equipment_group)return g.equipment_group;const n=g.name.toLowerCase();if(/boot|shoe|loafer|sandal|靴|ブーツ|サンダル/.test(n))return 'feet';if(/glove|gauntlet|手袋|籠手/.test(n))return 'hands';if(/accessor|ring|necklace|bracelet|earring|backpack|cloak|cape|眼鏡|指輪|首飾り|アクセ|リュック|マント|ケープ/.test(n))return 'accessory';return 'body';}
+function wardrobeEquipmentGroup(g){if(g.equipment_group)return g.equipment_group;if(wardrobeHeadwear(g))return 'accessory';const n=g.name.toLowerCase();if(/boot|shoe|loafer|sandal|靴|ブーツ|サンダル/.test(n))return 'feet';if(/glove|gauntlet|手袋|籠手/.test(n))return 'hands';if(/accessor|ring|necklace|bracelet|earring|backpack|cloak|cape|眼鏡|指輪|首飾り|アクセ|リュック|マント|ケープ/.test(n))return 'accessory';return 'body';}
 function garmentDefaults(id,name,slot=32){return {id,name,nodes:[],slot,slot_mode:'auto',armor_type:'clothing',armor_rating:0,weight:0,value:0,equipped:true,item_kind:wardrobeItemKind({name})};}
 function wardrobeNativeGroups(){
   wardrobeState.garments.clear();const groups=new Map();
@@ -97,13 +98,16 @@ function renderWardrobe(){
     const count=[...wardrobeState.nodes.values()].filter(p=>p.role==='garment'&&p.group===id).length;
     const title=document.createElement('summary');title.textContent=`${g.name} · ${count}メッシュ${count?'':'（未使用）'}`;box.append(title);
     const grid=document.createElement('div');grid.className='grid three';
-    for(const [key,caption]of [['name','装備名'],['item_kind','部位・用途'],['slot','占有する装備枠'],['armor_type','防具の分類'],['armor_rating','防御力'],['weight','重量'],['value','価値'],['equipped','初期装備']]){
+    const fields=[['name','装備名'],['item_kind','部位・用途'],['slot','占有する装備枠'],['armor_type','防具の分類'],['armor_rating','防御力'],['weight','重量'],['value','価値'],['equipped','初期装備']];
+    if(wardrobeHeadwear(g))fields.push(['hide_hair','この頭装備を着けたら髪を隠す'],['hide_face','この頭装備を着けたら顔を隠す']);
+    const checkboxFields=['equipped','hide_face','hide_hair'];
+    for(const [key,caption]of fields){
       const label=document.createElement('label');label.textContent=caption;let input;
       if(['slot','armor_type','item_kind'].includes(key)){input=document.createElement('select');const entries=key==='slot'?[['auto',`用途から自動（${wardrobeSlotLabel(g.slot)}）`],...wardrobeSlots.map(s=>[s,wardrobeSlotLabel(s)])]:key==='item_kind'?Object.entries(wardrobeKinds):[['clothing','衣服（防具ではない）'],['light','軽装'],['heavy','重装']];for(const [v,text]of entries)input.add(new Option(text,v));input.value=key==='slot'?(g.slot_mode==='auto'?'auto':g.slot):key==='item_kind'?wardrobeItemKind(g):g[key];}
-      else {input=document.createElement('input');input.type=key==='name'?'text':key==='equipped'?'checkbox':'number';if(key==='equipped'){input.checked=g[key];label.className='checkbox';}else{input.value=g[key];if(key==='name')input.maxLength=128;else{input.min=0;input.max=key==='value'?2147483647:key==='weight'?1000:10000;input.step=key==='value'?1:.1;}}}
+      else {input=document.createElement('input');input.type=key==='name'?'text':checkboxFields.includes(key)?'checkbox':'number';if(checkboxFields.includes(key)){input.checked=!!g[key];label.className='checkbox';}else{input.value=g[key];if(key==='name')input.maxLength=128;else{input.min=0;input.max=key==='value'?2147483647:key==='weight'?1000:10000;input.step=key==='value'?1:.1;}}}
       input.dataset.field=key;input.setAttribute('aria-label',g.name+' '+caption);
-      input.onchange=()=>{if(key==='slot'){g.slot_mode=input.value==='auto'?'auto':'manual';if(g.slot_mode==='manual')g.slot=Number(input.value);}else g[key]=key==='equipped'?input.checked:['name','armor_type','equipment_group','item_kind'].includes(key)?input.value:Number(input.value);wardrobeClearPreview();if(['name','item_kind','slot','equipped'].includes(key))renderWardrobe();};label.append(input);grid.append(label);
-    }box.append(grid);const help=document.createElement('p');help.className='hint';help.textContent='同じ装備枠を使う品は、ゲームの標準処理で入れ替わります。胴＝32、手袋＝33、靴＝37。同時に着るシャツ・上着・スカート・タイツは胴の一品にまとめます。追加枠を選ぶと鎧と併用されます。52＝下着、60＝顔・髪は内部予約枠です。';box.append(help);garments.append(box);
+      input.onchange=()=>{if(key==='slot'){g.slot_mode=input.value==='auto'?'auto':'manual';if(g.slot_mode==='manual')g.slot=Number(input.value);}else g[key]=checkboxFields.includes(key)?input.checked:['name','armor_type','equipment_group','item_kind'].includes(key)?input.value:Number(input.value);allocateWardrobeSlots();if(!wardrobeHeadwear(g)){g.hide_face=false;g.hide_hair=false;}wardrobeClearPreview();if(['name','item_kind','slot','equipped'].includes(key))renderWardrobe();};label.append(input);grid.append(label);
+    }box.append(grid);const help=document.createElement('p');help.className='hint';help.textContent='同じ装備枠を使う品は、ゲームの標準処理で入れ替わります。頭＝30、胴＝32、手袋＝33、靴＝37。同時に着るシャツ・上着・スカート・タイツは胴の一品にまとめます。追加枠を選ぶと鎧と併用されます。52＝下着、60＝顔・髪は内部予約枠です。';box.append(help);if(wardrobeHeadwear(g)){const hint=document.createElement('p');hint.className='hint';hint.textContent='標準では元の顔・髪を残します。隠す場合は上の一覧で顔・髪を別メッシュとして分類してください。着脱時の切替にはSKSE64が必要です。帽子を外した状態の髪を新しく作る機能ではありません。';box.append(hint);}garments.append(box);
   }
   const preview=$('wardrobe-preview-state'), previous=preview.value;preview.replaceChildren(new Option('全ての服を着る','all'),new Option('服を外す（身体と下着）','underwear'));
   for(const g of wardrobeCollect().appearance_parts.garments)preview.add(new Option(g.name+'だけ外す','without:'+g.id));preview.value=[...preview.options].some(o=>o.value===previous)?previous:'all';

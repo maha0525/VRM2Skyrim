@@ -15,7 +15,7 @@ from scipy.spatial import cKDTree
 from plugin import records
 from settings import load_settings
 from build_npc import NPC_ID, RACE_ID
-from wardrobe import components, equip_slots, keyword_names, skin_components
+from wardrobe import components, equip_slots, keyword_names, skin_components, nif_partition
 from gear_head_runtime import head_variants, validate_head_models
 from head_visibility import validate_head_visibility
 from equipment_runtime import runtime_records, vmad, script_name, pex_strings, PROPERTIES
@@ -72,7 +72,7 @@ def validate(output, skeleton=None):
                 part_points.append(np.array(shape.verts))
                 if settings.armor_support and not {
                     partition.id for partition in shape.partitions
-                }.issubset(set(part.get("slots", [part["slot"]]))):
+                }.issubset({nif_partition(s) for s in part.get("slots", [part["slot"]])}):
                     raise ValueError(
                         f"NIF partition does not match component slot: {shape.name}"
                     )
@@ -260,6 +260,14 @@ def validate(output, skeleton=None):
         if {s.lower() for s in strings} & {b'unequipitem', b'setoutfit', b'removeitem', b'additem', b'queueninodeupdate'}:
             raise ValueError('Native wardrobe PEX still contains a scripted replacement/inventory mutation')
         fitting_profile = json.loads((output/'armor-fitting.json').read_text()) if settings.fitting_enabled else None
+        if settings.head_switch_enabled:
+            from gear_head_runtime import IDS
+            for name, flag in (('FaceHidingEquipment', 'hide_face'), ('HairHidingEquipment', 'hide_hair')):
+                actual = {struct.unpack('<I', v)[0] for v in by_id[IDS[name]].values(b'LNAM')}
+                own = {0x01000811 + 2 * g.get('record_index', i)
+                       for i, g in enumerate(settings.appearance_parts['garments']) if g.get(flag, False)}
+                if {v for v in actual if v >> 24 == 1} != own:
+                    raise ValueError('Original headwear visibility list differs from configured ARMO items')
         for expected in runtime_records(settings, profile=fitting_profile):
             if by_id[expected.form_id].fields != expected.fields:
                 raise ValueError('Wardrobe replacement group differs from its configured garments/equipment')

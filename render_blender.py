@@ -40,7 +40,7 @@ def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.preferences.addon_enable(module="io_scene_nifly")
     skel = output / "mod/meshes" / settings.asset_dir / "skeleton.nif"
-    from wardrobe import components
+    from wardrobe import components, original_head_visibility
     parts = components(settings)
     wardrobe = args.wardrobe
     if wardrobe.startswith("armor:"):
@@ -74,6 +74,10 @@ def main():
         parts = [p for p in parts if p['role'] != 'garment' or not (
             (wardrobe.startswith('armor:') and not args.keep_clothes) or wardrobe == 'underwear' or wardrobe == 'without:'+p['id'] or
             (wardrobe == 'initial' and not p['equipped']))]
+        policy = original_head_visibility([p for p in parts if p['role'] == 'garment'])
+        for name in ('face', 'hair'):
+            if policy['hide_' + name]:
+                parts = [p for p in parts if p['id'] != name]
     slot_priority = {}
     for part in parts:
         for slot in part.get("slots", [part["slot"]]):
