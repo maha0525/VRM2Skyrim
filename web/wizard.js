@@ -80,6 +80,12 @@ function fillSelect(id, choices, allowNone=false) {
 }
 function setupChoices(choices) {
   state.choices=choices;
+  for(const kind of ['perk','spell']){
+    const selector=$(kind+'-category'),previous=selector.value;
+    const available=new Set(choices[kind==='perk'?'perks':'spells'].flatMap(item=>item.categories||['other']));
+    selector.replaceChildren(new Option('すべて','all'),...(choices.categories||[]).filter(item=>available.has(item.id)).map(item=>new Option(item.label,item.id)));
+    selector.value=[...selector.options].some(item=>item.value===previous)?previous:'all';
+  }
   for(const [id,key] of [['voice','voices'],['combat_class','classes'],['combat_style','styles'],['weapon','weapons'],['ammunition','ammunition']])fillSelect(id,choices[key],['weapon','ammunition'].includes(id));
   if(state.imported&&state.importPending){applySettings(state.imported);state.importPending=false;}
   updateStyles();updateRoleDetails();
@@ -134,18 +140,20 @@ async function showArmorPatch(job) {
 }
 function selectedTags(kind) {
   const selected=kind==='perks'?state.perks.keys():state.spells; const target=$('selected-'+kind); target.replaceChildren();
-  for(const id of selected){const item=state.choices?.[kind].find(item=>item.id===id);const button=document.createElement('button'); button.type='button';button.textContent=(item?.label||id)+' ×';button.onclick=()=>{if(kind==='perks')state.perks.delete(id);else state.spells.delete(id);renderChoices();};target.append(button);}
+  for(const id of selected){const item=state.choices?.[kind].find(item=>item.id===id);const button=document.createElement('button'); button.type='button';button.textContent=(item?.label||id)+(item?.stage?`（${item.stage.index}/${item.stage.total}）`:'')+' ×';button.onclick=()=>{if(kind==='perks')state.perks.delete(id);else state.spells.delete(id);renderChoices();};target.append(button);}
 }
 function renderChoiceList(kind, term) {
   if(!state.choices)return; const target=$(kind);target.replaceChildren(); const q=term.toLowerCase();
-  const visible=state.choices[kind].filter(item=>(item.id+' '+item.label+' '+item.description).toLowerCase().includes(q)).slice(0,100);
+  const prefix=kind==='perks'?'perk':'spell',category=$(prefix+'-category').value;
+  const visible=state.choices[kind].filter(item=>(category==='all'||(item.categories||['other']).includes(category))&&(item.id+' '+item.label+' '+item.description).toLowerCase().includes(q)&&!(kind==='perks'&&item.ranks===0));
+  $(prefix+'-visible').textContent=visible.length+'件'+(visible.length?'':'。カテゴリや検索条件を変更してください。');
   for(const item of visible) {
     if(kind==='perks'&&item.ranks===0)continue;
     const label=document.createElement('label');label.className='choice'; const check=document.createElement('input');check.type='checkbox';check.dataset.recordId=item.id;check.checked=kind==='perks'?state.perks.has(item.id):state.spells.has(item.id);
-    const title=document.createElement('strong');title.textContent=item.label;label.append(check,title);
+    const title=document.createElement('strong');title.textContent=item.label+(item.stage?`（段階 ${item.stage.index}/${item.stage.total}）`:'');label.append(check,title);
     const desc=document.createElement('small');desc.textContent=item.id+(item.description?' · '+item.description:'');label.append(desc);
     check.onchange=()=>{if(kind==='perks'){if(check.checked)state.perks.set(item.id,0);else state.perks.delete(item.id);}else{if(check.checked)state.spells.add(item.id);else state.spells.delete(item.id);}renderChoices();};
-    if(kind==='perks'&&check.checked&&item.ranks>1){const rank=document.createElement('input');rank.type='number';rank.min='1';rank.max=String(item.ranks);rank.value=String(state.perks.get(item.id)+1);rank.setAttribute('aria-label',item.label+'のランク');rank.onchange=()=>state.perks.set(item.id,Number(rank.value)-1);label.append(rank);}
+    if(kind==='perks'&&check.checked&&(item.effect_ranks||[0]).length>1){const caption=document.createElement('span');caption.textContent='効果ランク';const rank=document.createElement('select');for(const value of item.effect_ranks)rank.add(new Option(String(value+1),String(value)));rank.value=String(state.perks.get(item.id));rank.setAttribute('aria-label',item.label+'の効果ランク');rank.onchange=()=>state.perks.set(item.id,Number(rank.value));label.append(caption,rank);}
     target.append(label);
   }
 }
@@ -240,7 +248,13 @@ async function refreshSavedResults(preferred=$('saved-job').value) {
 }
 async function init() {
   for(let i=0;i<skills.length;i++){const label=document.createElement('label');label.textContent=skillLabels[i];const input=document.createElement('input');input.id='skill-'+skills[i];input.type='number';input.min='0';input.max='100';input.value='20';label.append(input);$('skills').append(label);}
-  const env=await api('/api/environment');state.defaults=env.defaults;$('version').textContent='VRM2Skyrim '+env.version;$('game').value=env.game;$('blender').value=env.blender;applySettings(env.defaults);
+  const env=await api('/api/environment');
+  const expected=document.querySelector('meta[name="converter-version"]').content;
+  if(env.restart_required||(/^\d+\.\d+\./.test(env.version)&&env.version!==expected)){
+    $('next').disabled=true;$('create').disabled=true;$('source').disabled=true;
+    throw new Error(`ウィザードの再起動が必要です（起動中 ${env.version}／画面 ${expected}）。ウィザードを起動したターミナルで Ctrl+C を押し、Launch.cmd を開き直してから、このページを再読み込みしてください。設定JSONを保存済みなら再起動後に読み込めます。`);
+  }
+  state.defaults=env.defaults;$('version').textContent='VRM2Skyrim '+env.version;$('game').value=env.game;$('blender').value=env.blender;applySettings(env.defaults);
   initWardrobe();
   await refreshSavedResults();
   $('check-deployed-patch').onclick=checkDeployedPatch;
@@ -259,6 +273,7 @@ async function init() {
   $('mod_name').oninput=()=>{state.nameDirty=true;updateId();};$('npc_name').oninput=()=>state.nameDirty=true;$('mod_id').oninput=()=>state.idDirty=true;
   $('sex').onchange=async()=>{const sex=$('sex').value;$('voice').value=sex==='male'?'MaleNord':'FemaleEvenToned';updateMarriage();if(state.choices){try{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));const result=await api('/api/catalog',{game:$('game').value,blender:$('blender').value});if($('sex').value===sex){state.choices.armors=result.choices.armors;setupFitting();}}catch(e){error(e.message);}}};$('voice').onchange=updateMarriage;
   $('perk-search').oninput=renderChoices;$('spell-search').oninput=renderChoices;
+  $('perk-category').onchange=renderChoices;$('spell-category').onchange=renderChoices;
   $('export-settings').onclick=()=>download($('mod_id').value+'-settings.json',collect());
   $('import-settings').onchange=async()=>{try{state.imported=JSON.parse(await $('import-settings').files[0].text());state.importPending=!state.choices;applySettings(state.imported);state.nameDirty=true;state.idDirty=true;$('import-status').textContent='設定を読み込みました';}catch(e){error(e.message);}};
   $('again').onclick=async()=>{$('result').hidden=true;$('equipment-edit').hidden=true;$('wizard').hidden=false;state.source=null;state.imported=null;state.nameDirty=false;state.idDirty=false;$('source').value='';$('source-status').textContent='次のVRMを選択してください';wardrobeLoad(null);showStep(0);try{await refreshSavedResults(state.resultJob);}catch(e){error('前に作ったフォロワーの一覧を更新できませんでした：'+e.message);}};

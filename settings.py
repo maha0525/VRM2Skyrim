@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import re
 
-VERSION = "0.10.0-dev"
+VERSION = "0.10.2-dev"
 
 
 def identifier(name):

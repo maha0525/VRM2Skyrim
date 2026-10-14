@@ -5,9 +5,30 @@ import os
 from pathlib import Path
 import tempfile
 from nif_materials import culling_flags, lighting_flags_2, DOUBLE_SIDED
+from nif_materials import normalize_material_colors
 
 
 class MaterialTests(unittest.TestCase):
+    def test_vrm0_mtoon_uses_authoritative_srgb_color_once_and_preserves_opacity(self):
+        material = {'pbrMetallicRoughness': {'baseColorFactor': [.5, .25, 1, .375]}, 'alphaMode': 'BLEND'}
+        document = {'materials': [material], 'extensions': {'VRM': {'materialProperties': [
+            {'shader': 'VRM/MToon', 'vectorProperties': {'_Color': [.5, .25, 1, .375]},
+             'floatProperties': {'_BlendMode': 3}}]}}}
+        for _ in range(2):
+            normalize_material_colors(document)
+            color = material['pbrMetallicRoughness']['baseColorFactor']
+            self.assertAlmostEqual(color[0], .21404114048223255)
+            self.assertAlmostEqual(color[1], .05087608817155679)
+            self.assertEqual(color[2:], [1, .375])
+            self.assertTrue(material['extensions']['VRMC_materials_mtoon']['transparentWithZWrite'])
+
+    def test_linear_vrm1_and_non_mtoon_factors_are_not_gamma_converted(self):
+        for legacy in ([], [{'shader': 'VRM_USE_GLTFSHADER', 'vectorProperties': {'_Color': [.5, .5, .5, 1]}}]):
+            document = {'materials': [{'pbrMetallicRoughness': {'baseColorFactor': [.5, .5, .5, 1]}}],
+                        'extensions': {'VRM': {'materialProperties': legacy}}}
+            normalize_material_colors(document)
+            self.assertEqual(document['materials'][0]['pbrMetallicRoughness']['baseColorFactor'], [.5, .5, .5, 1])
+
     def test_split_primary_does_not_rename_other_material_to_its_base(self):
         names = ['VRMNode_00634.001', 'VRMNode_00634_Part000', 'VRMNode_00634_Part001']
         actual = [stable_shape_name(name) for name in names]
@@ -37,6 +58,30 @@ class MaterialTests(unittest.TestCase):
 @unittest.skipUnless(os.name=='nt' and (Path(__file__).resolve().parents[1]/'dependencies/io_scene_nifly').exists(),
                      'Local native PyNifly required')
 class NativeMaterialTests(unittest.TestCase):
+    def test_explicit_transparent_queues_survive_native_export_and_reapplication(self):
+        from custom_skeleton import NifFile, children
+        from nif_materials import apply_alpha, NO_SORTER
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'order.nif'
+            with NifFile() as nif:
+                nif.initialize('SKYRIMSE', str(path), 'BSFadeNode', 'MaterialTest')
+                for name in ('LateLashes', 'EarlyOverlay', 'OpaqueFace'):
+                    nif.createShapeFromData(name, [(0,0,0),(1,0,0),(0,1,0)], [(0,1,2)],
+                                            [(0,0),(1,0),(0,1)], [(0,0,1)]*3)
+                nif.save()
+            materials = {'LateLashes': {'alphaMode': 'BLEND', 'extras': {'V2S_render_queue': 4000}},
+                         'EarlyOverlay': {'alphaMode': 'BLEND', 'extras': {'V2S_render_queue': 3000}},
+                         'OpaqueFace': {'alphaMode': 'OPAQUE'}}
+            for _ in range(2):
+                apply_alpha(path, materials)
+                with NifFile(str(path)) as nif:
+                    names = {s.id:s.name for s in nif.shapes}
+                    self.assertEqual([names[n] for n in children(nif, nif.rootNode) if n in names],
+                                     ['OpaqueFace', 'EarlyOverlay', 'LateLashes'])
+                    for shape in nif.shapes:
+                        if shape.name != 'OpaqueFace':
+                            self.assertTrue(shape.alpha_property.properties.flags & NO_SORTER)
+
     def test_real_nif_readback_preserves_alpha_and_changes_only_culling_bit(self):
         from custom_skeleton import NifFile
         from nif_materials import apply_alpha

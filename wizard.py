@@ -22,6 +22,19 @@ from settings import FollowerSettings, VERSION
 from wardrobe import validate_source
 
 
+def source_fingerprint():
+    paths = sorted(ROOT.glob('*.py')) + sorted((ROOT/'web').glob('*'))
+    digest = hashlib.sha256()
+    for path in paths:
+        if path.is_file():
+            digest.update(path.name.encode())
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+BOOT_FINGERPRINT = source_fingerprint()
+
+
 class WizardApplication:
     def __init__(self, workspace=None):
         self.workspace = Path(workspace or ROOT / "build/wizard").resolve()
@@ -332,6 +345,7 @@ def handler_for(app):
             self.send_header("Content-Type", mimetypes.guess_type(path.name)[0] or "application/octet-stream")
             self.send_header("Content-Length", str(len(blob)))
             self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Cache-Control", "no-store")
             if attachment:
                 self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
             self.end_headers()
@@ -343,7 +357,8 @@ def handler_for(app):
                 url = urlparse(self.path)
                 if url.path == "/api/environment":
                     return self.reply({"game": str(find_game() or ""), "blender": str(find_blender() or ""),
-                                       "defaults": asdict(FollowerSettings()), "version": VERSION})
+                                       "defaults": asdict(FollowerSettings()), "version": VERSION,
+                                       "restart_required": source_fingerprint() != BOOT_FINGERPRINT})
                 if url.path == '/api/jobs':
                     with app.lock:
                         return self.reply({'jobs': [dict(job) for job in app.jobs.values()
@@ -380,6 +395,10 @@ def handler_for(app):
         def do_POST(self):
             try:
                 self.trusted()
+                if source_fingerprint() != BOOT_FINGERPRINT:
+                    logging.warning('Wizard sources changed after startup; refusing mixed-version request')
+                    return self.reply({'error': '更新を反映するため、ウィザードのターミナルで Ctrl+C を押し、Launch.cmd を開き直してください。',
+                                       'restart_required': True}, 409)
                 size = int(self.headers.get("Content-Length", "0"))
                 limit = 512 * 1024 * 1024 if self.path in ('/api/source', '/api/equipment-edit') else 1024 * 1024
                 if not 0 < size <= limit:

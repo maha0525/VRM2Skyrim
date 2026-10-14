@@ -11,7 +11,7 @@ from PIL import Image
 
 from dds import texture_format, validate_dds
 from settings import FollowerSettings
-from textures import convert_textures
+from textures import bake_base_color, convert_textures
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,6 +32,18 @@ def fixture(width, height, dxgi=98, mips=1, faces=1):
 
 
 class DDSContractTests(unittest.TestCase):
+    def test_material_tint_uses_linear_rgb_and_preserves_alpha(self):
+        source = Image.new('RGBA', (2, 1))
+        source.putdata([(255, 128, 64, 72), (128, 255, 200, 0)])
+        self.assertEqual(list(bake_base_color(source, [1, 1, 1]).getdata()), list(source.getdata()))
+        self.assertEqual(list(bake_base_color(source, [0, 0, 0]).getdata()), [(0, 0, 0, 72), (0, 0, 0, 0)])
+        # Half linear intensity is brighter than multiplying the encoded byte by .5.
+        self.assertEqual(bake_base_color(source, [.5, .5, .5]).getpixel((0, 0)), (188, 92, 44, 72))
+        self.assertEqual(source.getpixel((0, 0)), (255, 128, 64, 72))
+        for invalid in ([1, 1], [1, 1, float('nan')], [1, -1, 1], [1, 2, 1]):
+            with self.assertRaisesRegex(ValueError, 'factor'):
+                bake_base_color(source, invalid)
+
     def test_small_and_unaligned_images_keep_their_dimensions_without_compression(self):
         for size in [(1, 1), (2, 2), (4, 2), (6, 5), (1025, 1024)]:
             self.assertEqual(texture_format(size), 'R8G8B8A8_UNORM')
@@ -89,6 +101,35 @@ class DDSContractTests(unittest.TestCase):
 @unittest.skipUnless(os.name == 'nt' and (ROOT / 'dependencies/texconv.exe').is_file(),
                      'Pinned Windows texconv required')
 class NativeTextureTests(unittest.TestCase):
+    def test_material_bakes_survive_dds_and_reconversion_without_changing_source_pngs(self):
+        native_temp = ROOT / 'build/native-texture-tests'
+        native_temp.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=native_temp) as directory:
+            output = Path(directory)
+            sources = output / 'texture-sources'
+            sources.mkdir()
+            settings = FollowerSettings(mod_id='TintContract')
+            settings.save(output / 'settings.json')
+            original = Image.new('RGBA', (2, 2))
+            original.putdata([(255, 255, 255, 72), (128, 255, 64, 0),
+                              (32, 200, 90, 255), (200, 0, 255, 128)])
+            manifest, hashes = [], {}
+            for index, factor in enumerate(([0, 0, 0], [.42578125, .2890625, .421875119], [1, 1, 1])):
+                png = sources / f'shared_{index}.png'
+                original.save(png)
+                hashes[png] = hashlib.sha256(png.read_bytes()).hexdigest()
+                manifest.append({'png': str(png), 'relative': f'textures/{settings.asset_dir}/{png.stem}.dds',
+                                 'base_color_factor': factor})
+            (output / 'textures.json').write_text(json.dumps(manifest), encoding='utf8')
+            for _ in range(2):
+                convert_textures(output)
+                for entry in manifest:
+                    with Image.open(output / 'mod' / entry['relative']) as decoded:
+                        self.assertEqual(decoded.convert('RGBA').tobytes(),
+                                         bake_base_color(original, entry['base_color_factor']).tobytes())
+                for png, digest in hashes.items():
+                    self.assertEqual(hashlib.sha256(png.read_bytes()).hexdigest(), digest)
+
     def test_actual_pipeline_preserves_tiny_pixels_alpha_and_source_files(self):
         native_temp = ROOT / 'build/native-texture-tests'
         native_temp.mkdir(parents=True, exist_ok=True)

@@ -2,6 +2,21 @@
 
 ## User intent
 
+### 2026-10-15 recentering precision
+
+Aifi's 204 secondary bones exposed a native float32 bind rotation error:
+singular values 1.0000299, 1.00002964, 1.00001886. FSMP recentering incorrectly
+passed this existing bind through the strict rigid-offset constructor.
+Keep native rotation and scale buffers exactly; recenter by translation only
+and compensate skin-bind translations. Reject rotation/scale target changes.
+Verify unchanged skin products, descendants and repeated-build idempotence;
+reproduce using all six Spring meshes of the supplied Aifi VRM.
+The full pipeline also exposed the sleeve contact proxy being included in
+source appearance comparison and triangle counts. Exclude both named hidden
+proxies only after validate_physics verifies their flags, skin binds, ownership
+and XML. The rendered avatar retains all 113,125 source triangles and its
+maximum source vertex distance is 0.000032 Skyrim units.
+
 Keep the released converter stable on `main` (currently 0.8.1). Develop hair and cloth
 physics on `codex/fsmp-physics`. Physics must be optional in the wizard;
 generated physics-enabled followers use [Faster HDT-SMP](https://www.nexusmods.com/skyrimspecialedition/mods/57339)

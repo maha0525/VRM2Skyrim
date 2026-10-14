@@ -42,6 +42,11 @@ def main():
     skel = output / "mod/meshes" / settings.asset_dir / "skeleton.nif"
     from wardrobe import components, original_head_visibility
     parts = components(settings)
+    manifest = json.loads((output/'appearance.json').read_text(encoding='utf8'))['components']
+    for part in parts:
+        original = next((p for p in manifest if p['id'] == part['id']), None)
+        if original:
+            part['shapes'] = original['shapes']
     wardrobe = args.wardrobe
     if wardrobe.startswith("armor:"):
         fitting = json.loads((output / "armor-fitting.json").read_text())
@@ -117,6 +122,13 @@ def main():
                                    reference_skel=str(skel), import_animations=False,
                                    import_shapekeys=False, import_collisions=False)
         imported = [obj for obj in bpy.context.scene.objects if obj not in existing]
+        for obj in imported:
+            if obj.type == 'MESH':
+                policy = next((p.get('material_policy') for p in part.get('shapes', []) if p['name'] == obj.name), None)
+                if policy is not None:
+                    for material in obj.data.materials:
+                        if material:
+                            material['V2S_Preview_Policy'] = json.dumps(policy)
         for obj in imported:
             if obj.type == 'MESH' and obj.name.startswith('V2SCollision_'):
                 obj.hide_render = True
@@ -289,7 +301,8 @@ def main():
                                    @ hand.bone.matrix_local.inverted() @ weapon_rest)
             bpy.context.view_layer.update()
         scene.render.filepath = str(previews / f"{prefix}-{frame:02}.png")
-        bpy.ops.render.render(write_still=True)
+        from blender_meshes import render_material_queues
+        render_material_queues(scene)
     if weapon is not None:
         scene.frame_set(10)
         hand = rig.pose.bones["NPC R Hand [RHnd]"]
@@ -301,7 +314,7 @@ def main():
         camera.data.ortho_scale = .32
         aim(camera, center)
         scene.render.filepath = str(previews / ("attack-hand-10.png" if wardrobe == "initial" else prefix + "-hand-10.png"))
-        bpy.ops.render.render(write_still=True)
+        render_material_queues(scene)
     (previews / f"{prefix}.json").write_text(json.dumps({
         "nifs": nifs, "animation": args.animation, "frames": frames, "wardrobe": wardrobe,
         "meshes": [obj.name for obj in meshes], "game_verified": False,

@@ -39,6 +39,8 @@ def main():
         if policy['hide_' + part]:
             selected.difference_update(settings.appearance_heads.get(part, []))
     document, binary = read_glb(args.source)
+    from nif_materials import normalize_material_colors
+    normalize_material_colors(document)
     for index, node in enumerate(document["nodes"]):
         node["name"] = f"VRMNode_{index:05}"
     for index, material in enumerate(document.get('materials', [])):
@@ -54,6 +56,7 @@ def main():
     from blender_meshes import preview_face_culling
     for material in bpy.data.materials:
         info = source_materials.get(material.name, {})
+        material['V2S_Preview_Policy'] = json.dumps(info)
         preview_face_culling(material, info.get('doubleSided', False))
     bounds = []
     for obj in meshes:
@@ -89,7 +92,8 @@ def main():
         camera.location = center + Vector((0, sign * height * 3, height * .05))
         camera.rotation_euler = (center - camera.location).to_track_quat("-Z", "Y").to_euler()
         scene.render.filepath = str(output / (side + ".png"))
-        bpy.ops.render.render(write_still=True)
+        from blender_meshes import render_material_queues
+        render_material_queues(scene)
     (output / "preview.json").write_text(json.dumps({"source_nodes": sorted(selected), "wardrobe": args.wardrobe,
                                                     "kind": "source_classification", "game_verified": False}), encoding="utf8")
 

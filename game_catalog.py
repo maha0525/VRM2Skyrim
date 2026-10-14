@@ -8,7 +8,8 @@ from bsa import BSA
 from settings import SKILLS
 
 KINDS = {b"NPC_", b"ARMO", b"ARMA", b"RACE", b"FACT", b"VTYP", b"WEAP", b"PACK",
-         b"CLAS", b"CSTY", b"PERK", b"SPEL", b"FLST", b"CELL", b"REFR", b"AMMO", b"KYWD", b'BOOK'}
+         b"CLAS", b"CSTY", b"PERK", b"SPEL", b"FLST", b"CELL", b"REFR", b"AMMO", b"KYWD", b'BOOK',
+         b'AVIF', b'MGEF'}
 
 
 def castable_spell(record):
@@ -21,6 +22,14 @@ def castable_spell(record):
 
 
 CLASS_LABELS = {'Blade': 'ブレイズの戦士（デルフィンのクラス）'}
+SKILL_LABELS = dict(zip(SKILLS, ('片手武器', '両手武器', '弓術', '防御', '鍛冶', '重装', '軽装',
+                                'スリ', '開錠', '隠密', '錬金術', '話術', '変性', '召喚', '破壊',
+                                '幻惑', '回復', '付呪')))
+
+
+def effect_ranks(record):
+    """PRKE ranks that actually have effects; DATA Num Ranks alone is not enough."""
+    return sorted({value[1] for value in record.values(b'PRKE') if len(value) >= 3}) or [0]
 
 
 def class_growth(record):
@@ -162,6 +171,8 @@ class GameCatalog:
             ranks = record.values(b"DATA")[0][2]
             if perk["rank"] >= ranks:
                 raise ValueError(f"Perk rank exceeds available ranks: {perk['editor_id']} (0–{ranks - 1})")
+            if perk['rank'] not in effect_ranks(record):
+                raise ValueError(f"このPerkの指定ランクに効果がありません: {perk['editor_id']}")
         for spell in settings.spells:
             self.require(spell, b"SPEL")
         if settings.fit_armors:
@@ -171,6 +182,46 @@ class GameCatalog:
             allowed = {r.form_id for r in official_choices(equipment, settings.sex)}
             if any(equipment.require(key, b'ARMO').form_id not in allowed for key in settings.fit_armors):
                 raise ValueError('人型向けの公式装備を選んでください')
+
+    def perk_categories(self):
+        """Follow AVIF PNAM trees and PERK NNAM chains, not translated names."""
+        result, stages = {}, {}
+        for skill, label in SKILL_LABELS.items():
+            tree = self.by_editor_id.get('AVMysticism' if skill == 'Illusion' else 'AV'+skill)
+            if not tree:
+                continue
+            for value in tree.values(b'PNAM'):
+                if len(value) != 4:
+                    continue
+                chain, seen = [], set()
+                record = self.by_form_id.get(struct.unpack('<I', value)[0])
+                while record and record.kind == b'PERK' and record.form_id not in seen:
+                    seen.add(record.form_id)
+                    chain.append(record)
+                    result.setdefault(record.form_id, set()).add(skill)
+                    next_ = record.values(b'NNAM')
+                    record = self.by_form_id.get(struct.unpack('<I', next_[0])[0]) if next_ else None
+                if len(chain) > 1:
+                    for index, record in enumerate(chain):
+                        stages.setdefault(record.form_id, {'index': index+1, 'total': len(chain)})
+        return result, stages
+
+    def spell_categories(self, record, perks):
+        data = record.values(b'SPIT')
+        if data and len(data[0]) >= 36:
+            perk = struct.unpack_from('<I', data[0], 32)[0]
+            if perks.get(perk):
+                return sorted(perks[perk])
+        schools = set()
+        for value in record.values(b'EFID'):
+            effect = self.by_form_id.get(struct.unpack('<I', value)[0])
+            data = effect.values(b'DATA') if effect and effect.kind == b'MGEF' else []
+            if not data or len(data[0]) < 16 or struct.unpack_from('<f', data[0], 4)[0] <= 0:
+                continue  # Zero-cost perk helpers do not define the spell's school.
+            school = struct.unpack_from('<i', data[0], 12)[0]
+            if 18 <= school <= 22:
+                schools.add(SKILLS[school-6])
+        return sorted(schools) or ['other']
 
     def json_choices(self, sex='female'):
         if sex not in ('female', 'male'):
@@ -186,6 +237,16 @@ class GameCatalog:
         for item in result['classes']:
             item['label'] = CLASS_LABELS.get(item['id'], item['label'])
             item['growth'] = class_growth(self.require(item['id']))
+        perk_categories, stages = self.perk_categories()
+        for item in result['perks']:
+            record = self.require(item['id'])
+            item['categories'] = sorted(perk_categories.get(record.form_id, {'other'}))
+            item['stage'] = stages.get(record.form_id)
+            item['effect_ranks'] = effect_ranks(record)
+        for item in result['spells']:
+            item['categories'] = self.spell_categories(self.require(item['id']), perk_categories)
+        result['categories'] = [{'id': key, 'label': label} for key, label in SKILL_LABELS.items()]
+        result['categories'].append({'id': 'other', 'label': 'その他・特殊効果'})
         usage = self.style_usage()
         for item in result['styles']:
             row = usage.get(self.require(item['id']).form_id, {'humanoid': set(), 'other': set()})

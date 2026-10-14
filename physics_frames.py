@@ -8,7 +8,7 @@ import logging
 
 import numpy as np
 
-from custom_skeleton import NifFile, matrix, rigid_buffer
+from custom_skeleton import NifFile, matrix
 
 FRAME_TOLERANCE = .0005  # NIF float32 hierarchy precision; native readback allows .001
 
@@ -28,7 +28,14 @@ def shift_frames(path, targets):
     """
     with NifFile(str(path)) as nif:
         old = {n: matrix(node.global_transform) for n, node in nif.nodes.items()}
-        desired = {n: np.asarray(targets[n]) if n in targets else value for n, value in old.items()}
+        desired = {n: value.copy() for n, value in old.items()}
+        for name in old.keys() & targets.keys():
+            target = np.asarray(targets[name])
+            # Native float32 rotations accumulate tiny orthogonality errors.
+            # Recentering changes translations only, never rotation or scale.
+            if not np.allclose(old[name][:3, :3], target[:3, :3], atol=FRAME_TOLERANCE, rtol=0):
+                raise ValueError('Physics recentering cannot change rotation/scale: '+name)
+            desired[name][:3, 3] = target[:3, 3]
         changed = {n for n in old if not np.allclose(old[n], desired[n], atol=FRAME_TOLERANCE, rtol=0)}
         if not changed:
             return 0
@@ -41,14 +48,21 @@ def shift_frames(path, targets):
                 if bind is None:
                     raise ValueError('Physics bone lacks a skin bind: '+name)
                 invariant = old[name] @ matrix(bind)
-                shape.set_skin_to_bone_xform(name, rigid_buffer(np.linalg.inv(desired[name]) @ invariant))
+                corrected = np.linalg.inv(desired[name]) @ invariant
+                updated = bind.copy()
+                for axis in range(3):
+                    updated.translation[axis] = corrected[axis, 3]
+                shape.set_skin_to_bone_xform(name, updated)
                 products.append((shape.name, name, invariant))
         for name, node in nif.nodes.items():
             parent = node.parent.name if node.parent else None
             if name not in changed and parent not in changed:
                 continue
             local = np.linalg.inv(desired[parent]) @ desired[name] if parent else desired[name]
-            node.transform = rigid_buffer(local)
+            updated = node.transform.copy()
+            for axis in range(3):
+                updated.translation[axis] = local[axis, 3]
+            node.transform = updated
             node.write_properties()
         nif.save()
     with NifFile(str(path)) as nif:

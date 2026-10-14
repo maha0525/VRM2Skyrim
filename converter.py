@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import subprocess
 import sys
+import traceback
 import zipfile
 from datetime import datetime
 
@@ -222,6 +223,7 @@ The original VRM is not included. Respect its author's permissions when sharing.
 def convert(source, game, blender, output, settings, progress=None):
     def stage(name):
         logging.info("Stage: %s", name)
+        run['stage'] = name
         if progress:
             progress(name)
 
@@ -334,6 +336,9 @@ def convert(source, game, blender, output, settings, progress=None):
         return archive
     except Exception as error:
         run.update(state="failed", error=str(error))
+        log = output/'failure.log'
+        log.write_text(traceback.format_exc(), encoding='utf8')
+        run['failure_log'] = str(log)
         raise
     finally:
         (output / "run.json").write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding="utf8")

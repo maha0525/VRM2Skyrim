@@ -2,6 +2,138 @@
 import bmesh
 import bpy
 import logging
+import json
+from pathlib import Path
+
+
+def linked_texture_nodes(socket):
+    """Find texture nodes feeding a glTF base-color multiply, without changing it."""
+    result, visited = [], set()
+
+    def visit(current):
+        for link in current.links:
+            node = link.from_node
+            if node in visited:
+                continue
+            visited.add(node)
+            if node.type == 'TEX_IMAGE' and node.image is not None:
+                result.append(node)
+            else:
+                for input_socket in node.inputs:
+                    visit(input_socket)
+
+    visit(socket)
+    return result
+
+
+def render_material_queues(scene):
+    """Render explicit MToon alpha queues as depth-masked layers.
+
+    Cycles traces geometric depth, ignoring raster renderQueue. Holdouts retain
+    opaque depth occlusion while alpha-over puts later queues over earlier ones.
+    PNG image inputs are color-managed by Blender's compositor in linear space.
+    """
+    from nif_materials import render_queue
+    scene.cycles.transparent_max_bounces = max(scene.cycles.transparent_max_bounces, 64)
+    materials = {m for obj in scene.objects if obj.type == 'MESH' and not obj.hide_render
+                 for m in obj.data.materials if m and m.use_nodes}
+    policies = {m: json.loads(m.get('V2S_Preview_Policy', '{}')) for m in materials}
+    queues = sorted({render_queue(p) for p in policies.values() if p.get('alphaMode') == 'BLEND'})
+    if len(queues) <= 1:
+        bpy.ops.render.render(write_still=True)
+        return
+    original_path, original_transparent = scene.render.filepath, scene.render.film_transparent
+    layers = []
+    sockets, temporary = {}, []
+    for material in materials:
+        outputs = [n for n in material.node_tree.nodes if n.type == 'OUTPUT_MATERIAL' and n.is_active_output]
+        if outputs and outputs[0].inputs['Surface'].is_linked:
+            socket = outputs[0].inputs['Surface']
+            sockets[material] = (socket, socket.links[0].from_socket)
+    try:
+        for index, queue in enumerate(queues):
+            for material, (surface, original) in sockets.items():
+                tree, policy = material.node_tree, policies[material]
+                mode, current = policy.get('alphaMode', 'OPAQUE'), render_queue(policy)
+                if mode == 'BLEND' and (current > queue or (index and current < queue)):
+                    node = tree.nodes.new('ShaderNodeBsdfTransparent')
+                    temporary.append((tree, node))
+                    tree.links.new(node.outputs[0], surface)
+                elif index and mode != 'BLEND':
+                    holdout = tree.nodes.new('ShaderNodeHoldout')
+                    temporary.append((tree, holdout))
+                    tree.links.new(holdout.outputs[0], surface)
+                    # Masked holes and culled backfaces must not become depth blockers.
+                    factors = []
+                    if mode == 'MASK':
+                        shader = next((n for n in tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+                        images = linked_texture_nodes(shader.inputs['Base Color']) if shader else [
+                            n for n in tree.nodes if n.type == 'TEX_IMAGE' and n.image and 'flat_n' not in n.image.filepath]
+                        multiply = tree.nodes.new('ShaderNodeMath')
+                        multiply.operation = 'MULTIPLY'
+                        multiply.inputs[0].default_value = 1
+                        multiply.inputs[1].default_value = policy.get('pbrMetallicRoughness', {}).get('baseColorFactor', [1]*4)[3]
+                        if images:
+                            tree.links.new(images[0].outputs['Alpha'], multiply.inputs[0])
+                        test = tree.nodes.new('ShaderNodeMath')
+                        test.operation = 'LESS_THAN'
+                        test.inputs[1].default_value = policy.get('alphaCutoff', .5)
+                        tree.links.new(multiply.outputs[0], test.inputs[0])
+                        temporary.extend(((tree, multiply), (tree, test)))
+                        factors.append(test.outputs[0])
+                    if not policy.get('doubleSided', False):
+                        geometry = tree.nodes.new('ShaderNodeNewGeometry')
+                        temporary.append((tree, geometry))
+                        factors.append(geometry.outputs['Backfacing'])
+                    for factor in factors:
+                        incoming = surface.links[0].from_socket
+                        transparent = tree.nodes.new('ShaderNodeBsdfTransparent')
+                        mix = tree.nodes.new('ShaderNodeMixShader')
+                        tree.links.new(factor, mix.inputs[0])
+                        tree.links.new(incoming, mix.inputs[1])
+                        tree.links.new(transparent.outputs[0], mix.inputs[2])
+                        tree.links.new(mix.outputs[0], surface)
+                        temporary.extend(((tree, transparent), (tree, mix)))
+                else:
+                    tree.links.new(original, surface)
+            scene.render.film_transparent = original_transparent if index == 0 else True
+            path = Path(original_path)
+            passes = path.parent/'.material-passes'
+            passes.mkdir(exist_ok=True)
+            scene.render.filepath = str(passes/(path.stem+f'-queue-{queue}.png'))
+            bpy.ops.render.render(write_still=True)
+            layers.append(scene.render.filepath)
+        for material, (surface, original) in sockets.items():
+            material.node_tree.links.new(original, surface)
+        for tree, node in temporary:
+            tree.nodes.remove(node)
+        temporary.clear()
+        scene.use_nodes = True
+        tree = scene.node_tree
+        tree.nodes.clear()
+        previous = None
+        for path in layers:
+            node = tree.nodes.new('CompositorNodeImage')
+            node.image = bpy.data.images.load(path, check_existing=False)
+            if previous is None:
+                previous = node.outputs['Image']
+            else:
+                over = tree.nodes.new('CompositorNodeAlphaOver')
+                tree.links.new(previous, over.inputs[1])
+                tree.links.new(node.outputs['Image'], over.inputs[2])
+                previous = over.outputs['Image']
+        result = tree.nodes.new('CompositorNodeComposite')
+        tree.links.new(previous, result.inputs['Image'])
+        scene.render.filepath = original_path
+        bpy.ops.render.render(write_still=True)
+        logging.info('Preview retained explicit alpha queues %s: %s', queues, original_path)
+    finally:
+        for material, (surface, original) in sockets.items():
+            material.node_tree.links.new(original, surface)
+        for tree, node in temporary:
+            tree.nodes.remove(node)
+        scene.use_nodes = False
+        scene.render.filepath, scene.render.film_transparent = original_path, original_transparent
 
 
 def preview_face_culling(material, double_sided=False):

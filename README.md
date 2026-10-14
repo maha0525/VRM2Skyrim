@@ -12,7 +12,7 @@ Followers start **inside the Temple of Kynareth in Whiterun**. The tool sets up 
 
 The stable version on `main` is **0.8.1**. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
 
-The `codex/fsmp-physics` branch is **0.10.0-dev** and adds optional hair/cloth physics. Enable **髪・布を揺らす** in the wizard, select the meshes, and start with the calm default. Garment roots and arm-adjacent sleeve attachments follow the body animation, while distal cloth moves independently. Rotational inertia and damping adjust to hair/cloth geometry and mass, with restricted twist and no wind force. Private bone origins and compensated skin binds keep FSMP render/contact frames aligned. Version 0.9.5 generates small hidden rigid contact patches for sleeves and connected cloth, reducing collision feedback that can coil long sleeves while the actor stands still. Original visible geometry and weights are preserved. Update the complete follower ZIP, including NIFs and XMLs. Generated followers require [Faster HDT-SMP](https://www.nexusmods.com/skyrimspecialedition/mods/57339) and matching SKSE64 when physics is enabled. See [physics setup and implementation](docs/FSMP.md).
+The `codex/fsmp-physics` branch is **0.10.2-dev** and adds optional hair/cloth physics. Enable **髪・布を揺らす** in the wizard, select the meshes, and start with the calm default. Garment roots and arm-adjacent sleeve attachments follow the body animation, while distal cloth moves independently. Rotational inertia and damping adjust to hair/cloth geometry and mass, with restricted twist and no wind force. Private bone origins and compensated skin binds keep FSMP render/contact frames aligned. Version 0.9.5 generates small hidden rigid contact patches for sleeves and connected cloth, reducing collision feedback that can coil long sleeves while the actor stands still. Original visible geometry and weights are preserved. Update the complete follower ZIP, including NIFs and XMLs. Generated followers require [Faster HDT-SMP](https://www.nexusmods.com/skyrimspecialedition/mods/57339) and matching SKSE64 when physics is enabled. See [physics setup and implementation](docs/FSMP.md).
 
 Version 0.8.1 fixes Engine Fixes texture-load warnings caused by compressing small or unaligned images as BC7. These images now use uncompressed RGBA8 DDS, keeping their original dimensions and pixels. DDS format, dimensions, and mip storage are checked during conversion and output validation. This is a texture-only correction; existing followers do not need a save reset for this update.
 
@@ -47,6 +47,12 @@ Version 0.9.6 adds **seated height correction** in STEP 03. Automatic calculatio
 
 0.10.0 adds removable original VRM hats/helmets with automatic head-slot allocation and optional per-item face/hair visibility. Existing meshes are restored on removal; no VRM-side hat-removal gimmick is needed. See [headwear settings](docs/HEADWEAR.md).
 
+0.10.1 preserves original material tints, correctly interprets VRM0 MToon sRGB colors, and retains explicit eyelash/eye draw priorities in NIFs. Diffuse RGB is baked without changing texture alpha or shader opacity. Source/output previews also honor alpha queues and allow enough transparent rays for layered eyes. Regenerate and replace the complete follower ZIP; item records and scripts are unchanged, so no save reset is needed for this material correction.
+
+0.10.2 adds skill categories for Perks and school categories for spells. Separate Perk chain stages are labeled; an effect-rank selector appears only when a record actually has several effect ranks. New followers default to essential protection and unrestricted morality. FSMP recentering preserves native rotations/scales without rejecting float rounding, and hidden sleeve contact geometry is validated separately from the visible avatar.
+
+After updating the tool, press **Ctrl+C** in its terminal and reopen **Launch.cmd**. Reloading the browser alone does not reload Python. The wizard detects mixed running/frontend versions and explains restarting. Explicit imported settings are preserved.
+
 ## Wizard settings
 
 | Area | Settings |
@@ -58,7 +64,7 @@ Version 0.9.6 adds **seated height correction** in STEP 03. Automatic calculatio
 | Combat and abilities | Warrior/two-handed/archer/destruction/conjuration presets, class, combat style, starting weapon, and ammunition |
 | Growth and personality | Fixed/player-scaled level, multiplier and limits, automatic/manual stats, health/magicka/stamina, 18 skills, essential/protected/normal status, confidence, aggression, and crime behavior |
 | Details | Uniform overall size multiplier, marriage eligibility with supported voices, and placement offset inside the temple |
-| Perks and spells | Perks with ranks and spells, searchable by game name, ID, and description |
+| Perks and spells | Skill/school categories, labeled Perk stages, filtering by category/name/ID/description |
 | Review and export | Save settings JSON, generate previews, and save the MOD ZIP |
 
 Perk and spell candidates are read from the selected game's `Skyrim.esm`. Spells are restricted to ordinary spells taught by spell tomes; blessings, passive abilities, and trap effects are excluded. This version does not list DLC/MOD perks and spells or independently recorded custom voices. With automatic calculation, health, magicka, and stamina are base values before class/level growth. With manual calculation, the specified attributes and 18 skill values are used directly, including when the NPC's level follows the player. The individual-skills panel includes a button to switch to manual calculation. Selected Perks are granted explicitly; increasing a skill does not automatically add Perks.

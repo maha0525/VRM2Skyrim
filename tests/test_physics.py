@@ -193,6 +193,45 @@ class PhysicsTests(unittest.TestCase):
                 # Original physical pivot survives despite the shifted node.
                 np.testing.assert_allclose(target@translation(-centre), original, atol=1e-6)
 
+    def test_recenter_preserves_rounded_bind_rotation_and_scale(self):
+        from pyn.structs import TransformBuf
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'rounded.nif'
+            origin = translation([3, 4, 5])
+            bind = TransformBuf()
+            bind.store([-3, -4, -5], np.diag([1.00003, 1.00002, 1.00003]).tolist(), (.9, .9, .9))
+            with NifFile() as nif:
+                nif.initialize('SKYRIMSE', str(path))
+                anchor = nif.add_node('NPC Anchor', rigid_buffer(np.eye(4)), nif.rootNode)
+                nif.add_node('V2SP_a', rigid_buffer(origin), anchor)
+                shape = nif.createShapeFromData('Cloth', [(0., 0., 0.), (1., 0., 0.), (0., 1., 0.)],
+                                                [(0, 1, 2)], [(0., 0.)]*3, [(0., 0., 1.)]*3)
+                shape.skin()
+                shape.add_bone('V2SP_a', rigid_buffer(origin), 'NPC Anchor')
+                shape.set_global_to_skin(rigid_buffer(np.eye(4)))
+                shape.set_skin_to_bone_xform('V2SP_a', bind)
+                shape.setShapeWeights('V2SP_a', [(0, 1.), (1, 1.), (2, 1.)])
+                nif.save()
+            with NifFile(str(path)) as nif:
+                before = nif.shapes[0].get_shape_skin_to_bone('V2SP_a')
+                rotation, scale = np.array(before.rotation), before.scale
+                product = matrix(nif.nodes['V2SP_a'].global_transform) @ matrix(before)
+            target = origin @ translation([2, 1, 3])
+            self.assertEqual(shift_frames(path, {'V2SP_a': target}), 1)
+            with NifFile(str(path)) as nif:
+                after = nif.shapes[0].get_shape_skin_to_bone('V2SP_a')
+                np.testing.assert_array_equal(after.rotation, rotation)
+                self.assertEqual(after.scale, scale)
+                np.testing.assert_allclose(matrix(nif.nodes['V2SP_a'].global_transform) @ matrix(after), product, atol=1e-5)
+            packed = path.read_bytes()
+            self.assertEqual(shift_frames(path, {'V2SP_a': target}), 0)
+            self.assertEqual(path.read_bytes(), packed)
+            changed = target.copy()
+            changed[0, 0] = 1.1
+            with self.assertRaisesRegex(ValueError, 'rotation/scale'):
+                shift_frames(path, {'V2SP_a': changed})
+            self.assertEqual(path.read_bytes(), packed)
+
     def test_distal_chain_does_not_overload_its_root(self):
         bones = {'a': {'parent': 'NPC Arm', 'dynamic': True, 'matrix': np.eye(4).tolist()},
                  'b': {'parent': 'a', 'dynamic': True, 'matrix': np.eye(4).tolist()}}

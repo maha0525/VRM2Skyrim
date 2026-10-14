@@ -2,6 +2,73 @@
 import logging
 
 DOUBLE_SIDED = 1 << 4  # PyNifly ShaderFlags2.DOUBLE_SIDED / Skyrim shader flag.
+NO_SORTER = 0x2000  # NiAlphaProperty: preserve explicitly ordered alpha draws.
+
+
+def render_queue(material):
+    mode = material.get('alphaMode', 'OPAQUE')
+    return material.get('extras', {}).get('V2S_render_queue',
+                                        {'OPAQUE': 2000, 'MASK': 2450, 'BLEND': 3000}[mode])
+
+
+def ordered_alpha(materials):
+    return len({render_queue(m) for m in materials.values() if m.get('alphaMode') == 'BLEND'}) > 1
+
+
+def order_alpha_shapes(file, materials):
+    """Honor explicit source alpha queues, retaining all skeleton child slots."""
+    if not ordered_alpha(materials):
+        return
+    from custom_skeleton import children, set_children
+    groups = {}
+    for shape in file.shapes:
+        groups.setdefault(shape.parent.name, []).append(shape)
+    for name, shapes in groups.items():
+        parent = file.nodes[name]
+        ids = children(file, parent)
+        shape_ids = {s.id for s in shapes}
+        ordered = iter(s.id for s in sorted(shapes, key=lambda s: render_queue(materials[s.name])))
+        set_children(file, parent, [next(ordered) if n in shape_ids else n for n in ids])
+    logging.info('Preserved explicit alpha queues: %s', sorted({render_queue(m) for m in materials.values()}))
+
+
+def validate_alpha_order(file, materials):
+    if not ordered_alpha(materials):
+        return
+    from custom_skeleton import children
+    shapes = {s.id: s for s in file.shapes if s.name in materials}
+    for parent in {s.parent.name for s in shapes.values()}:
+        queues = [render_queue(materials[shapes[n].name]) for n in children(file, file.nodes[parent]) if n in shapes]
+        if queues != sorted(queues):
+            raise ValueError('NIF lost original alpha render queues: '+parent)
+    for shape in shapes.values():
+        if materials[shape.name].get('alphaMode') == 'BLEND' and not shape.alpha_property.properties.flags & NO_SORTER:
+            raise ValueError('NIF enables depth sorting over original material order: '+shape.name)
+
+
+def normalize_material_colors(document):
+    """VRM0 MToon _Color is sRGB; glTF baseColorFactor must be linear.
+
+    UniVRM MigrationMToonMaterial converts LitColor from sRGB to Linear.
+    Read the authoritative legacy property each time, so this is idempotent.
+    VRM1 and ordinary glTF factors already use linear color and stay unchanged.
+    """
+    legacy = document.get('extensions', {}).get('VRM', {}).get('materialProperties', [])
+    for material, properties in zip(document.get('materials', []), legacy):
+        if properties.get('shader') != 'VRM/MToon':
+            continue
+        color = properties.get('vectorProperties', {}).get('_Color')
+        if color is not None:
+            linear = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4
+                      for value in color[:3]] + [color[3]]
+            material.setdefault('pbrMetallicRoughness', {})['baseColorFactor'] = linear
+            logging.info('VRM0 MToon color %s: sRGB %s -> linear %s; alpha unchanged',
+                         material.get('name', ''), color, linear)
+        props = properties.get('floatProperties', {})
+        material.setdefault('extras', {})['V2S_render_queue'] = properties.get('renderQueue', 3000
+                                                      if material.get('alphaMode') == 'BLEND' else 2000)
+        material.setdefault('extensions', {}).setdefault('VRMC_materials_mtoon', {})[
+            'transparentWithZWrite'] = props.get('_BlendMode') == 3
 
 
 def lighting_flags_2(material):
@@ -21,9 +88,14 @@ def culling_flags(flags, material):
 def apply_alpha(path, materials):
     from custom_skeleton import NifFile
     with NifFile(str(path)) as file:
-        for shape in file.shapes:
-            if shape.name not in materials:
-                raise ValueError(f'NIF exporter changed a material binding: {shape.name}; expected shapes: {list(materials)}')
+        names = [shape.name for shape in file.shapes]
+    for name in names:
+        if name not in materials:
+            raise ValueError(f'NIF exporter changed a material binding: {name}; expected shapes: {list(materials)}')
+        # The pinned DLL replaces alpha blocks and renumbers other blocks. Reload
+        # between shapes so cached IDs never cross an alpha-block replacement.
+        with NifFile(str(path)) as file:
+            shape = next(s for s in file.shapes if s.name == name)
             material = materials[shape.name]
             props = shape.shader.properties
             props.Shader_Flags_2 = culling_flags(props.Shader_Flags_2, material)
@@ -32,20 +104,30 @@ def apply_alpha(path, materials):
                           material.get('doubleSided', False), material.get('alphaMode', 'OPAQUE'))
             mode = material.get("alphaMode", "OPAQUE")
             if mode == "OPAQUE":
+                file.save()
                 continue
-            shape.has_alpha_property = True
+            new_alpha = not shape.has_alpha_property
+            if new_alpha:
+                shape.has_alpha_property = True
             alpha = shape.alpha_property.properties
+            original = (alpha.flags, alpha.threshold) if not new_alpha else None
             alpha.flags = 4844
             alpha.alpha_blend = mode == "BLEND"
             alpha.alpha_test = mode == "MASK"
             alpha.source_blend_mode = 6
             alpha.dst_blend_mode = 7
             alpha.threshold = round(material.get("alphaCutoff", .5) * 255)
-            shape.save_alpha_property()
-            shape.write_properties()
+            if mode == 'BLEND' and ordered_alpha(materials):
+                alpha.flags |= NO_SORTER
+            if original != (alpha.flags, alpha.threshold):
+                shape.save_alpha_property()
+            file.save()
+    with NifFile(str(path)) as file:
+        order_alpha_shapes(file, materials)
         file.save()
     # Read the actual exported flags, rather than treating exporter settings as proof.
     with NifFile(str(path)) as file:
+        validate_alpha_order(file, materials)
         for shape in file.shapes:
             if bool(shape.shader.properties.Shader_Flags_2 & DOUBLE_SIDED) != bool(materials[shape.name].get('doubleSided', False)):
                 raise ValueError('Exported material face culling differs from source: '+shape.name)

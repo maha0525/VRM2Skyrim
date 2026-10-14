@@ -19,7 +19,7 @@ from wardrobe import components, equip_slots, keyword_names, skin_components, ni
 from gear_head_runtime import head_variants, validate_head_models
 from head_visibility import validate_head_visibility
 from equipment_runtime import runtime_records, vmad, script_name, pex_strings, PROPERTIES
-from nif_materials import DOUBLE_SIDED
+from nif_materials import DOUBLE_SIDED, validate_alpha_order
 from dds import validate_dds
 from clothing_validation import validate_clothing_skin
 
@@ -33,7 +33,7 @@ def validate(output, skeleton=None):
     mod = output / "mod"
     settings = load_settings(output)
     if settings.physics_enabled:
-        from fsmp import validate_physics
+        from fsmp import validate_physics, PROXY, ARM_PROXY
         validate_physics(output)
     skeleton = mod / "meshes" / settings.asset_dir / "skeleton.nif"
     with NifFile(str(skeleton)) as reference:
@@ -53,8 +53,11 @@ def validate(output, skeleton=None):
         with NifFile(str(mod / "meshes" / settings.asset_dir / part["file"])) as nif:
             if nif.game != "SKYRIMSE":
                 raise ValueError(f"Wrong NIF target: {nif.game}")
+            policies = {s['name']: s['material_policy'] for s in part.get('shapes', []) if 'material_policy' in s}
+            if policies:
+                validate_alpha_order(nif, policies)
             for shape in nif.shapes:
-                if settings.physics_enabled and shape.name == 'V2SCollision_Body':
+                if settings.physics_enabled and shape.name in {PROXY, ARM_PROXY}:
                     continue  # Checked separately by validate_physics, never rendered.
                 if part.get('retained_skin') and shape.name.startswith('V2SClothingSkin_'):
                     continue  # Validated against the partitioned original skin below, not counted twice.
@@ -62,6 +65,9 @@ def validate(output, skeleton=None):
                 if source_shape is not None and 'double_sided' in source_shape:
                     if bool(shape.shader.properties.Shader_Flags_2 & DOUBLE_SIDED) != source_shape['double_sided']:
                         raise ValueError('NIF face culling differs from source material: '+shape.name)
+                if source_shape is not None and 'diffuse' in source_shape:
+                    if shape.textures.get('Diffuse', '').replace('\\', '/').lower() != source_shape['diffuse'].lower():
+                        raise ValueError('NIF diffuse differs from original material bake: '+shape.name)
                 if len(shape.verts) > 65535 or not shape.bone_names:
                     raise ValueError(f"Invalid skinned shape: {shape.name}")
                 if set(shape.bone_names) - bone_set:

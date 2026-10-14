@@ -96,6 +96,23 @@ class FollowerIntegrationTests(unittest.TestCase):
         self.assertFalse(styles['csMammoth']['humanoid'])
         self.assertTrue(styles['csMammoth']['used_by'])
 
+    def test_skill_tree_categories_separate_stages_from_effect_ranks(self):
+        choices = self.catalog.json_choices()
+        perks = {p['id']: p for p in choices['perks']}
+        spells = {s['id']: s for s in choices['spells']}
+        for index, key in enumerate(('Stealth00', 'Stealth20', 'Stealth40', 'Stealth60', 'Stealth80')):
+            self.assertEqual(perks[key]['categories'], ['Sneak'])
+            self.assertEqual(perks[key]['stage'], {'index': index+1, 'total': 5})
+            self.assertEqual(perks[key]['effect_ranks'], [0])
+        self.assertEqual(perks['QuietCasting']['categories'], ['Illusion'])
+        for key, school in [('Firebolt', 'Destruction'), ('Healing', 'Restoration'),
+                            ('Muffle', 'Illusion'), ('Oakflesh', 'Alteration'),
+                            ('ConjureFlameAtronach', 'Conjuration')]:
+            self.assertEqual(spells[key]['categories'], [school])
+        self.assertTrue(all(c['growth'] is not None for c in choices['classes']))
+        with self.assertRaisesRegex(ValueError, '効果がありません'):
+            self.catalog.validate_settings(FollowerSettings(perks=[{'editor_id': 'Stealth00', 'rank': 1}]))
+
     def test_default_flags_and_all_manual_skills_reach_plugin(self):
         from settings import SKILLS
         values = {key: 40 + index for index, key in enumerate(SKILLS)}

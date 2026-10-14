@@ -1,5 +1,22 @@
 # Wizard controls, standard clothing slots and headgear preview
 
+## 2026-10-15 skill browsing and version consistency
+
+The running 0.9.5-dev server returned old protection/morality defaults and no
+class growth fields while serving newly edited JavaScript. Require matching
+frontend/backend versions; detect source changes after startup, refuse new
+POST operations and explain restarting Launch.cmd. Preserve explicit imported
+settings. Never restart the user's active server or discard their selections.
+
+Categorize Perks from AVIF PNAM trees and PERK NNAM chains. Show chain stages
+beside names. Only offer an effect-rank selector if PRKE actually has multiple
+effect ranks; Stealth records declare Num Ranks=5 but each has only rank-0
+effects. Reject effectless ranks rather than generating an ineffective NPC.
+Categorize spells by their half-cost Perk tree; fall back to cost-bearing MGEF
+schools, excluding zero-cost auxiliary effects. Include an other category.
+Combine category and text filters without the old silent 100-row truncation.
+Validate through real local HTTP APIs and actual headless browser controls.
+
 User-requested corrections: choose a clothing purpose to assign its slot, or
 override the slot explicitly; include standard wearable slots 32..42. Keep
 reserved appearance layers out of automatic allocation. Standard body/hands/feet

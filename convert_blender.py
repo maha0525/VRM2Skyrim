@@ -51,7 +51,8 @@ def save_images(meshes, output, settings, source_materials):
     png_dir.mkdir(parents=True, exist_ok=True)
     textures = []
     seen = {}
-    materials = {slot.material for obj in meshes for slot in obj.material_slots if slot.material}
+    materials = sorted({slot.material for obj in meshes for slot in obj.material_slots if slot.material},
+                       key=lambda material: material.name)
     for material in materials:
         info = source_materials[material.name]
         shader = next((node for node in material.node_tree.nodes if node.type == "BSDF_PRINCIPLED"), None)
@@ -65,6 +66,7 @@ def save_images(meshes, output, settings, source_materials):
             material.node_tree.links.new(shader.outputs["BSDF"], material.node_tree.nodes["Material Output"].inputs["Surface"])
         material["BS_Shader_Block_Name"] = "BSLightingShaderProperty"
         material.pyn_shader.Shader_Type = "Default"
+        material['V2S_Preview_Policy'] = json.dumps(info)
         material.pyn_shader.Shader_Flags_1 = "SKINNED | RECEIVE_SHADOWS | CAST_SHADOWS | ZBUFFER_TEST"
         from nif_materials import lighting_flags_2
         material.pyn_shader.Shader_Flags_2 = lighting_flags_2(info)
@@ -73,21 +75,38 @@ def save_images(meshes, output, settings, source_materials):
                                      info.get("pbrMetallicRoughness", {}).get("baseColorFactor", [1, 1, 1, 1])[3])
         shader.inputs["Roughness"].default_value = 0.85
         shader.inputs["Specular IOR Level"].default_value = 0.1
+        from blender_meshes import linked_texture_nodes
+        pbr = info.get('pbrMetallicRoughness', {})
+        factor = tuple(pbr.get('baseColorFactor', [1, 1, 1, 1])[:3])
+        diffuse_nodes = set(linked_texture_nodes(shader.inputs['Base Color']))
+        if 'baseColorTexture' in pbr and len({node.image for node in diffuse_nodes}) != 1:
+            raise ValueError('Cannot identify original base-color texture: ' + material.name)
         for node in material.node_tree.nodes:
             if node.type != "TEX_IMAGE" or node.image is None:
                 continue
             image = node.image
-            if image.name not in seen:
+            tint = factor if node in diffuse_nodes else (1, 1, 1)
+            key = (image.name, tint)
+            if key not in seen:
                 stem = f"tex_{len(seen):03}_" + re.sub(r"[^a-z0-9_]", "_", image.name.lower())[:48]
                 path = png_dir / (stem + ".png")
-                image.filepath_raw = str(path)
-                image.file_format = "PNG"
-                image.save()
+                # Reference materials may share the original packed image.
+                # Copy before changing paths; each distinct tint gets its own DDS.
+                exported = image.copy()
+                exported.filepath_raw = str(path)
+                exported.file_format = "PNG"
+                exported.save()
                 # Exporter derives the DDS path from a 'textures' path component.
                 relative = f"textures/{settings.asset_dir}/{stem}.dds"
-                seen[image.name] = relative
-                textures.append({"png": str(path), "relative": relative, "size": list(image.size)})
-            image.filepath = str(output / "mod" / seen[image.name])
+                seen[key] = (relative, exported)
+                textures.append({"png": str(path), "relative": relative, "size": list(image.size),
+                                 "base_color_factor": list(tint)})
+                exported.filepath = str(output / "mod" / relative)
+            relative, node.image = seen[key]
+            if node in diffuse_nodes:
+                material['V2S_Diffuse_Path'] = relative
+                LOG.info('Diffuse %s: original RGB factor %s -> %s; alpha stays in shader',
+                         material.name, tint, relative)
         material["BSShaderTextureSet_Normal"] = f"textures/{settings.asset_dir}/flat_n.dds"
     # Constant-color eye materials still require a texture in Skyrim's shader.
     for material in materials:
@@ -107,6 +126,7 @@ def save_images(meshes, output, settings, source_materials):
             node.image = image
             material.node_tree.links.new(node.outputs["Color"], shader.inputs["Base Color"])
             textures.append({"png": str(path), "relative": relative, "size": [4, 4]})
+            material['V2S_Diffuse_Path'] = relative
     (output / "textures.json").write_text(json.dumps(textures, indent=2), encoding="utf-8")
 
 
@@ -122,6 +142,8 @@ def main():
     source_hash = hashlib.sha256(args.source.read_bytes()).hexdigest()
     settings = load_settings(output)
     document, binary = read_glb(args.source)
+    from nif_materials import normalize_material_colors
+    normalize_material_colors(document)
     humanoid = humanoid_map(document)
     original_names = {index: node.get("name", "") for index, node in enumerate(document["nodes"])}
     from wardrobe import components, validate_source
@@ -136,10 +158,6 @@ def main():
         node["name"] = f"VRMNode_{index:05}"
     for index, material in enumerate(document.get("materials", [])):
         material["name"] = f"VRMMaterial_{index:05}"
-        legacy = document.get("extensions", {}).get("VRM", {}).get("materialProperties", [])
-        if index < len(legacy):
-            props = legacy[index].get("floatProperties", {})
-            material.setdefault("extensions", {}).setdefault("VRMC_materials_mtoon", {})["transparentWithZWrite"] = props.get("_BlendMode") == 3
     source_materials = {item["name"]: item for item in document.get("materials", [])}
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.preferences.addon_enable(module="io_scene_nifly")
@@ -147,6 +165,9 @@ def main():
     write_glb(source_glb, document, binary)
     existing_objects = set(bpy.context.scene.objects)
     bpy.ops.import_scene.gltf(filepath=str(source_glb))
+    for material in bpy.data.materials:
+        if material.name in source_materials:
+            material['V2S_Preview_Policy'] = json.dumps(source_materials[material.name])
     imported_objects = [obj for obj in bpy.context.scene.objects if obj not in existing_objects]
     source_rigs = [obj for obj in imported_objects if obj.type == "ARMATURE"]
     hips_name = document["nodes"][humanoid["hips"]]["name"]
@@ -432,7 +453,9 @@ def main():
         apply_alpha(nif_path, {obj.name: source_materials[obj.material_slots[0].material.name] for obj in selected})
         manifest.append({**part, "nif": nif_path.relative_to(output / "mod").as_posix(),
                          "shapes": [{"name": obj.name, "source_node": obj["v2s_source_node"],
-                                     "double_sided": source_materials[obj.material_slots[0].material.name].get('doubleSided', False)} for obj in selected]})
+                                     "double_sided": source_materials[obj.material_slots[0].material.name].get('doubleSided', False),
+                                     "diffuse": obj.material_slots[0].material['V2S_Diffuse_Path'],
+                                     "material_policy": source_materials[obj.material_slots[0].material.name]} for obj in selected]})
         LOG.info("Exported component %s: %s shapes, slot %s", part["id"], len(selected), part["slot"])
     (output / "appearance.json").write_text(json.dumps({"components": manifest}, ensure_ascii=False, indent=2), encoding="utf8")
     bpy.ops.wm.save_as_mainfile(filepath=str(output / "converted.blend"))
