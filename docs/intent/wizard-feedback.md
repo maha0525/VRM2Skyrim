@@ -25,6 +25,15 @@ Show "前に作ったフォロワー" only inside STEP 01. Hide it automatically
 moving to STEP 02..05 or opening a conversion result; restore it when returning
 to STEP 01. Retain the existing saved-result and equipment-edit opening action.
 
+Refresh completed followers when returning with "もう一体作る", not only at
+startup. Select the just-created result by its job ID, retain separate results
+with the same plugin name, and make the first completed result visible even if
+the initial history was empty. Verify completion -> again -> open saved result
+through actual browser buttons, including repeated creations and fetch errors.
+Run `node tests/browser-saved-results.cjs` after generating the browser role
+fixtures below; its API fixture simulates completed conversions and never runs
+Blender or writes installed game files.
+
 Expose the 18 individual skill settings even in automatic mode, with a clear
 switch to manual values. Explain that chosen Perks are granted explicitly;
 skill levels and Perks are separate settings. Display CLAS skill and attribute

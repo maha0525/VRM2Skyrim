@@ -232,12 +232,17 @@ function preset() {
   const chosen=presets[$('preset').value];if(!chosen)return;for(const key of ['combat_class','combat_style','weapon','ammunition'])$(key).value=chosen[key];state.spells=new Set(chosen.spells.filter(id=>state.choices.spells.some(item=>item.id===id)));renderChoices();
   const caster=['mage','conjurer'].includes($('preset').value);$('health').value=caster?150:200;$('magicka').value=caster?200:100;$('stamina').value=caster?100:150;updateStyles(chosen.combat_style);updateRoleDetails();
 }
+async function refreshSavedResults(preferred=$('saved-job').value) {
+  const saved=await api('/api/jobs');
+  $('saved-job').replaceChildren(...saved.jobs.map(job=>new Option(job.npc_name+' · '+job.plugin_name,job.id)));
+  if(saved.jobs.some(job=>job.id===preferred))$('saved-job').value=preferred;
+  $('saved-results').hidden=saved.jobs.length===0;
+}
 async function init() {
   for(let i=0;i<skills.length;i++){const label=document.createElement('label');label.textContent=skillLabels[i];const input=document.createElement('input');input.id='skill-'+skills[i];input.type='number';input.min='0';input.max='100';input.value='20';label.append(input);$('skills').append(label);}
   const env=await api('/api/environment');state.defaults=env.defaults;$('version').textContent='VRM2Skyrim '+env.version;$('game').value=env.game;$('blender').value=env.blender;applySettings(env.defaults);
   initWardrobe();
-  const saved=await api('/api/jobs');
-  if(saved.jobs.length){$('saved-results').hidden=false;$('saved-job').replaceChildren(...saved.jobs.map(j=>new Option(j.npc_name+' · '+j.plugin_name,j.id)));}
+  await refreshSavedResults();
   $('check-deployed-patch').onclick=checkDeployedPatch;
   $('open-saved').onclick=async()=>{try{const job=await api('/api/jobs/'+$('saved-job').value);$('wizard').hidden=true;showResult(job);}catch(e){error(e.message);}};
   $('fit-enabled').onchange=async()=>{if($('fit-enabled').checked&&!state.choices){$('next').disabled=true;try{const result=await api('/api/catalog',{game:$('game').value,blender:$('blender').value});setupChoices(result.choices);}catch(e){error(e.message);$('fit-enabled').checked=false;}finally{$('next').disabled=false;}}setupFitting();};
@@ -256,6 +261,6 @@ async function init() {
   $('perk-search').oninput=renderChoices;$('spell-search').oninput=renderChoices;
   $('export-settings').onclick=()=>download($('mod_id').value+'-settings.json',collect());
   $('import-settings').onchange=async()=>{try{state.imported=JSON.parse(await $('import-settings').files[0].text());state.importPending=!state.choices;applySettings(state.imported);state.nameDirty=true;state.idDirty=true;$('import-status').textContent='設定を読み込みました';}catch(e){error(e.message);}};
-  $('again').onclick=()=>{$('result').hidden=true;$('equipment-edit').hidden=true;$('wizard').hidden=false;state.source=null;state.imported=null;state.nameDirty=false;state.idDirty=false;$('source').value='';$('source-status').textContent='次のVRMを選択してください';wardrobeLoad(null);showStep(0);};
+  $('again').onclick=async()=>{$('result').hidden=true;$('equipment-edit').hidden=true;$('wizard').hidden=false;state.source=null;state.imported=null;state.nameDirty=false;state.idDirty=false;$('source').value='';$('source-status').textContent='次のVRMを選択してください';wardrobeLoad(null);showStep(0);try{await refreshSavedResults(state.resultJob);}catch(e){error('前に作ったフォロワーの一覧を更新できませんでした：'+e.message);}};
 }
 init().catch(e=>error(e.message));
