@@ -22,6 +22,13 @@ Use private script names and records for multiple followers. Package the compute
 report and explain SKSE requirements, manual units and disabling for another
 furniture-height correction mod. Imported explicit settings remain unchanged.
 
+Since 0.9.8, listen for original chair-entry behavior events and time-zero clip
+annotations and apply during GetSitState 2 as well as 3. An early notification
+while still standing only queues a short retry; it never moves the root by itself.
+Recheck the actual furniture, sleep and mount state every time. Preserve the
+OnSit fallback for replaced animations, re-register after 3D rebuilds and restore
+owned baseline on cancelled entry. Do not alter the skeleton or animations.
+
 Verify neutral skeleton globals/local animation transforms are preserved, sampled
 seated pelvis residuals, actual compiled PEX lifecycle execution, VMAD/FLST readback,
 browser controls/export/reimport, and a rebuilt Sumire ZIP using her existing assets.

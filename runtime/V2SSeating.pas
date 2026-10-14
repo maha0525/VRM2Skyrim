@@ -1,7 +1,7 @@
 .info
   .source "C:\\Users\\shuhe\\workspace\\games\\vrm-skyrim-converter\\runtime\\V2SSeating.psc"
   .modifyTime 0
-  .compileTime 1791997890
+  .compileTime 1792000874
   .user "shuhe"
   .computer "SAIV-EARTH"
 .endInfo
@@ -82,6 +82,51 @@
             CALLMETHOD onBeginState self ::nonevar
           .endCode
         .endFunction
+        .function OnNiNodeUpdate
+          .userFlags 0
+          .docString ""
+          .return None
+          .paramTable
+            .param akActor objectReference
+          .endParamTable
+          .localTable
+            .local ::temp0 objectReference
+            .local ::temp1 Bool
+            .local ::nonevar None
+            .local ::temp2 Float
+          .endLocalTable
+          .code
+            CAST ::temp0 self ;@line 111
+            COMPAREEQ ::temp1 akActor ::temp0 ;@line 111
+            JUMPF ::temp1 label0 ;@line 111
+            CALLMETHOD RegisterChairEvents self ::nonevar ;@line 112
+            ASSIGN ::temp1 applied ;@line 113
+            JUMPF ::temp1 label1 ;@line 113
+            CALLMETHOD Is3DLoaded self ::temp1 ;@line 113
+            ASSIGN ::temp1 ::temp1 ;@line 113
+            label1:
+            ASSIGN ::temp1 ::temp1 ;@line 113
+            JUMPF ::temp1 label2 ;@line 113
+            CAST ::temp0 self ;@line 113
+            CALLSTATIC netImmerse HasNode ::temp1 ::temp0 "NPC" False ;@line 113
+            ASSIGN ::temp1 ::temp1 ;@line 113
+            label2:
+            JUMPF ::temp1 label3 ;@line 113
+            CAST ::temp0 self ;@line 114
+            CALLSTATIC netImmerse GetNodeLocalPositionZ ::temp2 ::temp0 "NPC" False ;@line 114
+            COMPAREEQ ::temp1 ::temp2 expected ;@line 114
+            NOT ::temp1 ::temp1 ;@line 114
+            JUMPF ::temp1 label4 ;@line 114
+            ASSIGN applied False ;@line 115
+            JUMP label4 ;@line 115
+            label4:
+            JUMP label3 ;@line 115
+            label3:
+            CALLMETHOD RefreshSeating self ::nonevar ;@line 118
+            JUMP label0 ;@line 118
+            label0:
+          .endCode
+        .endFunction
         .function OnGetUp
           .userFlags 0
           .docString ""
@@ -93,51 +138,7 @@
             .local ::nonevar None
           .endLocalTable
           .code
-            CALLMETHOD RefreshSeating self ::nonevar ;@line 73
-          .endCode
-        .endFunction
-        .function OnNiNodeUpdate
-          .userFlags 0
-          .docString ""
-          .return None
-          .paramTable
-            .param akActor objectReference
-          .endParamTable
-          .localTable
-            .local ::temp0 objectReference
-            .local ::temp1 Bool
-            .local ::temp2 Float
-            .local ::nonevar None
-          .endLocalTable
-          .code
-            CAST ::temp0 self ;@line 81
-            COMPAREEQ ::temp1 akActor ::temp0 ;@line 81
-            JUMPF ::temp1 label0 ;@line 81
-            ASSIGN ::temp1 applied ;@line 82
-            JUMPF ::temp1 label1 ;@line 82
-            CALLMETHOD Is3DLoaded self ::temp1 ;@line 82
-            ASSIGN ::temp1 ::temp1 ;@line 82
-            label1:
-            ASSIGN ::temp1 ::temp1 ;@line 82
-            JUMPF ::temp1 label2 ;@line 82
-            CAST ::temp0 self ;@line 82
-            CALLSTATIC netImmerse HasNode ::temp1 ::temp0 "NPC" False ;@line 82
-            ASSIGN ::temp1 ::temp1 ;@line 82
-            label2:
-            JUMPF ::temp1 label3 ;@line 82
-            CAST ::temp0 self ;@line 83
-            CALLSTATIC netImmerse GetNodeLocalPositionZ ::temp2 ::temp0 "NPC" False ;@line 83
-            COMPAREEQ ::temp1 ::temp2 expected ;@line 83
-            NOT ::temp1 ::temp1 ;@line 83
-            JUMPF ::temp1 label4 ;@line 83
-            ASSIGN applied False ;@line 84
-            JUMP label4 ;@line 84
-            label4:
-            JUMP label3 ;@line 84
-            label3:
-            CALLMETHOD RefreshSeating self ::nonevar ;@line 87
-            JUMP label0 ;@line 87
-            label0:
+            CALLMETHOD RefreshSeating self ::nonevar ;@line 89
           .endCode
         .endFunction
         .function ClearCorrection
@@ -192,7 +193,70 @@
             .local ::nonevar None
           .endLocalTable
           .code
-            CALLMETHOD RefreshSeating self ::nonevar ;@line 69
+            CALLMETHOD RefreshSeating self ::nonevar ;@line 85
+          .endCode
+        .endFunction
+        .function RegisterChairEvents
+          .userFlags 0
+          .docString ""
+          .return None
+          .paramTable
+          .endParamTable
+          .localTable
+            .local registered Bool
+            .local ::temp0 objectReference
+            .local ::temp1 Bool
+            .local ::nonevar None
+          .endLocalTable
+          .code
+            CAST ::temp0 self ;@line 25
+            CALLMETHOD RegisterForAnimationEvent self ::temp1 ::temp0 "IdleFurnitureStart" ;@line 25
+            ASSIGN registered ::temp1 ;@line 25
+            CAST ::temp0 self ;@line 26
+            CALLMETHOD RegisterForAnimationEvent self ::temp1 ::temp0 "IdleChairEnterStart" ;@line 26
+            ASSIGN ::temp1 ::temp1 ;@line 26
+            JUMPT ::temp1 label0 ;@line 26
+            ASSIGN ::temp1 registered ;@line 26
+            label0:
+            ASSIGN registered ::temp1 ;@line 26
+            CAST ::temp0 self ;@line 27
+            CALLMETHOD RegisterForAnimationEvent self ::temp1 ::temp0 "IdleLeftChairEnterStart" ;@line 27
+            ASSIGN ::temp1 ::temp1 ;@line 27
+            JUMPT ::temp1 label1 ;@line 27
+            ASSIGN ::temp1 registered ;@line 27
+            label1:
+            ASSIGN registered ::temp1 ;@line 27
+            CAST ::temp0 self ;@line 28
+            CALLMETHOD RegisterForAnimationEvent self ::temp1 ::temp0 "IdleRightChairEnterStart" ;@line 28
+            ASSIGN ::temp1 ::temp1 ;@line 28
+            JUMPT ::temp1 label2 ;@line 28
+            ASSIGN ::temp1 registered ;@line 28
+            label2:
+            ASSIGN registered ::temp1 ;@line 28
+            CAST ::temp0 self ;@line 29
+            CALLMETHOD RegisterForAnimationEvent self ::temp1 ::temp0 "SoundPlay.NPCHumanSitChairDown" ;@line 29
+            ASSIGN ::temp1 ::temp1 ;@line 29
+            JUMPT ::temp1 label3 ;@line 29
+            ASSIGN ::temp1 registered ;@line 29
+            label3:
+            ASSIGN registered ::temp1 ;@line 29
+            CAST ::temp0 self ;@line 30
+            CALLMETHOD RegisterForAnimationEvent self ::temp1 ::temp0 "SoundPlay.NPCHumanSitChairDownLR" ;@line 30
+            ASSIGN ::temp1 ::temp1 ;@line 30
+            JUMPT ::temp1 label4 ;@line 30
+            ASSIGN ::temp1 registered ;@line 30
+            label4:
+            ASSIGN registered ::temp1 ;@line 30
+            NOT ::temp1 registered ;@line 31
+            ASSIGN ::temp1 ::temp1 ;@line 31
+            JUMPF ::temp1 label5 ;@line 31
+            CALLMETHOD Is3DLoaded self ::temp1 ;@line 31
+            ASSIGN ::temp1 ::temp1 ;@line 31
+            label5:
+            JUMPF ::temp1 label6 ;@line 31
+            CALLSTATIC debug Trace ::nonevar "VRM2Skyrim: chair-entry events unavailable; OnSit fallback remains active" 0 ;@line 32
+            JUMP label6 ;@line 32
+            label6:
           .endCode
         .endFunction
         .function OnUpdate
@@ -205,7 +269,7 @@
             .local ::nonevar None
           .endLocalTable
           .code
-            CALLMETHOD RefreshSeating self ::nonevar ;@line 77
+            CALLMETHOD RefreshSeating self ::nonevar ;@line 93
           .endCode
         .endFunction
         .function OnInit
@@ -218,8 +282,9 @@
             .local ::nonevar None
           .endLocalTable
           .code
-            CALLMETHOD RegisterForNiNodeUpdate self ::nonevar ;@line 58
-            CALLMETHOD RefreshSeating self ::nonevar ;@line 59
+            CALLMETHOD RegisterForNiNodeUpdate self ::nonevar ;@line 72
+            CALLMETHOD RegisterChairEvents self ::nonevar ;@line 73
+            CALLMETHOD RefreshSeating self ::nonevar ;@line 74
           .endCode
         .endFunction
         .function RefreshSeating
@@ -240,99 +305,108 @@
             .local ::temp4 Float
             .local ::nonevar None
             .local ::temp5 String
+            .local ::temp6 String
           .endLocalTable
           .code
-            CALLMETHOD Is3DLoaded self ::temp0 ;@line 23
-            NOT ::temp0 ::temp0 ;@line 23
-            JUMPF ::temp0 label0 ;@line 23
-            RETURN None ;@line 24
-            JUMP label0 ;@line 24
+            CALLMETHOD Is3DLoaded self ::temp0 ;@line 37
+            NOT ::temp0 ::temp0 ;@line 37
+            JUMPF ::temp0 label0 ;@line 37
+            RETURN None ;@line 38
+            JUMP label0 ;@line 38
             label0:
-            ASSIGN seated False ;@line 26
-            CALLMETHOD GetSitState self ::temp1 ;@line 27
-            ASSIGN sitState ::temp1 ;@line 27
-            COMPAREEQ ::temp0 sitState 3 ;@line 28
-            ASSIGN ::temp0 ::temp0 ;@line 28
-            JUMPF ::temp0 label1 ;@line 28
-            CALLMETHOD GetSleepState self ::temp1 ;@line 28
-            COMPAREEQ ::temp0 ::temp1 0 ;@line 28
-            ASSIGN ::temp0 ::temp0 ;@line 28
+            ASSIGN seated False ;@line 40
+            CALLMETHOD GetSitState self ::temp1 ;@line 41
+            ASSIGN sitState ::temp1 ;@line 41
+            COMPAREEQ ::temp0 sitState 2 ;@line 42
+            ASSIGN ::temp0 ::temp0 ;@line 42
+            JUMPT ::temp0 label1 ;@line 42
+            COMPAREEQ ::temp0 sitState 3 ;@line 42
+            ASSIGN ::temp0 ::temp0 ;@line 42
             label1:
-            ASSIGN ::temp0 ::temp0 ;@line 28
-            JUMPF ::temp0 label2 ;@line 28
-            CALLMETHOD IsOnMount self ::temp0 ;@line 28
-            NOT ::temp0 ::temp0 ;@line 28
-            ASSIGN ::temp0 ::temp0 ;@line 28
+            ASSIGN ::temp0 ::temp0 ;@line 42
+            JUMPF ::temp0 label2 ;@line 42
+            CALLMETHOD GetSleepState self ::temp1 ;@line 42
+            COMPAREEQ ::temp0 ::temp1 0 ;@line 42
+            ASSIGN ::temp0 ::temp0 ;@line 42
             label2:
-            JUMPF ::temp0 label3 ;@line 28
-            CALLMETHOD GetFurnitureReference self ::temp2 ;@line 29
-            ASSIGN furniture ::temp2 ;@line 29
-            CAST ::temp0 furniture ;@line 30
-            ASSIGN ::temp0 ::temp0 ;@line 30
-            JUMPF ::temp0 label4 ;@line 30
-            CALLMETHOD GetBaseObject furniture ::temp3 ;@line 30
-            CALLMETHOD HasForm ::Seats_var ::temp0 ::temp3 ;@line 30
-            ASSIGN ::temp0 ::temp0 ;@line 30
-            label4:
-            JUMPF ::temp0 label5 ;@line 30
-            ASSIGN seated True ;@line 31
-            JUMP label5 ;@line 31
-            label5:
-            JUMP label3 ;@line 31
+            ASSIGN ::temp0 ::temp0 ;@line 42
+            JUMPF ::temp0 label3 ;@line 42
+            CALLMETHOD IsOnMount self ::temp0 ;@line 42
+            NOT ::temp0 ::temp0 ;@line 42
+            ASSIGN ::temp0 ::temp0 ;@line 42
             label3:
-            CAST ::temp2 self ;@line 34
-            CALLSTATIC netImmerse HasNode ::temp0 ::temp2 "NPC" False ;@line 34
-            JUMPF ::temp0 label6 ;@line 34
-            ASSIGN ::temp0 seated ;@line 35
-            JUMPF ::temp0 label7 ;@line 35
-            COMPAREEQ ::temp0 ::Offset_var 0.000000 ;@line 35
-            NOT ::temp0 ::temp0 ;@line 35
-            ASSIGN ::temp0 ::temp0 ;@line 35
-            label7:
-            JUMPF ::temp0 label8 ;@line 35
-            CAST ::temp2 self ;@line 36
-            CALLSTATIC netImmerse GetNodeLocalPositionZ ::temp4 ::temp2 "NPC" False ;@line 36
-            ASSIGN current ::temp4 ;@line 36
-            NOT ::temp0 applied ;@line 37
-            JUMPF ::temp0 label9 ;@line 37
-            ASSIGN baseline current ;@line 38
-            FADD ::temp4 baseline ::Offset_var ;@line 39
-            ASSIGN expected ::temp4 ;@line 39
-            CAST ::temp2 self ;@line 40
-            CALLSTATIC netImmerse SetNodeLocalPositionZ ::nonevar ::temp2 "NPC" expected False ;@line 40
-            ASSIGN applied True ;@line 41
-            CAST ::temp5 ::Offset_var ;@line 42
-            STRCAT ::temp5 "VRM2Skyrim: seated height=" ::temp5 ;@line 42
-            CALLSTATIC debug Trace ::nonevar ::temp5 0 ;@line 42
-            JUMP label10 ;@line 42
-            label9:
-            COMPAREEQ ::temp0 current baseline ;@line 43
-            JUMPF ::temp0 label10 ;@line 43
-            CAST ::temp2 self ;@line 45
-            CALLSTATIC netImmerse SetNodeLocalPositionZ ::nonevar ::temp2 "NPC" expected False ;@line 45
-            JUMP label10 ;@line 45
-            label10:
-            JUMP label11 ;@line 45
-            label8:
-            CALLMETHOD ClearCorrection self ::nonevar ;@line 48
-            label11:
-            JUMP label6 ;@line 48
+            JUMPF ::temp0 label4 ;@line 42
+            CALLMETHOD GetFurnitureReference self ::temp2 ;@line 43
+            ASSIGN furniture ::temp2 ;@line 43
+            CAST ::temp0 furniture ;@line 44
+            ASSIGN ::temp0 ::temp0 ;@line 44
+            JUMPF ::temp0 label5 ;@line 44
+            CALLMETHOD GetBaseObject furniture ::temp3 ;@line 44
+            CALLMETHOD HasForm ::Seats_var ::temp0 ::temp3 ;@line 44
+            ASSIGN ::temp0 ::temp0 ;@line 44
+            label5:
+            JUMPF ::temp0 label6 ;@line 44
+            ASSIGN seated True ;@line 45
+            JUMP label6 ;@line 45
             label6:
-            COMPAREEQ ::temp0 sitState 2 ;@line 52
-            ASSIGN ::temp0 ::temp0 ;@line 52
-            JUMPT ::temp0 label12 ;@line 52
-            COMPAREEQ ::temp0 sitState 3 ;@line 52
-            ASSIGN ::temp0 ::temp0 ;@line 52
+            JUMP label4 ;@line 45
+            label4:
+            CAST ::temp2 self ;@line 48
+            CALLSTATIC netImmerse HasNode ::temp0 ::temp2 "NPC" False ;@line 48
+            JUMPF ::temp0 label7 ;@line 48
+            ASSIGN ::temp0 seated ;@line 49
+            JUMPF ::temp0 label8 ;@line 49
+            COMPAREEQ ::temp0 ::Offset_var 0.000000 ;@line 49
+            NOT ::temp0 ::temp0 ;@line 49
+            ASSIGN ::temp0 ::temp0 ;@line 49
+            label8:
+            JUMPF ::temp0 label9 ;@line 49
+            CAST ::temp2 self ;@line 50
+            CALLSTATIC netImmerse GetNodeLocalPositionZ ::temp4 ::temp2 "NPC" False ;@line 50
+            ASSIGN current ::temp4 ;@line 50
+            NOT ::temp0 applied ;@line 51
+            JUMPF ::temp0 label10 ;@line 51
+            ASSIGN baseline current ;@line 52
+            FADD ::temp4 baseline ::Offset_var ;@line 53
+            ASSIGN expected ::temp4 ;@line 53
+            CAST ::temp2 self ;@line 54
+            CALLSTATIC netImmerse SetNodeLocalPositionZ ::nonevar ::temp2 "NPC" expected False ;@line 54
+            ASSIGN applied True ;@line 55
+            CAST ::temp5 ::Offset_var ;@line 56
+            STRCAT ::temp5 "VRM2Skyrim: chair height=" ::temp5 ;@line 56
+            STRCAT ::temp5 ::temp5 "; sitState=" ;@line 56
+            CAST ::temp6 sitState ;@line 56
+            STRCAT ::temp6 ::temp5 ::temp6 ;@line 56
+            CALLSTATIC debug Trace ::nonevar ::temp6 0 ;@line 56
+            JUMP label11 ;@line 56
+            label10:
+            COMPAREEQ ::temp0 current baseline ;@line 57
+            JUMPF ::temp0 label11 ;@line 57
+            CAST ::temp2 self ;@line 59
+            CALLSTATIC netImmerse SetNodeLocalPositionZ ::nonevar ::temp2 "NPC" expected False ;@line 59
+            JUMP label11 ;@line 59
+            label11:
+            JUMP label12 ;@line 59
+            label9:
+            CALLMETHOD ClearCorrection self ::nonevar ;@line 62
             label12:
-            ASSIGN ::temp0 ::temp0 ;@line 52
-            JUMPT ::temp0 label13 ;@line 52
-            COMPAREEQ ::temp0 sitState 4 ;@line 52
-            ASSIGN ::temp0 ::temp0 ;@line 52
+            JUMP label7 ;@line 62
+            label7:
+            COMPAREEQ ::temp0 sitState 2 ;@line 66
+            ASSIGN ::temp0 ::temp0 ;@line 66
+            JUMPT ::temp0 label13 ;@line 66
+            COMPAREEQ ::temp0 sitState 3 ;@line 66
+            ASSIGN ::temp0 ::temp0 ;@line 66
             label13:
-            JUMPF ::temp0 label14 ;@line 52
-            CALLMETHOD RegisterForSingleUpdate self ::nonevar 0.500000 ;@line 53
-            JUMP label14 ;@line 53
+            ASSIGN ::temp0 ::temp0 ;@line 66
+            JUMPT ::temp0 label14 ;@line 66
+            COMPAREEQ ::temp0 sitState 4 ;@line 66
+            ASSIGN ::temp0 ::temp0 ;@line 66
             label14:
+            JUMPF ::temp0 label15 ;@line 66
+            CALLMETHOD RegisterForSingleUpdate self ::nonevar 0.500000 ;@line 67
+            JUMP label15 ;@line 67
+            label15:
           .endCode
         .endFunction
         .function OnLoad
@@ -345,9 +419,69 @@
             .local ::nonevar None
           .endLocalTable
           .code
-            CALLMETHOD ClearCorrection self ::nonevar ;@line 63
-            CALLMETHOD RegisterForNiNodeUpdate self ::nonevar ;@line 64
-            CALLMETHOD RefreshSeating self ::nonevar ;@line 65
+            CALLMETHOD ClearCorrection self ::nonevar ;@line 78
+            CALLMETHOD RegisterForNiNodeUpdate self ::nonevar ;@line 79
+            CALLMETHOD RegisterChairEvents self ::nonevar ;@line 80
+            CALLMETHOD RefreshSeating self ::nonevar ;@line 81
+          .endCode
+        .endFunction
+        .function OnAnimationEvent
+          .userFlags 0
+          .docString ""
+          .return None
+          .paramTable
+            .param akSource objectReference
+            .param asEventName String
+          .endParamTable
+          .localTable
+            .local ::temp0 objectReference
+            .local ::temp1 Bool
+            .local ::temp2 Int
+            .local ::nonevar None
+          .endLocalTable
+          .code
+            CAST ::temp0 self ;@line 97
+            COMPAREEQ ::temp1 akSource ::temp0 ;@line 97
+            JUMPF ::temp1 label0 ;@line 97
+            COMPAREEQ ::temp1 asEventName "IdleFurnitureStart" ;@line 98
+            ASSIGN ::temp1 ::temp1 ;@line 98
+            JUMPT ::temp1 label1 ;@line 98
+            COMPAREEQ ::temp1 asEventName "IdleChairEnterStart" ;@line 98
+            ASSIGN ::temp1 ::temp1 ;@line 98
+            label1:
+            ASSIGN ::temp1 ::temp1 ;@line 98
+            JUMPT ::temp1 label2 ;@line 98
+            COMPAREEQ ::temp1 asEventName "IdleLeftChairEnterStart" ;@line 98
+            ASSIGN ::temp1 ::temp1 ;@line 98
+            label2:
+            ASSIGN ::temp1 ::temp1 ;@line 98
+            JUMPT ::temp1 label3 ;@line 98
+            COMPAREEQ ::temp1 asEventName "IdleRightChairEnterStart" ;@line 98
+            ASSIGN ::temp1 ::temp1 ;@line 98
+            label3:
+            ASSIGN ::temp1 ::temp1 ;@line 98
+            JUMPT ::temp1 label4 ;@line 98
+            COMPAREEQ ::temp1 asEventName "SoundPlay.NPCHumanSitChairDown" ;@line 98
+            ASSIGN ::temp1 ::temp1 ;@line 98
+            label4:
+            ASSIGN ::temp1 ::temp1 ;@line 98
+            JUMPT ::temp1 label5 ;@line 98
+            COMPAREEQ ::temp1 asEventName "SoundPlay.NPCHumanSitChairDownLR" ;@line 98
+            ASSIGN ::temp1 ::temp1 ;@line 98
+            label5:
+            JUMPF ::temp1 label6 ;@line 98
+            CALLMETHOD GetSitState self ::temp2 ;@line 101
+            COMPAREEQ ::temp1 ::temp2 0 ;@line 101
+            JUMPF ::temp1 label7 ;@line 101
+            CALLMETHOD RegisterForSingleUpdate self ::nonevar 0.100000 ;@line 102
+            JUMP label8 ;@line 102
+            label7:
+            CALLMETHOD RefreshSeating self ::nonevar ;@line 104
+            label8:
+            JUMP label6 ;@line 104
+            label6:
+            JUMP label0 ;@line 104
+            label0:
           .endCode
         .endFunction
         .function OnUnload
@@ -360,8 +494,8 @@
             .local ::nonevar None
           .endLocalTable
           .code
-            CALLMETHOD UnregisterForUpdate self ::nonevar ;@line 92
-            CALLMETHOD ClearCorrection self ::nonevar ;@line 93
+            CALLMETHOD UnregisterForUpdate self ::nonevar ;@line 123
+            CALLMETHOD ClearCorrection self ::nonevar ;@line 124
           .endCode
         .endFunction
       .endState

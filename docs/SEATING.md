@@ -2,6 +2,11 @@
 
 [日本語](#日本語)
 
+0.9.8 applies the correction from chair-entry animations instead of waiting for
+the seated idle. Original behavior start events and time-zero animation annotations
+trigger a check of the real chair and sit state. Cancelled entry restores the
+previous root height. Animation replacements retain the OnSit fallback.
+
 Since 0.9.6-dev, STEP 03 includes chair/bench height correction, enabled by
 default. This requires matching [SKSE64](https://skse.silverlock.org/); launch
 the game through `skse64_loader.exe`. RaceMenu is not required.
@@ -64,3 +69,8 @@ DLCや追加MOD独自の家具は対象リストに含みません。元の家�
 0.9.7では、0.9.6で立ち姿を壊したルートの親ノード追加を撤去しました。正常版の
 骨格・モデル階層を保ち、既存のNPCノードを着座時だけ補正します。全身のNIFと
 スクリプトを含むフォロワーZIP全体を置き換えてDeployし、Skyrimを再起動してください。
+
+0.9.8では座り始めのアニメーションイベントを受けて補正し、着座完了まで待つ遅れを
+減らしました。実際の椅子と着座状態を確認してから適用し、着座を中断したときも
+元の高さへ戻します。アニメーション置換で開始イベントが届かない場合は、従来の
+着座完了イベントで補正します。

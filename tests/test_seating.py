@@ -32,6 +32,7 @@ class SeatedActor(Actor):
         self.sit, self.sleep, self.mounted = 0, 0, False
         self.furniture = Furniture(200)
         self.pending, self.writes = False, []
+        self.animation_events, self.intervals = set(), []
 
     def call(self, name, values):
         results = {'is3dloaded': self.loaded, 'getsitstate': self.sit, 'getsleepstate': self.sleep,
@@ -39,9 +40,14 @@ class SeatedActor(Actor):
         if name in results:
             return results[name]
         if name == 'registerforsingleupdate':
-            assert values == [.5]
+            assert any(abs(values[0] - interval) < 1e-7 for interval in (.5, .1))
+            self.intervals.append(round(values[0], 3))
             self.pending = True
             return
+        if name == 'registerforanimationevent':
+            assert values[0] is self
+            self.animation_events.add(values[1])
+            return True
         if name == 'unregisterforupdate':
             self.pending = False
             return
@@ -65,6 +71,65 @@ class SeatingTests(unittest.TestCase):
         actor = SeatedActor()
         data = rename_pex((ROOT / 'runtime/V2SSeating.pex').read_bytes(), 'V2S_TestSeating', 'V2SSeating')
         return actor, PexVM(data, actor, {'Seats': (200,), 'Offset': 14.0})
+
+    def test_entry_corrects_before_onsit_without_double_add_and_cancellation_restores(self):
+        actor, vm = self.fixture()
+        vm.run('OnLoad')
+        self.assertIn('IdleChairEnterStart', actor.animation_events)
+        self.assertIn('IdleLeftChairEnterStart', actor.animation_events)
+        self.assertIn('IdleRightChairEnterStart', actor.animation_events)
+        self.assertIn('SoundPlay.NPCHumanSitChairDownLR', actor.animation_events)
+        actor.position = 7.0
+        actor.sit = 2  # Entry animation is running; OnSit has not happened yet.
+        for event in sorted(actor.animation_events):
+            vm.run('OnAnimationEvent', actor, event)
+        self.assertEqual(actor.writes, [21.0])
+        actor.sit = 3
+        vm.run('OnSit', actor.furniture)
+        self.assertEqual(actor.writes, [21.0])
+        actor.sit = 4
+        vm.run('OnGetUp', actor.furniture)
+        self.assertEqual(actor.position, 7.0)
+        actor.sit = 2
+        vm.run('OnAnimationEvent', actor, 'IdleFurnitureStart')
+        actor.sit = 0  # The entry was cancelled before sitting.
+        vm.run('OnUpdate')
+        self.assertEqual(actor.position, 7.0)
+
+    def test_early_event_waits_for_real_sit_state_and_unknown_events_are_ignored(self):
+        actor, vm = self.fixture()
+        vm.run('OnAnimationEvent', None, 'IdleChairEnterStart')
+        vm.run('OnAnimationEvent', actor, 'UnknownEvent')
+        self.assertFalse(actor.pending)
+        vm.run('OnAnimationEvent', actor, 'IdleChairEnterStart')
+        self.assertEqual(actor.writes, [])
+        self.assertEqual(actor.intervals, [.1])
+        actor.sit = 2
+        vm.run('OnUpdate')
+        self.assertEqual(actor.position, 14)
+        actor.sit = 0
+        vm.run('OnUpdate')
+        self.assertEqual(actor.position, 0)
+
+    def test_entry_on_workbench_sleep_or_mount_never_shifts_root(self):
+        for kind in ('workbench', 'sleep', 'mount', 'no_furniture', 'missing_node', 'unloaded'):
+            with self.subTest(kind=kind):
+                actor, vm = self.fixture()
+                actor.sit = 2
+                if kind == 'workbench':
+                    actor.furniture = Furniture(999)
+                elif kind == 'sleep':
+                    actor.sleep = 2
+                elif kind == 'mount':
+                    actor.mounted = True
+                elif kind == 'no_furniture':
+                    actor.furniture = None
+                elif kind == 'missing_node':
+                    actor.node = False
+                else:
+                    actor.loaded = False
+                vm.run('OnAnimationEvent', actor, 'IdleFurnitureStart')
+                self.assertEqual(actor.writes, [])
 
     def test_seated_load_rebuild_and_delayed_exit_are_idempotent(self):
         actor, vm = self.fixture()
@@ -196,6 +261,29 @@ class SeatingTests(unittest.TestCase):
 
 @unittest.skipUnless(find_game(), 'Local Skyrim assets required')
 class SeatingNativeTests(unittest.TestCase):
+    def test_original_chair_entry_annotations_are_at_animation_start(self):
+        import sys
+        from bsa import BSA
+        sys.path.insert(0, str(ROOT / 'dependencies/io_scene_nifly/hkx'))
+        from anim_skyrim import load_skyrim_animation
+        archive = BSA(find_game() / 'Data/Skyrim - Animations.bsa')
+        graph = archive.read('meshes/actors/character/behaviors/0_master.hkx')
+        for event in ('IdleFurnitureStart', 'IdleChairEnterStart', 'IdleLeftChairEnterStart',
+                      'IdleRightChairEnterStart'):
+            self.assertIn(event.encode() + b'\0', graph)
+        root = ROOT / 'build/test-tmp'
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as directory:
+            for sex in ('male', 'female'):
+                for clip, event in (('chair_frontentervar1', 'SoundPlay.NPCHumanSitChairDown'),
+                                    ('chair_leftenter', 'SoundPlay.NPCHumanSitChairDownLR'),
+                                    ('chair_rightenter', 'SoundPlay.NPCHumanSitChairDownLR')):
+                    with self.subTest(sex=sex, clip=clip):
+                        path = archive.extract(f'meshes/actors/character/animations/{sex}/{clip}.hkx',
+                                               Path(directory) / f'{sex}_{clip}.hkx')
+                        animation = load_skyrim_animation(str(path))
+                        self.assertTrue(any(a.text == event and a.time == 0 for a in animation.annotations))
+
     def test_reference_sized_skeleton_pose_offset_and_plugin_readback(self):
         import json
         from build_npc import build_npc, NPC_ID
