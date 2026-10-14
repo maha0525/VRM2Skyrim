@@ -21,6 +21,7 @@ from pyn.structs import TransformBuf
 
 LINK = 'HDT Skinned Mesh Physics Object'
 PROXY = 'V2SCollision_Body'
+ARM_PROXY = 'V2SCollision_ArmCloth'
 GRAVITY = 9.8 / .01425  # FSMP scaleSkyrim: game units per second squared
 MASS = .1
 INERTIA_MULTIPLIER = 5.  # Increase geometric inertia without increasing spring torque
@@ -85,7 +86,7 @@ def local_points(points, global_matrix):
 def weighted_points(nif, shape_filter=None, minimum_weight=.001):
     result = {}
     for shape in nif.shapes:
-        if shape.name == PROXY:
+        if shape.name.startswith('V2SCollision_'):
             continue
         if shape_filter is not None and not shape_filter(shape):
             continue
@@ -97,6 +98,68 @@ def weighted_points(nif, shape_filter=None, minimum_weight=.001):
             if indices:
                 result.setdefault(name, []).extend(points[indices].tolist())
     return result
+
+
+def skin_samples(nif):
+    """Parallel points/weights, excluding generated contact geometry."""
+    points, weights = {}, {}
+    for shape in nif.shapes:
+        if shape.name.startswith('V2SCollision_'):
+            continue
+        value = matrix(shape.transform)
+        vertices = np.asarray(shape.verts) @ value[:3, :3].T + value[:3, 3]
+        for name, pairs in shape.bone_weights.items():
+            for vertex, weight in pairs:
+                if weight > .001:
+                    points.setdefault(name, []).append(vertices[vertex].tolist())
+                    weights.setdefault(name, []).append(weight)
+    return points, weights
+
+
+def arm_cloth_bones(bones, cloth_components, co_influences=()):
+    """Identify sleeve movers from humanoid ancestry and ownership, not names."""
+    result = set()
+    for name, info in bones.items():
+        if not info['dynamic'] or not set(info['components']) <= cloth_components:
+            continue
+        anchor = info['parent']
+        while anchor in bones:
+            anchor = bones[anchor]['parent']
+        if any(anchor.startswith(f'NPC {side} {part} ') for side in ('L', 'R')
+               for part in ('UpperArm', 'Forearm', 'Hand')):
+            result.add(name)
+    # A shawl or shared cloth bone can influence the same sleeve vertices while
+    # being anchored to the spine. Its contacts must use the same physical path.
+    eligible = {n for n, i in bones.items() if i['dynamic'] and
+                set(i['components']) <= cloth_components}
+    pending = [set(group) & eligible for group in co_influences]
+    while pending:
+        remainder = []
+        before = set(result)
+        for group in pending:
+            if group & result:
+                result.update(group)
+            else:
+                remainder.append(group)
+        if result == before:
+            break
+        pending = remainder
+    return result
+
+
+def skin_co_influences(nif):
+    """Bones affecting the same visual vertex; no generated proxy feedback."""
+    groups = set()
+    for shape in nif.shapes:
+        if shape.name.startswith('V2SCollision_'):
+            continue
+        vertices = {}
+        for name, pairs in shape.bone_weights.items():
+            for vertex, weight in pairs:
+                if weight > .001:
+                    vertices.setdefault(vertex, set()).add(name)
+        groups.update(frozenset(names) for names in vertices.values() if len(names) > 1)
+    return groups
 
 
 def collision_hulls(mesh_dir, appearance, globals_, body_nodes=()):
@@ -188,7 +251,8 @@ def protect_attachments(bones, samples, hulls, globals_, cloth_components):
     return result, protected
 
 
-def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag='V2SBody'):
+def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag='V2SBody',
+               sample_weights=None, arm_contacts=()):
     root = ET.Element('system', xmlns='FSMP-Validator')
     scalar(ET.SubElement(root, 'bone-default'), 'mass', 0)
     colliders = sorted(set(hulls) - set(bones))
@@ -210,7 +274,8 @@ def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag
         if not info['dynamic']:
             continue
         points = local_points(samples.get(name, [np.asarray(info['matrix'])[:3, 3]]), info['matrix'])
-        com = points.mean(axis=0)
+        weights = sample_weights.get(name) if sample_weights and name in arm_contacts else None
+        com = np.average(points, axis=0, weights=weights)
         transform(bone, 'centerOfMassTransform', [0, 0, 0] if info.get('centred_node') else com)
         scalar(bone, 'linearDamping', .85)
         scalar(bone, 'angularDamping', .95)
@@ -222,7 +287,7 @@ def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag
         # lever can rotate explosively while the positional constraint catches
         # up, especially at ordinary runtime solver iteration counts.
         radius = max(.65, float(np.linalg.norm(com)),
-                     float(np.sqrt(np.square(points-com).sum(axis=1).mean())))
+                     float(np.sqrt(np.average(np.square(points-com).sum(axis=1), weights=weights))))
         vector(bone, 'inertia', [bone_inertia(radius, mass)] * 3)
         scalar(ET.SubElement(bone, 'shape', type='sphere'), 'radius', round(radius, 6))
         profiles[name] = joint_profile(com, radius, info['matrix'], stiffness, mass)
@@ -257,7 +322,62 @@ def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag
             shape = ET.SubElement(root, 'per-vertex-shape', name=name)
             scalar(shape, 'margin', .4)
             scalar(shape, 'can-collide-with-tag', collision_tag)
+            # Mixed meshes may also contain waist cloth. Retain those contacts,
+            # but never feed their blended sleeve vertices back into sleeve rigs.
+            for bone in sorted(arm_contacts):
+                ET.SubElement(shape, 'weight-threshold', bone=bone).text = '1'
+        if arm_contacts:
+            shape = ET.SubElement(root, 'per-vertex-shape', name=ARM_PROXY)
+            scalar(shape, 'margin', .4)
+            scalar(shape, 'can-collide-with-tag', collision_tag)
     return root
+
+
+def add_arm_collision_proxy(nif, skeleton, names):
+    """Small rigid contact patches at sleeve mass centres, one bone per patch.
+
+    A blended visual vertex cannot deliver its full contact to every influencing
+    rigid body. That feedback can coil long sleeves even with stationary anchors.
+    These non-rendered patches keep contact torque local to the physical segment.
+    """
+    if not names:
+        return
+    existing = [s for s in nif.shapes if s.name == ARM_PROXY]
+    if existing:
+        if len(existing) != 1 or set(existing[0].bone_names) != set(names):
+            raise ValueError('Arm cloth contact proxy ownership changed; regenerate appearance')
+        return
+    vertices, triangles, weights = [], [], {}
+    for name in sorted(names):
+        start = len(vertices)
+        value = matrix(skeleton.nodes[name].global_transform)
+        # Nondegenerate tiny triangles keep the NIF a valid skinned mesh.
+        # FSMP uses their three per-vertex spheres, not the triangles themselves.
+        patch = np.array([[0, 0, 0], [.001, 0, 0], [0, .001, 0]])
+        vertices.extend(map(tuple, (patch @ value[:3, :3].T + value[:3, 3]).tolist()))
+        triangles.append((start, start+1, start+2))
+        weights[name] = [(start+i, 1.) for i in range(3)]
+    shape = nif.createShapeFromData(ARM_PROXY, vertices, triangles, [(0., 0.)]*len(vertices),
+                                    [(0., 0., 1.)]*len(vertices))
+    texture = next((s.shader.textures.get('Normal') for s in nif.shapes if s.name != ARM_PROXY
+                    and s.shader.textures.get('Normal')), None)
+    if texture:
+        shape.set_texture('Diffuse', texture)
+        shape.set_texture('Normal', texture)
+    shape.skin()
+    shape.set_global_to_skin(rigid_buffer(np.eye(4)))
+    for name, pairs in weights.items():
+        node = skeleton.nodes[name]
+        if name not in nif.nodes:
+            raise ValueError('Sleeve contact requires an existing private skin bone: '+name)
+        shape.add_bone(name, node.transform, node.parent.name if node.parent else None)
+    # PyNifly add_bone resets all prior skin binds; add every owner first.
+    for name, pairs in weights.items():
+        node = skeleton.nodes[name]
+        shape.set_skin_to_bone_xform(name, rigid_buffer(np.linalg.inv(matrix(node.global_transform))))
+        shape.setShapeWeights(name, pairs)
+    shape.demote_skin_instance()
+    nifly.setNodeFlags(shape._handle, 1)
 
 
 def add_collision_proxy(nif, skeleton, hulls):
@@ -354,7 +474,7 @@ def build_physics(output):
     prepared, centres = [], {}
     for path in sorted(set(paths)):
         with NifFile(str(path)) as nif:
-            samples = weighted_points(nif)
+            samples, sample_weights = skin_samples(nif)
             used = set(samples) & set(all_bones)
             if not any(all_bones[n]['dynamic'] for n in used):
                 continue
@@ -366,15 +486,18 @@ def build_physics(output):
             bones = {n: all_bones[n] for n in all_bones if n in used}
             bones, protected = protect_attachments(bones, weighted_points(nif, minimum_weight=.2),
                                                    hulls, globals_, cloth_components)
+            arm_contacts = arm_cloth_bones(bones, cloth_components, skin_co_influences(nif))
             for name, info in bones.items():
                 if not info['dynamic']:
                     continue
-                centre = local_points(samples.get(name, [np.asarray(info['matrix'])[:3, 3]]), info['matrix']).mean(axis=0)
+                points = local_points(samples.get(name, [np.asarray(info['matrix'])[:3, 3]]), info['matrix'])
+                centre = np.average(points, axis=0,
+                                    weights=sample_weights.get(name) if name in arm_contacts else None)
                 if name in centres and not np.allclose(centres[name], centre, atol=.001, rtol=0):
                     raise ValueError('Alternate appearance variants disagree on a physics mass centre: '+name)
                 centres[name] = centre
                 info.update(centred_node=True, node_centre=centre.tolist())
-            prepared.append((path, samples, bones, protected))
+            prepared.append((path, samples, sample_weights, bones, protected, arm_contacts))
     targets = {n: np.asarray(i['matrix']) @ translation(centres.get(n, [0, 0, 0])) for n, i in all_bones.items()}
     for path in sorted(set(paths) | {mesh_dir/'skeleton.nif'}):
         shift_frames(path, targets)
@@ -383,33 +506,41 @@ def build_physics(output):
                     'rest_frames': {n: m.tolist() for n, m in targets.items()}}
     (output/'physics-frames.json').write_text(json.dumps(frame_report, indent=2), encoding='utf8')
     systems = []
-    for path, samples, bones, protected in prepared:
+    for path, samples, sample_weights, bones, protected, arm_contacts in prepared:
         with NifFile(str(path)) as nif:
             relative = f'SKSE/Plugins/hdtSkinnedMeshConfigs/{settings.asset_dir}/{path.stem}.xml'
             xml_path = output / 'mod' / relative
             xml_path.parent.mkdir(parents=True, exist_ok=True)
-            mesh_names = [s.name for s in nif.shapes if set(s.bone_names) &
-                          {n for n in bones if bones[n]['dynamic']} and s.name != PROXY]
+            # Sleeves use their rigid contact patches; other cloth/hair keeps
+            # its existing surface contacts. A mixed shape gets per-bone filters.
+            surface_movers = {n for n in bones if bones[n]['dynamic']} - arm_contacts
+            mesh_names = [s.name for s in nif.shapes if set(s.bone_names) & surface_movers
+                          and not s.name.startswith('V2SCollision_')]
             if hulls:
                 with NifFile(str(mesh_dir / 'skeleton.nif')) as skeleton:
                     add_collision_proxy(nif, skeleton, hulls)
+                    add_arm_collision_proxy(nif, skeleton, arm_contacts)
             root = system_xml(bones, samples, hulls, settings.physics_stiffness,
-                              mesh_names, 'V2SBody_'+settings.mod_id.lower()+'_'+path.stem)
+                              mesh_names, 'V2SBody_'+settings.mod_id.lower()+'_'+path.stem,
+                              sample_weights, arm_contacts)
             ET.indent(root)
             ET.ElementTree(root).write(xml_path, encoding='utf-8', xml_declaration=True)
             attach(nif, relative.replace('/', '\\'))
             systems.append({'nif': path.relative_to(output / 'mod').as_posix(), 'xml': relative,
                             'dynamic_bones': [n for n in bones if bones[n]['dynamic']],
                             'protected_bones': protected,
+                            'arm_contact_bones': sorted(arm_contacts) if hulls else [],
                             'body_hulls': len(hulls)})
             inertias = [float(b.find('inertia').attrib['x']) for b in root.findall('bone')
                         if float(b.findtext('mass', '0')) > 0]
             logging.info('FSMP %s: %s attachments fixed, %s movers; direct inertia %.7g..%.7g mass*units²',
                          path.name, len(protected), len(inertias),
                          min(inertias, default=0), max(inertias, default=0))
+            logging.info('FSMP %s: %s sleeve segments use rigid mass-centre contact patches',
+                         path.name, len(arm_contacts) if hulls else 0)
     if not systems:
         raise ValueError('FSMP enabled but no appearance NIF retained movable bone weights')
-    result = {'enabled': True, 'systems': systems, 'profile': 'unified_contact_frames_v4',
+    result = {'enabled': True, 'systems': systems, 'profile': 'rigid_sleeve_contacts_v5',
               'frame_policy': {'centre_of_mass_transform': 'identity',
                                'compensated_skin_binds': True, 'preserve_original_joint_pivots': True},
               'inertia_policy': {'semantics': 'direct Bullet local inertia in mass*game_units²',
@@ -418,6 +549,7 @@ def build_physics(output):
               'attachment_policy': {'arm_margin_body_height': .04, 'weight_threshold': .2,
                                     'proximity_quantile': .9, 'fixed_prefix_only': True},
               'stiffness': settings.physics_stiffness,
+              'arm_contact_policy': 'single-bone patches at skin-weighted mass centres',
               'collision_source': 'weighted original avatar body vertices'}
     (output / 'physics.json').write_text(json.dumps(result, indent=2), encoding='utf8')
     validate_physics(output)
@@ -444,7 +576,7 @@ def validate_physics(output):
     with NifFile(str(output / 'mod/meshes' / settings.asset_dir / 'skeleton.nif')) as skeleton:
         names = set(skeleton.nodes)
         globals_ = {n: matrix(node.global_transform) for n, node in skeleton.nodes.items()}
-    if report.get('profile') == 'unified_contact_frames_v4':
+    if report.get('profile') in ('unified_contact_frames_v4', 'rigid_sleeve_contacts_v5'):
         frames = json.loads((output/'physics-frames.json').read_text(encoding='utf8'))
         for name, expected in frames['rest_frames'].items():
             if not np.allclose(globals_[name], expected, atol=.001, rtol=0):
@@ -460,7 +592,7 @@ def validate_physics(output):
                 values = [float(inertia.attrib[a]) for a in 'xyz'] if inertia is not None else []
                 if len(values) != 3 or not np.isfinite(values).all() or min(values) <= 0:
                     raise ValueError('FSMP mover requires finite positive explicit inertia: '+bone.attrib['name'])
-                if report.get('profile') == 'unified_contact_frames_v4':
+                if report.get('profile') in ('unified_contact_frames_v4', 'rigid_sleeve_contacts_v5'):
                     centre = bone.find('centerOfMassTransform/origin')
                     if centre is None or any(abs(float(centre.attrib[a])) > 1e-7 for a in 'xyz'):
                         raise ValueError('FSMP render/contact frames require identity COM: '+bone.attrib['name'])
@@ -482,9 +614,23 @@ def validate_physics(output):
             for tag in ('per-triangle-shape', 'per-vertex-shape'):
                 if any(s.attrib['name'] not in shape_names for s in root.findall(tag)):
                     raise ValueError('FSMP collision shape missing from its owning NIF')
-            proxies = [s for s in nif.shapes if s.name == PROXY]
-            if system['body_hulls'] and (len(proxies) != 1 or not proxies[0].properties.flags & 1):
+            proxies = [s for s in nif.shapes if s.name.startswith('V2SCollision_')]
+            body = [s for s in proxies if s.name == PROXY]
+            if system['body_hulls'] and (len(body) != 1 or not body[0].properties.flags & 1):
                 raise ValueError('FSMP body collision proxy must be present and hidden')
+            sleeves = [s for s in proxies if s.name == ARM_PROXY]
+            if system.get('arm_contact_bones'):
+                if (len(sleeves) != 1 or not sleeves[0].properties.flags & 1 or
+                        set(sleeves[0].bone_names) != set(system['arm_contact_bones'])):
+                    raise ValueError('Sleeve collision proxy must be hidden and match its private bone owners')
+                if root.find(f"per-vertex-shape[@name='{ARM_PROXY}']") is None:
+                    raise ValueError('Sleeve collision proxy has no XML contact declaration')
+                for surface in root.findall('per-vertex-shape'):
+                    if surface.attrib['name'] == ARM_PROXY:
+                        continue
+                    for name in system['arm_contact_bones']:
+                        if surface.findtext(f"weight-threshold[@bone='{name}']") != '1':
+                            raise ValueError('Visual sleeve still generates blended contact forces')
             for shape in proxies:
                 if not shape.shader.textures.get('Diffuse') or not shape.shader.textures.get('Normal'):
                     raise ValueError('Body collision proxy lacks valid texture references')
@@ -497,6 +643,12 @@ def validate_physics(output):
                         raise ValueError('Body collision bind pose mismatch: '+name)
                     for vertex, weight in pairs:
                         sums[vertex] += weight
+                    if shape.name == ARM_PROXY:
+                        if any(weight != 1. for _, weight in pairs):
+                            raise ValueError('Sleeve contact vertices must have one rigid influence')
+                        centre = globals_[name][:3, 3]
+                        if any(np.linalg.norm(np.asarray(shape.verts[v])-centre) > .003 for v, _ in pairs):
+                            raise ValueError('Sleeve contact patch is displaced from its mass centre')
                 if not np.allclose(sums, 1., atol=.001):
                     raise ValueError('Body collision proxy has invalid weights')
                 for texture in shape.shader.textures.values():

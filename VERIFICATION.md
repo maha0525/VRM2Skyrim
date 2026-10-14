@@ -1,5 +1,62 @@
 # VRM2Skyrim verification
 
+## 0.9.5-dev sleeve contact feedback (2026-10-14)
+
+The user reported stationary sleeves coiling and ballooning across five
+screenshots. Read-only SHA256 checks confirm the installed sleeve XML matches
+the delivered 0.9.4 build. The same exported skin and body collision geometry
+reproduce persistent large sleeve motion in an isolated native diagnostic.
+Removing contact settles those joints; a 0.2 skin-weight cutoff, tighter
+angular limits, or replacing the body hulls with a clustered body surface
+does not eliminate it.
+
+The diagnostic uses official Bullet 3.25, FSMP 4.1.1's sphere/triangle and
+weighted bone-pair contact equations, per-step manifold recreation, explicit
+XML inertia and Spring2 joints. Its solver configuration matches the source:
+16 iterations, ERP 0.2, ERP2 0.15, CFM 0.001, split impulse threshold -0.01,
+no warm starting, and no wind. Actual exported skin binds and a sampled
+official walk pose supply its stationary anchors. This is a standalone
+equation-level reproduction; it does not load the Skyrim DLL or emulate the
+game's scene/equipment lifecycle. Upstream source and the GPL diagnostic are
+kept in ignored local build storage, outside the MIT converter source.
+
+The shared generator detects sleeve cloth by arm/hand ancestry plus actual
+shared vertex influences. It replaces blended sleeve contacts with hidden
+single-bone patches at skin-weighted mass centres. Quon's 81 sleeve/connected
+cloth movers use this path; 26 attachments remain animated. Hair and independent
+waist cloth keep their previous contacts. Fixed appearance also retains all
+192 movers, with the same 81 sleeve patches and 26 protected attachments.
+
+Same-input, 20-second native contact comparison at 60 Hz; peaks measured over
+the final three seconds:
+
+| Export | Bone-centre speed, game units/s | Angular speed, rad/s | Joint separation, game units |
+| --- | ---: | ---: | ---: |
+| 0.9.4 | 279.46967 | 37.26322 | 33.25806 |
+| 0.9.5 | 1.92042 | 0.18641 | 0.89587 |
+
+30-second stationary runs at 30/60/120 Hz record angular peaks of
+0.16840/0.15105/0.42941 rad/s. These are timestep-sensitivity tests, including
+the larger 30-Hz step; FSMP's configured minimum 60-Hz substeps are not applied
+to that stress case. At 60 Hz, move/turn and articulated-arm runs retain body
+contact and bounded post-motion peaks of 1.17233 and 0.59959 rad/s. Residual
+small contact oscillations remain in these measurements; the large coiling
+feedback is suppressed, not reported as mathematically zero motion.
+
+69 Python tests and Ruff pass. All generated XMLs pass schema/native validation.
+The delivered NIF readback verifies hidden rigid patches, per-owner weights,
+mass-centre positions, valid texture paths, compensated binds and collision
+filters. All 15 original unfitted NIFs preserve visible vertices, triangles,
+weights, textures and rest skin products; humanoid locals and 75 actual
+walk/attack frames retain their proportions. Rebuilding removable and fixed
+appearance is byte-idempotent. Three joint/gravity diagnostics also pass.
+The actual NIF/DDS render from the contact simulation shows hanging sleeves.
+
+Local evidence and the installable ZIP are under `build/physics/Quon_FSMP_0.9.5`.
+Only `garment_item_1.nif`, `skeleton.nif`, `garment_item_1.xml` and generated
+README differ from 0.9.4. ESPs, item IDs, textures, other clothing/hair assets,
+fitted armor and scripts are byte-identical. ZIP CRC and manifest checks pass.
+
 ## 0.9.4-dev render/contact frame consistency (2026-10-14)
 
 Read-only hashes of the installed Quon XMLs matched 0.9.3. The installed log

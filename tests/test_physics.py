@@ -5,8 +5,9 @@ import tempfile
 
 import numpy as np
 
-from fsmp import (GRAVITY, LINK, MASS, PROXY, add_collision_proxy,
-                  attach, joint_profile, local_points, protect_attachments, system_xml)
+from fsmp import (ARM_PROXY, GRAVITY, LINK, MASS, PROXY, add_arm_collision_proxy,
+                  add_collision_proxy, arm_cloth_bones, attach, joint_profile,
+                  local_points, protect_attachments, skin_samples, system_xml)
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
 from physics_rig import inertia_sphere_radius, plan_bones, selected_meshes, spring_nodes, rotation_step_angles
 from settings import FollowerSettings
@@ -235,6 +236,71 @@ class PhysicsTests(unittest.TestCase):
         result, _ = protect_attachments(bones, {}, {}, {}, {'cape'})
         self.assertFalse(result['root']['dynamic'])
         self.assertTrue(result['tip']['dynamic'])
+
+    def test_sleeve_contact_selection_uses_ancestry_and_excludes_hair_waist_shared_body(self):
+        def bone(parent, component='cloth', dynamic=True):
+            return {'parent': parent, 'components': [component], 'dynamic': dynamic}
+        bones = {'cuff': bone('NPC L Forearm [LLar]', dynamic=False),
+                 'sleeve': bone('cuff'), 'tip': bone('sleeve'),
+                 'hair': bone('NPC Head [Head]', 'hair'),
+                 'waist': bone('NPC Pelvis [Pelv]'),
+                 'body': bone('NPC R Hand [RHnd]', 'body')}
+        self.assertEqual(arm_cloth_bones(bones, {'cloth'}), {'sleeve', 'tip'})
+        self.assertEqual(arm_cloth_bones(bones, {'cloth'}, [{'sleeve', 'waist', 'hair'}]),
+                         {'sleeve', 'tip', 'waist'})
+        bones['sleeve']['components'].append('body')
+        self.assertEqual(arm_cloth_bones(bones, {'cloth'}), {'tip'})
+
+    def test_sleeve_weighted_centre_does_not_give_distant_tiny_influence_equal_mass(self):
+        bone = {'parent': 'NPC Arm', 'dynamic': True, 'matrix': np.eye(4).tolist()}
+        root = system_xml({'sleeve': bone}, {'sleeve': [[1, 0, 0], [100, 0, 0]]}, {},
+                          sample_weights={'sleeve': [1, .01]}, arm_contacts={'sleeve'})
+        centre = root.find("bone[@name='sleeve']/centerOfMassTransform/origin")
+        self.assertAlmostEqual(float(centre.attrib['x']), (1+1)/1.01, places=6)
+
+    def test_mixed_visual_mesh_cannot_send_contact_back_to_sleeve_but_waist_is_retained(self):
+        bones = {n: {'parent': 'NPC Arm', 'dynamic': True, 'matrix': np.eye(4).tolist()}
+                 for n in ('sleeve', 'waist')}
+        root = system_xml(bones, {'sleeve': [[1, 0, 0]], 'waist': [[0, 1, 0]]}, {'NPC Arm': []},
+                          mesh_names=['mixed'], arm_contacts={'sleeve'})
+        self.assertEqual(root.findtext("per-vertex-shape[@name='mixed']/weight-threshold[@bone='sleeve']"), '1')
+        self.assertIsNone(root.find("per-vertex-shape[@name='mixed']/weight-threshold[@bone='waist']"))
+        proxy = root.find(f"per-vertex-shape[@name='{ARM_PROXY}']")
+        self.assertEqual(proxy.findtext('can-collide-with-tag'), 'V2SBody')
+        self.assertEqual(proxy.findtext('margin'), '0.4')
+
+    def test_native_sleeve_patch_single_owner_hidden_at_mass_centre_and_excluded_from_sampling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            skeleton_path, mesh_path = [Path(directory)/n for n in ('skeleton.nif', 'sleeve.nif')]
+            value = np.eye(4)
+            value[:3, 3] = [10, 20, 30]
+            for file in (skeleton_path, mesh_path):
+                with NifFile() as nif:
+                    nif.initialize('SKYRIMSE', str(file))
+                    nif.add_node('Private Sleeve', rigid_buffer(value), nif.rootNode)
+                    other = value.copy()
+                    other[:3, 3] += [4, 5, 6]
+                    nif.add_node('Private Other Sleeve', rigid_buffer(other), nif.rootNode)
+                    nif.save()
+            with NifFile(str(skeleton_path)) as skeleton, NifFile(str(mesh_path)) as nif:
+                add_arm_collision_proxy(nif, skeleton, {'Private Sleeve', 'Private Other Sleeve'})
+                nif.save()
+            with NifFile(str(mesh_path)) as nif:
+                proxy = next(s for s in nif.shapes if s.name == ARM_PROXY)
+                self.assertTrue(proxy.properties.flags & 1)
+                self.assertEqual(len(proxy.verts), 6)
+                for name, position in (('Private Sleeve', value), ('Private Other Sleeve', other)):
+                    pairs = proxy.bone_weights[name]
+                    self.assertEqual(len(pairs), 3)
+                    self.assertTrue(all(w == 1. for _, w in pairs))
+                    np.testing.assert_allclose(position @ matrix(proxy.get_shape_skin_to_bone(name)), np.eye(4))
+                    self.assertLess(np.max(np.linalg.norm(np.array(proxy.verts)[[i for i, _ in pairs]]-position[:3, 3], axis=1)), .002)
+                self.assertEqual(skin_samples(nif), ({}, {}))
+                with NifFile(str(skeleton_path)) as skeleton:
+                    add_arm_collision_proxy(nif, skeleton, {'Private Sleeve', 'Private Other Sleeve'})
+                nif.save()
+            with NifFile(str(mesh_path)) as nif:
+                self.assertEqual(len(nif.shapes), 1)
 
     def test_native_proxy_and_link_survive_save_and_rebuild(self):
         with tempfile.TemporaryDirectory() as directory:

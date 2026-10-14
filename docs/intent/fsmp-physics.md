@@ -123,6 +123,18 @@ node origins, compensating binds and keeping the original XML joint pivots.
 Verify skin preservation, translated/rotated contact alignment, animated
 humanoid locals, removable and fixed-outfit paths, and repeat generation.
 
+### Stationary sleeve collision feedback
+
+The 0.9.4 screenshots show large changes in sleeve shape over seconds while the
+actor stands still. Joint-only settling tests do not cover this failure. Build
+an isolated contact-inclusive reproduction from the actual exported vertices,
+skin weights, body proxy and XML. Fix the generated collision representation
+at its source rather than asking users to change global FSMP settings. Retain
+the visible sleeve geometry and skinning, animated attachment prefix, and
+body contact. Identify sleeves by humanoid ancestry and their actual shared
+vertex influences, including connected cloth rooted outside the arm hierarchy.
+Check the removable and fixed-outfit paths and repeat generation.
+
 ## Primary references
 
 - [FSMP source and runtime loader](https://github.com/DaymareOn/hdtSMP64/blob/dev/src/hdtDefaultBBP.cpp)

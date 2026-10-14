@@ -166,6 +166,46 @@ Skyrim. ESP records, item identities and runtime scripts are unchanged; retain
 the existing combined armor patch. This correction does not require a save
 reset or changing the global FSMP configuration.
 
+### Rigid sleeve contacts (0.9.5-dev)
+
+The 0.9.4 game feedback showed long sleeves coiling violently at stationary
+anchors. A contact-inclusive native diagnostic reproduces this with the
+exported sleeve/body geometry, weights, XML and FSMP 4.1.1's contact equations
+and solver settings. Disabling contacts settles the same joints. Removing
+small skin influences alone, or using the actual body surface instead of
+overlapping hulls, does not resolve the feedback.
+
+FSMP's contact merger sends a blended vertex's contact to every qualifying
+rigid bone without scaling the response by that individual skin weight.
+The generator now gives sleeve segments dedicated hidden contact patches at
+their mass centres. Each patch has one rigid bone influence, preventing a
+single visual contact from kicking multiple sleeve bones. The centre and
+inertia use skin-weighted samples, so distant tiny influences no longer have
+the same mass contribution as strongly weighted vertices. Nondegenerate tiny
+triangles make the patches valid skinned NIF meshes; FSMP uses their vertices
+as collision spheres with a 0.4-game-unit margin.
+
+Sleeves are detected from cloth ownership and arm/hand ancestry. The set also
+includes cloth bones co-influencing their visual vertices, such as a shawl
+rooted at the spine. Pure sleeve surfaces no longer create FSMP contacts.
+Mixed sleeve/other-cloth meshes exclude the sleeve bones through per-bone
+`weight-threshold=1`, preserving other cloth contacts. Hair and independent
+waist cloth retain their surface-contact path. Private component collision
+tags still isolate followers and equipment; attachment roots remain animated.
+
+`physics.json` records `rigid_sleeve_contacts_v5` and `arm_contact_bones` per
+system. Native validation verifies patch ownership, rigid weights, mass-centre
+position, hidden flags, compensated binds, textures and XML contact filters.
+Rebuilding skips all generated contact geometry when deriving the original
+skin's mass properties. Visible geometry, weights and rest skin products are
+unchanged. The diagnostic renderer also hides every generated collision proxy.
+
+This is a coarse physical contact representation: it supports sleeve segments
+against the body, rather than checking every visible fabric edge. It targets
+stable default motion and does not provide exact edge-to-body cloth contact.
+Replace the complete follower ZIP and restart Skyrim. Existing ESP/item IDs
+and the combined armor patch are retained; no save reset is required.
+
 ## Diagnostics and editing
 
 `skeleton.json` records the source-to-private bone identities and full rest
@@ -216,4 +256,6 @@ XML、骨、衝突タグはフォロワー・衣服ごとの専用です。脱�
 - [Bullet 3.25 direct inertia](https://github.com/bulletphysics/bullet3/blob/3.25/src/BulletDynamics/Dynamics/btRigidBody.cpp#L226)
 - [FSMP 4.1.1 contact transforms](https://github.com/DaymareOn/hdtSMP64/blob/v4.1.1/src/hdtSkinnedMesh/hdtSkinnedMeshBone.cpp)
 - [FSMP 4.1.1 visible transforms](https://github.com/DaymareOn/hdtSMP64/blob/v4.1.1/src/hdtSkyrimBone.cpp)
+- [FSMP 4.1.1 weighted contact merger](https://github.com/DaymareOn/hdtSMP64/blob/v4.1.1/src/hdtSkinnedMesh/hdtSkinnedMeshAlgorithm.cpp)
+- [FSMP 4.1.1 contact solver settings](https://github.com/DaymareOn/hdtSMP64/blob/v4.1.1/src/hdtSkyrimPhysicsWorld.cpp)
 - [VRM spring-bone specification](https://vrm.dev/en/vrm1/springbone/)

@@ -114,7 +114,7 @@ def main():
                                    import_shapekeys=False, import_collisions=False)
         imported = [obj for obj in bpy.context.scene.objects if obj not in existing]
         for obj in imported:
-            if obj.type == 'MESH' and obj.name.startswith('V2SCollision_Body'):
+            if obj.type == 'MESH' and obj.name.startswith('V2SCollision_'):
                 obj.hide_render = True
         if settings.armor_support:
             import re
