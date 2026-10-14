@@ -22,8 +22,9 @@ It does not invent cloth weights for an entirely rigid mesh.
 
 ## Generated assets
 
-- Secondary bones retain their source rest transforms and vertex weights in
-  the private skeleton. Humanoid animation bones retain their existing locals.
+- Secondary bones retain source geometry, weights and anatomical joint pivots.
+  Simulation origins move to mass centres with compensated skin binds.
+  Humanoid animation bones retain their existing locals.
 - Hair scalp roots and garment attachment roots stay fixed to the animated
   body. Sleeve bones close to the arm extend that fixed prefix; hanging distal
   cloth retains its independent motion. Rigid single-bone accessories are excluded.
@@ -135,13 +136,43 @@ geometry multiplier. Component logs include the generated inertia range.
 This is an XML-only physics update for existing 0.9.2 followers: replace the
 follower package and restart Skyrim; retain the existing combined armor patch.
 
+### Unified render/contact frames (0.9.4-dev)
+
+The 0.9.3 game feedback reported continued lateral sleeve twitching and waist
+cloth passing through the body. Read-only hashes confirmed the installed XMLs
+matched the delivered 0.9.3 build. The FSMP 4.1.1 contact path computes
+`inverse(COM) * rigWorld`, while its visible-bone write path computes
+`rigWorld * inverse(COM)`. Nonzero COM offsets therefore displace collision
+geometry differently from the rendered skin when the bone or actor rotates.
+The Quon diagnostic reproduced up to 16.963 game units of frame displacement.
+
+The shared conversion stage now places each dynamic private node at its mass
+centre and emits identity `centerOfMassTransform`. Its original anatomical
+pivot stays in `frameInB` as a negative centre offset. Skin-to-bone matrices are
+compensated so `boneWorld * skinBind` retains its original value. Child world
+frames, bone names/hierarchy, vertices, triangles, weights and textures remain
+intact. Native NIF saving recalculates per-bone skin bounds from the adjusted
+binds. Inertia, gravity and joint coefficients retain the 0.9.3 profile.
+
+`skeleton.json` retains source rest frames; `physics-frames.json` records the
+new simulation frames and original-local centre offsets. `physics.json`
+identifies `unified_contact_frames_v4`. Validation checks identity COM and the
+delivered skeleton frames. Native origin/bind edits are idempotent, using the
+NIF's float32 hierarchy precision tolerance rather than repeatedly correcting
+sub-millimetre roundoff.
+
+Replace the **complete follower ZIP**, including NIFs and XMLs, then restart
+Skyrim. ESP records, item identities and runtime scripts are unchanged; retain
+the existing combined armor patch. This correction does not require a save
+reset or changing the global FSMP configuration.
+
 ## Diagnostics and editing
 
 `skeleton.json` records the source-to-private bone identities and full rest
 transforms. `conversion.json` records each mesh's physics mapping.
 `physics.json` lists NIF/XML pairs. Readback checks resolve links, bones,
 constraint bodies, collision shapes, hidden flags, weights and collision bind
-poses. Rebuilding the XML stage is idempotent.
+poses. Regenerating physics frames and XMLs is idempotent.
 
 `physics_preview_blender.py -- --output <build>` runs an offline Bullet
 joint/gravity simulation from the emitted XML. `render_blender.py` accepts
@@ -183,4 +214,6 @@ XML、骨、衝突タグはフォロワー・衣服ごとの専用です。脱�
 - [Runtime frame conversion](https://github.com/DaymareOn/hdtSMP64/blob/dev/src/hdtSkinnedMesh/hdtGeneric6DofConstraint.cpp)
 - [FSMP 4.1.1 inertia reader](https://github.com/DaymareOn/hdtSMP64/blob/v4.1.1/src/hdtSkyrimSystem.cpp#L462)
 - [Bullet 3.25 direct inertia](https://github.com/bulletphysics/bullet3/blob/3.25/src/BulletDynamics/Dynamics/btRigidBody.cpp#L226)
+- [FSMP 4.1.1 contact transforms](https://github.com/DaymareOn/hdtSMP64/blob/v4.1.1/src/hdtSkinnedMesh/hdtSkinnedMeshBone.cpp)
+- [FSMP 4.1.1 visible transforms](https://github.com/DaymareOn/hdtSMP64/blob/v4.1.1/src/hdtSkyrimBone.cpp)
 - [VRM spring-bone specification](https://vrm.dev/en/vrm1/springbone/)

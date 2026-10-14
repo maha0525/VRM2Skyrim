@@ -1,5 +1,31 @@
 # VRM2Skyrim verification
 
+## 0.9.4-dev render/contact frame consistency (2026-10-14)
+
+Read-only hashes of the installed Quon XMLs matched 0.9.3. The installed log
+reported FSMP 4.1.1. Tracing its collision update and visible-node write paths
+revealed inverse(COM)*rigWorld versus rigWorld*inverse(COM) composition. A
+Quon draped-pose diagnostic reproduced a 16.963-unit frame displacement at
+90-degree actor yaw. Moving the native private origins to mass centres and
+emitting identity COM reduces this render/contact frame difference to zero,
+including translated actors at 0/90/180-degree yaw.
+
+Native tests exercise shifted parent and retained child frames, compensated
+skin binds, XML pivot preservation, rotated render/contact matrices and repeat
+generation. Actual asset comparisons preserve vertices, triangles, bone
+weights, textures and rest boneWorld*skinBind products across all 12 appearance
+NIFs. The original humanoid locals and limb lengths remain valid across all
+75 walk/attack frames. Float32 hierarchy roundoff is tolerated at 0.0005 game
+units for change detection, within the existing 0.001 native readback bound.
+
+65 tests and Ruff pass. Five XMLs pass the FSMP schema/native validation and
+all five 15-second stationary/moving/arm/30/60/120-fps joint diagnostics pass.
+Both removable clothing and the fixed-outfit path retain 26 protected garment
+attachments and 192 movers. Repeated native frame/XML generation is byte
+idempotent. Local evidence and the installable sample are under
+`build/physics/Quon_FSMP_0.9.4`; fixed-outfit evidence is under
+`build/physics/Quon_FSMP_fixed_0.9.4`.
+
 ## 0.9.3-dev direct FSMP inertia (2026-10-14)
 
 The FSMP 4.1.1 XML reader passes `inertia` directly through its rigid-body

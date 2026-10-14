@@ -15,6 +15,7 @@ from scipy.spatial.transform import Rotation
 from custom_skeleton import NifFile, matrix, rigid_buffer, nifly
 from settings import load_settings
 from physics_rig import read_system
+from physics_frames import shift_frames, translation
 from pyn.pynifly import NiStringExtraData
 from pyn.structs import TransformBuf
 
@@ -210,7 +211,7 @@ def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag
             continue
         points = local_points(samples.get(name, [np.asarray(info['matrix'])[:3, 3]]), info['matrix'])
         com = points.mean(axis=0)
-        transform(bone, 'centerOfMassTransform', com)
+        transform(bone, 'centerOfMassTransform', [0, 0, 0] if info.get('centred_node') else com)
         scalar(bone, 'linearDamping', .85)
         scalar(bone, 'angularDamping', .95)
         scalar(bone, 'gravity-factor', 1)
@@ -229,9 +230,10 @@ def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag
         if not info['dynamic']:
             continue
         joint = ET.SubElement(root, 'generic-constraint', bodyA=info['parent'], bodyB=name)
-        # frameInB is BONE-local, not rigid-body-local. FSMP applies rigToLocal
-        # itself. Subtracting CoM here would apply the offset twice.
-        transform(joint, 'frameInB', [0, 0, 0])
+        # frameInB is bone-local. A centred node has identity rigToLocal and
+        # an explicit negative node-centre frame to retain the source pivot.
+        pivot = -np.asarray(info['node_centre']) if info.get('centred_node') else [0, 0, 0]
+        transform(joint, 'frameInB', pivot)
         basis, spring, damping = profiles[name]
         ET.SubElement(joint.find('frameInB'), 'basis',
                       {a: f'{n:.9f}' for a, n in zip('xyzw', Rotation.from_matrix(basis).as_quat())})
@@ -349,7 +351,7 @@ def build_physics(output):
     cloth_components = {p['id'] for p in appearance['components'] if p['role'] == 'garment'} | {'appearance_cloth'}
     paths = [mesh_dir / p['file'] for p in appearance['components']]
     paths += sorted(mesh_dir.glob('fixed_*.nif'))
-    systems = []
+    prepared, centres = [], {}
     for path in sorted(set(paths)):
         with NifFile(str(path)) as nif:
             samples = weighted_points(nif)
@@ -364,6 +366,25 @@ def build_physics(output):
             bones = {n: all_bones[n] for n in all_bones if n in used}
             bones, protected = protect_attachments(bones, weighted_points(nif, minimum_weight=.2),
                                                    hulls, globals_, cloth_components)
+            for name, info in bones.items():
+                if not info['dynamic']:
+                    continue
+                centre = local_points(samples.get(name, [np.asarray(info['matrix'])[:3, 3]]), info['matrix']).mean(axis=0)
+                if name in centres and not np.allclose(centres[name], centre, atol=.001, rtol=0):
+                    raise ValueError('Alternate appearance variants disagree on a physics mass centre: '+name)
+                centres[name] = centre
+                info.update(centred_node=True, node_centre=centre.tolist())
+            prepared.append((path, samples, bones, protected))
+    targets = {n: np.asarray(i['matrix']) @ translation(centres.get(n, [0, 0, 0])) for n, i in all_bones.items()}
+    for path in sorted(set(paths) | {mesh_dir/'skeleton.nif'}):
+        shift_frames(path, targets)
+    frame_report = {'runtime': 'FSMP v4.1.1', 'centre_of_mass_transform': 'identity',
+                    'node_centres': {n: c.tolist() for n, c in centres.items()},
+                    'rest_frames': {n: m.tolist() for n, m in targets.items()}}
+    (output/'physics-frames.json').write_text(json.dumps(frame_report, indent=2), encoding='utf8')
+    systems = []
+    for path, samples, bones, protected in prepared:
+        with NifFile(str(path)) as nif:
             relative = f'SKSE/Plugins/hdtSkinnedMeshConfigs/{settings.asset_dir}/{path.stem}.xml'
             xml_path = output / 'mod' / relative
             xml_path.parent.mkdir(parents=True, exist_ok=True)
@@ -388,7 +409,9 @@ def build_physics(output):
                          min(inertias, default=0), max(inertias, default=0))
     if not systems:
         raise ValueError('FSMP enabled but no appearance NIF retained movable bone weights')
-    result = {'enabled': True, 'systems': systems, 'profile': 'calm_explicit_inertia_v3',
+    result = {'enabled': True, 'systems': systems, 'profile': 'unified_contact_frames_v4',
+              'frame_policy': {'centre_of_mass_transform': 'identity',
+                               'compensated_skin_binds': True, 'preserve_original_joint_pivots': True},
               'inertia_policy': {'semantics': 'direct Bullet local inertia in mass*game_units²',
                                  'sphere_multiplier': INERTIA_MULTIPLIER,
                                  'verified_runtime_source': 'FSMP v4.1.1'},
@@ -421,6 +444,11 @@ def validate_physics(output):
     with NifFile(str(output / 'mod/meshes' / settings.asset_dir / 'skeleton.nif')) as skeleton:
         names = set(skeleton.nodes)
         globals_ = {n: matrix(node.global_transform) for n, node in skeleton.nodes.items()}
+    if report.get('profile') == 'unified_contact_frames_v4':
+        frames = json.loads((output/'physics-frames.json').read_text(encoding='utf8'))
+        for name, expected in frames['rest_frames'].items():
+            if not np.allclose(globals_[name], expected, atol=.001, rtol=0):
+                raise ValueError('Skeleton mass-centre frame mismatch: '+name)
     for system in report['systems']:
         root = read_system(output / 'mod' / system['xml'])
         bones = {b.attrib['name'] for b in root.findall('bone')}
@@ -432,6 +460,10 @@ def validate_physics(output):
                 values = [float(inertia.attrib[a]) for a in 'xyz'] if inertia is not None else []
                 if len(values) != 3 or not np.isfinite(values).all() or min(values) <= 0:
                     raise ValueError('FSMP mover requires finite positive explicit inertia: '+bone.attrib['name'])
+                if report.get('profile') == 'unified_contact_frames_v4':
+                    centre = bone.find('centerOfMassTransform/origin')
+                    if centre is None or any(abs(float(centre.attrib[a])) > 1e-7 for a in 'xyz'):
+                        raise ValueError('FSMP render/contact frames require identity COM: '+bone.attrib['name'])
         for joint in root.findall('generic-constraint'):
             if {joint.attrib['bodyA'], joint.attrib['bodyB']} - bones:
                 raise ValueError('FSMP constraint references undeclared bodies')

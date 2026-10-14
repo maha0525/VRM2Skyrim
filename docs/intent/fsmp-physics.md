@@ -113,6 +113,16 @@ from the delivered package. First isolate this correction from contact/limit
 tuning. Verify stationary and moving/articulated anchors, including peak
 angular motion over the settling interval, and regenerate Quon's test ZIP.
 
+### Contact geometry must follow visible geometry
+
+The 0.9.3 game feedback reported continued lateral sleeve motion and waist
+penetration. Do not extend damping-only tuning when contact coordinates are
+inconsistent. Compare the runtime render/contact transform paths and the
+installed assets. For FSMP 4.1.1, avoid nonzero COM offsets by centring private
+node origins, compensating binds and keeping the original XML joint pivots.
+Verify skin preservation, translated/rotated contact alignment, animated
+humanoid locals, removable and fixed-outfit paths, and repeat generation.
+
 ## Primary references
 
 - [FSMP source and runtime loader](https://github.com/DaymareOn/hdtSMP64/blob/dev/src/hdtDefaultBBP.cpp)

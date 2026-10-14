@@ -10,6 +10,7 @@ from fsmp import (GRAVITY, LINK, MASS, PROXY, add_collision_proxy,
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
 from physics_rig import inertia_sphere_radius, plan_bones, selected_meshes, spring_nodes, rotation_step_angles
 from settings import FollowerSettings
+from physics_frames import shift_frames, translation
 
 
 class PhysicsTests(unittest.TestCase):
@@ -132,6 +133,64 @@ class PhysicsTests(unittest.TestCase):
         from scipy.spatial.transform import Rotation
         rotations = Rotation.from_euler('z', [0., 10., 30.], degrees=True).as_matrix()
         np.testing.assert_allclose(rotation_step_angles(rotations), np.radians([10., 20.]))
+
+    def test_recentered_native_skin_matches_fsmp_contacts_after_rotation(self):
+        from scipy.spatial.transform import Rotation
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'cloth.nif'
+            original = np.eye(4)
+            original[:3, :3] = Rotation.from_euler('xyz', [25, 45, 72], degrees=True).as_matrix()
+            original[:3, 3] = [4, 6, 8]
+            child = original @ translation([0, 0, 5])
+            centre = np.array([2., 3., 4.])
+            target = original @ translation(centre)
+            verts = [(1., 2., 3.), (2., 3., 4.), (3., 4., 5.)]
+            with NifFile() as nif:
+                nif.initialize('SKYRIMSE', str(path))
+                anchor = nif.add_node('NPC Anchor', rigid_buffer(np.eye(4)), nif.rootNode)
+                parent = nif.add_node('V2SP_a', rigid_buffer(original), anchor)
+                nif.add_node('V2SP_b', rigid_buffer(np.linalg.inv(original)@child), parent)
+                shape = nif.createShapeFromData('Cloth', verts, [(0, 1, 2)], [(0., 0.)]*3, [(0., 0., 1.)]*3)
+                shape.skin()
+                shape.add_bone('V2SP_a', rigid_buffer(original), 'NPC Anchor')
+                shape.set_global_to_skin(rigid_buffer(np.eye(4)))
+                shape.set_skin_to_bone_xform('V2SP_a', rigid_buffer(np.linalg.inv(original)))
+                shape.setShapeWeights('V2SP_a', [(0, 1.), (1, 1.), (2, 1.)])
+                nif.save()
+            self.assertEqual(shift_frames(path, {'V2SP_a': target, 'V2SP_b': child}), 1)
+            self.assertEqual(shift_frames(path, {'V2SP_a': target, 'V2SP_b': child}), 0)
+            packed = path.read_bytes()
+            rounded = target.copy()
+            rounded[0, 3] += .00005
+            self.assertEqual(shift_frames(path, {'V2SP_a': rounded, 'V2SP_b': child}), 0)
+            self.assertEqual(path.read_bytes(), packed)
+            with NifFile(str(path)) as nif:
+                shape = nif.shapes[0]
+                np.testing.assert_array_equal(shape.verts, verts)
+                np.testing.assert_allclose(matrix(nif.nodes['V2SP_b'].global_transform), child, atol=1e-5)
+                bind = matrix(shape.get_shape_skin_to_bone('V2SP_a'))
+                np.testing.assert_allclose(target@bind, np.eye(4), atol=1e-5)
+                info = {'parent': 'NPC Anchor', 'dynamic': True, 'matrix': original.tolist(),
+                        'centred_node': True, 'node_centre': centre.tolist()}
+                sample = (original@np.r_[centre, 1])[:3].tolist()
+                xml = system_xml({'V2SP_a': info}, {'V2SP_a': [sample]}, {})
+                origin = xml.find("bone[@name='V2SP_a']/centerOfMassTransform/origin")
+                offset = translation([float(origin.attrib[a]) for a in 'xyz'])
+                pivot = xml.find('generic-constraint/frameInB/origin')
+                frame = translation([float(pivot.attrib[a]) for a in 'xyz'])
+                np.testing.assert_allclose((target@frame)[:3, 3], original[:3, 3], atol=1e-6)
+                for yaw in (0, 90, 180):
+                    actor = np.eye(4)
+                    actor[:3, :3] = Rotation.from_euler('z', yaw, degrees=True).as_matrix()
+                    actor[:3, 3] = [100, 200, 300]
+                    # Both released runtime paths compose identity COM offsets.
+                    rig = actor@target@offset
+                    render = rig@np.linalg.inv(offset)@bind
+                    contact = np.linalg.inv(offset)@rig@bind
+                    np.testing.assert_allclose(contact, render, atol=1e-6)
+                    np.testing.assert_allclose(render, actor, atol=1e-5)
+                # Original physical pivot survives despite the shifted node.
+                np.testing.assert_allclose(target@translation(-centre), original, atol=1e-6)
 
     def test_distal_chain_does_not_overload_its_root(self):
         bones = {'a': {'parent': 'NPC Arm', 'dynamic': True, 'matrix': np.eye(4).tolist()},
