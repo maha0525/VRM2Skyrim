@@ -103,6 +103,16 @@ roots and the contiguous arm-adjacent prefix, while retaining moving distal
 cloth. Use source hierarchy, actual skin influences and the avatar's collision
 geometry; do not hard-code Quon's bone names or require a character-only patch.
 
+### Static trembling and inertia agreement
+
+The 0.9.2 sleeve attachment fix was confirmed in Skyrim, but long cloth still
+trembled while the actor stood still. Correct the shared generator and offline
+diagnostic using the FSMP 4.1.1 runtime's direct XML inertia semantics. Do not
+treat XML inertia as a divisor or let validation simulate different inertia
+from the delivered package. First isolate this correction from contact/limit
+tuning. Verify stationary and moving/articulated anchors, including peak
+angular motion over the settling interval, and regenerate Quon's test ZIP.
+
 ## Primary references
 
 - [FSMP source and runtime loader](https://github.com/DaymareOn/hdtSMP64/blob/dev/src/hdtDefaultBBP.cpp)

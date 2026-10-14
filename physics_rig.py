@@ -1,6 +1,39 @@
 """Plan private secondary bones from actual influences, never bone names alone."""
 import hashlib
+import math
 import xml.etree.ElementTree as ET
+
+import numpy as np
+
+
+def rotation_step_angles(rotations):
+    """Geodesic step angles without acos amplifying float32 rest-pose drift.
+
+    atan2 uses both the skew (sin) and trace (cos). Identical, slightly rounded
+    matrices have a symmetric relative matrix and therefore zero step angle.
+    """
+    rotations = np.asarray(rotations)
+    relative = np.swapaxes(rotations[:-1], -1, -2) @ rotations[1:]
+    skew = np.stack((relative[..., 2, 1]-relative[..., 1, 2],
+                     relative[..., 0, 2]-relative[..., 2, 0],
+                     relative[..., 1, 0]-relative[..., 0, 1]), axis=-1)
+    sine = np.linalg.norm(skew, axis=-1) * .5
+    cosine = (np.trace(relative, axis1=-2, axis2=-1)-1) * .5
+    return np.arctan2(sine, cosine)
+
+
+def inertia_sphere_radius(mass, inertia):
+    """Sphere radius giving exactly the XML's direct inertia in Bullet.
+
+    Blender exposes shape-derived inertia only. Refuse unsupported anisotropic
+    tensors instead of silently approximating them in the diagnostic.
+    """
+    if mass <= 0 or not math.isfinite(mass) or len(inertia) != 3:
+        raise ValueError('Preview requires a finite positive dynamic mass and three inertia values')
+    if not all(math.isfinite(i) and i > 0 and math.isclose(i, inertia[0], rel_tol=1e-6)
+               for i in inertia):
+        raise ValueError('Preview requires isotropic positive explicit inertia')
+    return math.sqrt(inertia[0] / (.4 * mass))
 
 
 def read_system(path):

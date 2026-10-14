@@ -55,16 +55,16 @@ generator now uses the following profile, including for imported settings:
 
 - Angular stiffness scales with geometric sphere inertia, using a nominal
   0.65 Hz coefficient at the standard multiplier rather than constant torque.
-  The inertia divisor 0.2 increases actual rotational resistance fivefold
-  without increasing restoring stiffness; this slows abrupt rotations without
-  pulling gravity-draped sleeves back into a horizontal pose.
+  Explicit XML inertia is five times the geometric sphere inertia, without
+  increasing restoring stiffness. This slows abrupt rotations without pulling
+  gravity-draped sleeves back into a horizontal pose. See the 0.9.3 correction below.
 - Constraint damping targets a damping ratio of 1.1 using the pivot's
   parallel-axis inertia and gravitational restoring torque. Long sleeves
   therefore receive more damping than short hair tips. Bullet timestep safety
   caps remain enabled for connected moving bodies.
 - Bone velocity damping is 0.85 linear / 0.95 angular; wind factor is zero.
 - Dynamic mass tapers from 0.1 by 0.6 per dynamic ancestor (floor 0.0025).
-  Lighter tips reduce upstream loads in long chains. The inertia sphere covers
+  Lighter tips reduce upstream loads in long chains. The geometric sphere covers
   both the influenced surface and pivot-to-centre-of-mass lever, without the
   former radius cap of eight game units.
 - Constraint Z follows the influenced surface. X permits up to 1.7 radians of
@@ -104,6 +104,36 @@ system instead of leaving a stale dynamic XML behind.
 verifies that they have no dynamic mass or spring constraint. The diagnostic's
 `--articulate-arms` option bends shoulders and elbows while moving/turning the
 actor, applying the same arm motion to the newly fixed sleeve nodes.
+
+### Direct runtime inertia (0.9.3-dev)
+
+The user confirmed the repaired sleeve openings and arm following, but long
+cloth still trembled at rest. Tracing the released FSMP 4.1.1 XML reader through
+its rigid-body constructor to Bullet 3.25 revealed a generator error: XML
+`inertia` is a direct local inertia tensor, not a divisor of shape-derived
+inertia. Previous builds wrote 0.2 on every axis while the offline diagnostic
+treated that number as a divisor. The generated runtime and diagnostic therefore
+used different rotational resistance.
+
+The shared generator now writes `5 * (2/5) * mass * radius²` on each axis, in
+mass times squared game units. Radius covers the influenced surface and the
+pivot-to-centre-of-mass lever. Constraint damping uses that same explicit
+inertia plus the parallel-axis term; the bone shape itself does not calculate
+inertia in FSMP. Mass taper, spring torque, protected attachments, angular limits
+and mesh collision settings remain as in 0.9.2, isolating this correction.
+
+The diagnostic reconstructs a Bullet sphere with radius `sqrt(I / (0.4 * mass))`
+from the delivered XML, and records the inertia round trip for each mover.
+It rejects zero, negative, non-finite or anisotropic inertia rather than silently
+simulating another tensor. `--stationary` checks undisturbed anchors from the
+start; moving/turning and articulated-arm checks still test subsequent settling.
+The final second is checked for peak linear and angular velocity, so the last
+frame alone cannot hide periodic twitching.
+
+`physics.json` records `calm_explicit_inertia_v3`, direct runtime units, and the
+geometry multiplier. Component logs include the generated inertia range.
+This is an XML-only physics update for existing 0.9.2 followers: replace the
+follower package and restart Skyrim; retain the existing combined armor patch.
 
 ## Diagnostics and editing
 
@@ -151,4 +181,6 @@ XML、骨、衝突タグはフォロワー・衣服ごとの専用です。脱�
 - [FSMP author XML guide](https://github.com/DaymareOn/FSMP-Validator/wiki)
 - [Spring and damping units](https://github.com/DaymareOn/FSMP-Validator/wiki/33-%E2%80%90-Springs-stiffness-and-damping)
 - [Runtime frame conversion](https://github.com/DaymareOn/hdtSMP64/blob/dev/src/hdtSkinnedMesh/hdtGeneric6DofConstraint.cpp)
+- [FSMP 4.1.1 inertia reader](https://github.com/DaymareOn/hdtSMP64/blob/v4.1.1/src/hdtSkyrimSystem.cpp#L462)
+- [Bullet 3.25 direct inertia](https://github.com/bulletphysics/bullet3/blob/3.25/src/BulletDynamics/Dynamics/btRigidBody.cpp#L226)
 - [VRM spring-bone specification](https://vrm.dev/en/vrm1/springbone/)

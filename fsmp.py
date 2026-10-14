@@ -1,7 +1,7 @@
 """Attach private FSMP systems after all appearance exports.
 
 Hidden skinned collision proxies use the avatar's weighted body vertices.
-FSMP contacts use mesh surfaces, while bone shapes provide rotational inertia.
+FSMP contacts use mesh surfaces; XML provides explicit rotational inertia.
 """
 import json
 import logging
@@ -22,7 +22,16 @@ LINK = 'HDT Skinned Mesh Physics Object'
 PROXY = 'V2SCollision_Body'
 GRAVITY = 9.8 / .01425  # FSMP scaleSkyrim: game units per second squared
 MASS = .1
-INERTIA_DIVISOR = .2  # FSMP divides automatic inertia: resist abrupt rotation
+INERTIA_MULTIPLIER = 5.  # Increase geometric inertia without increasing spring torque
+
+
+def bone_inertia(radius, mass=MASS):
+    """FSMP 4.1.1 passes XML inertia directly to Bullet, in mass*units².
+
+    Shape radius does not automatically calculate or divide this value.
+    Use an isotropic sphere approximation to avoid orientation-dependent bias.
+    """
+    return .4 * mass * radius**2 * INERTIA_MULTIPLIER
 
 
 def joint_profile(com, radius, global_matrix, stiffness=1., mass=MASS):
@@ -43,7 +52,7 @@ def joint_profile(com, radius, global_matrix, stiffness=1., mass=MASS):
     y /= np.linalg.norm(y)
     basis = np.column_stack((np.cross(y, z), y, z))
     geometric_inertia = .4 * mass * radius**2
-    inertia = geometric_inertia / INERTIA_DIVISOR
+    inertia = bone_inertia(radius, mass)
     lever = basis.T @ np.asarray(com)
     pivot_inertia = inertia + mass * (length**2 - lever**2)
     omega = 2 * np.pi * .65 * np.sqrt(stiffness)
@@ -202,19 +211,18 @@ def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag
         points = local_points(samples.get(name, [np.asarray(info['matrix'])[:3, 3]]), info['matrix'])
         com = points.mean(axis=0)
         transform(bone, 'centerOfMassTransform', com)
-        vector(bone, 'inertia', [INERTIA_DIVISOR] * 3)
         scalar(bone, 'linearDamping', .85)
         scalar(bone, 'angularDamping', .95)
         scalar(bone, 'gravity-factor', 1)
         scalar(bone, 'wind-factor', 0)
-        # This sphere sets rotational inertia, not contact geometry: FSMP
-        # disables rigid bone collisions. Match its radius to the influenced
-        # surface rather than giving long cloth a tiny unstable inertia.
+        # This sphere describes the effective geometry, not contact surfaces.
+        # FSMP does not derive inertia from the shape; serialize it explicitly.
         # Include the pivot-to-CoM lever. A tiny tip sphere on a long joint
         # lever can rotate explosively while the positional constraint catches
         # up, especially at ordinary runtime solver iteration counts.
         radius = max(.65, float(np.linalg.norm(com)),
                      float(np.sqrt(np.square(points-com).sum(axis=1).mean())))
+        vector(bone, 'inertia', [bone_inertia(radius, mass)] * 3)
         scalar(ET.SubElement(bone, 'shape', type='sphere'), 'radius', round(radius, 6))
         profiles[name] = joint_profile(com, radius, info['matrix'], stiffness, mass)
     for name, info in bones.items():
@@ -373,11 +381,17 @@ def build_physics(output):
                             'dynamic_bones': [n for n in bones if bones[n]['dynamic']],
                             'protected_bones': protected,
                             'body_hulls': len(hulls)})
-            logging.info('FSMP %s: %s garment attachment bones fixed, %s movers',
-                         path.name, len(protected), sum(i['dynamic'] for i in bones.values()))
+            inertias = [float(b.find('inertia').attrib['x']) for b in root.findall('bone')
+                        if float(b.findtext('mass', '0')) > 0]
+            logging.info('FSMP %s: %s attachments fixed, %s movers; direct inertia %.7g..%.7g mass*units²',
+                         path.name, len(protected), len(inertias),
+                         min(inertias, default=0), max(inertias, default=0))
     if not systems:
         raise ValueError('FSMP enabled but no appearance NIF retained movable bone weights')
-    result = {'enabled': True, 'systems': systems, 'profile': 'calm_fixed_attachments_v2',
+    result = {'enabled': True, 'systems': systems, 'profile': 'calm_explicit_inertia_v3',
+              'inertia_policy': {'semantics': 'direct Bullet local inertia in mass*game_units²',
+                                 'sphere_multiplier': INERTIA_MULTIPLIER,
+                                 'verified_runtime_source': 'FSMP v4.1.1'},
               'attachment_policy': {'arm_margin_body_height': .04, 'weight_threshold': .2,
                                     'proximity_quantile': .9, 'fixed_prefix_only': True},
               'stiffness': settings.physics_stiffness,
@@ -412,6 +426,12 @@ def validate_physics(output):
         bones = {b.attrib['name'] for b in root.findall('bone')}
         if bones - names:
             raise ValueError(f'FSMP bones missing from skeleton: {bones - names}')
+        for bone in root.findall('bone'):
+            if float(bone.findtext('mass', '0')) > 0:
+                inertia = bone.find('inertia')
+                values = [float(inertia.attrib[a]) for a in 'xyz'] if inertia is not None else []
+                if len(values) != 3 or not np.isfinite(values).all() or min(values) <= 0:
+                    raise ValueError('FSMP mover requires finite positive explicit inertia: '+bone.attrib['name'])
         for joint in root.findall('generic-constraint'):
             if {joint.attrib['bodyA'], joint.attrib['bodyB']} - bones:
                 raise ValueError('FSMP constraint references undeclared bodies')

@@ -1,5 +1,42 @@
 # VRM2Skyrim verification
 
+## 0.9.3-dev direct FSMP inertia (2026-10-14)
+
+The FSMP 4.1.1 XML reader passes `inertia` directly through its rigid-body
+constructor to Bullet 3.25. The previous generator wrote a constant 0.2 while
+the diagnostic interpreted it as a shape-inertia divisor. The shared generator
+now writes geometry/mass-scaled explicit inertia; the diagnostic recreates that
+same tensor from XML. Runtime-consumer tests cover a long and short weighted
+chain, torque response, and rejection of unsupported/invalid preview tensors.
+
+The 0.9.2 Quon XML, interpreted with the correct direct-inertia semantics,
+failed the joint/settling diagnostic: peak final-second speed 1.448 game units/s
+and settled joint gap 4.070 units. The regenerated 0.9.3 XML passes all five
+15-second diagnostic runs with the same 192 dynamic bones and 26 protected
+garment attachment bones:
+
+| Anchors / frame rate | Peak settled speed, game units/s | Peak angular speed, rad/s |
+| --- | ---: | ---: |
+| Move/turn, 30 fps | 0.04670 | 0.02626 |
+| Move/turn, 60 fps | 0.06378 | 0.04423 |
+| Stationary, 60 fps | 0.06028 | 0.04199 |
+| Move/turn and bend arms, 60 fps | 0.09676 | 0.04421 |
+| Move/turn, 120 fps | 0.04065 | 0.02639 |
+
+The new peak-angle check uses an atan2 skew/trace angle. Comparing an actual
+rounded 120-fps final pose with itself reproduced an erroneous 0.116 rad/s
+under acos(trace); a regression test requires zero motion for repeated rounded
+poses while preserving known nonzero rotations. Limits are 0.25 units/s and
+0.1 rad/s over the complete final second. This is the joint/gravity diagnostic
+described in `docs/FSMP.md`, with 16 solver iterations and private bones.
+
+64 Python tests and Ruff pass. All five generated XMLs pass the FSMP schema
+and native NIF-link, bone, skin-weight, collision-proxy and bind-pose validation.
+XML regeneration is deterministic. Asset hashes show only the five physics XMLs
+changed from 0.9.2; ESP, NIF, DDS and runtime assets retain their original bytes.
+The settled pose was rendered from the delivered NIF/DDS assets. Local results
+and the installable Quon sample are under `build/physics/Quon_FSMP_0.9.3`.
+
 ## 0.8.1 Direct3D texture dimensions (2026-10-13)
 
 The installed Erys 2x2 BC7 DDS reproduced E_INVALIDARG (0x80070057) when its

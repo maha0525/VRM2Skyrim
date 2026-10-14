@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT/'dependencies'))
 from custom_skeleton import NifFile, matrix  # noqa: E402
 from settings import load_settings  # noqa: E402
-from physics_rig import read_system  # noqa: E402
+from physics_rig import inertia_sphere_radius, read_system, rotation_step_angles  # noqa: E402
 
 GRAVITY = 9.8 / .01425
 
@@ -37,6 +37,7 @@ def main():
     parser.add_argument('--result', default='physics-preview.json')
     parser.add_argument('--allow-failure', action='store_true')
     parser.add_argument('--articulate-arms', action='store_true')
+    parser.add_argument('--stationary', action='store_true')
     args = parser.parse_args(sys.argv[sys.argv.index('--')+1:])
     output = args.output.resolve()
     settings = load_settings(output)
@@ -60,6 +61,7 @@ def main():
     scene.render.fps = args.fps
     scene.gravity = (0, 0, -GRAVITY)
     bodies, offsets, definitions, constraints = {}, {}, {}, []
+    inertia_checks = {}
     for system in systems:
         root = read_system(output/'mod'/system['xml'])
         for definition in root.findall('bone'):
@@ -77,12 +79,13 @@ def main():
             offset[:3, 3] = vec(com, 'origin')
         offsets[name] = offset
         radius = float(definition.findtext('shape/radius', '.65'))
-        inertia = definition.find('inertia')
-        if mass and inertia is not None:
-            divisors = vec(definition, 'inertia')
-            if not np.allclose(divisors, divisors[0]) or divisors[0] <= 0:
-                raise ValueError('Preview requires an isotropic positive inertia divisor')
-            radius /= math.sqrt(divisors[0])
+        if mass:
+            requested = vec(definition, 'inertia')
+            radius = inertia_sphere_radius(mass, requested)
+            reproduced = .4 * mass * radius**2
+            np.testing.assert_allclose([reproduced]*3, requested, rtol=1e-6)
+            inertia_checks[name] = {'xml': requested.tolist(), 'sphere_radius': radius,
+                                    'reproduced': reproduced}
         bpy.ops.mesh.primitive_uv_sphere_add(segments=8, ring_count=4, radius=radius)
         obj = bpy.context.object
         obj.name = name
@@ -104,7 +107,7 @@ def main():
                 # Move and turn the whole animated anchor frame, then stop.
                 # 30 game-unit translation and 35-degree turn exercise inertia.
                 t = frame/args.fps
-                pulse = (1-math.cos(math.pi*(t-2)))/2 if 2 <= t <= 4 else 0
+                pulse = (1-math.cos(math.pi*(t-2)))/2 if not args.stationary and 2 <= t <= 4 else 0
                 move = Matrix.Translation((30*pulse, 0, 3*math.sin(4*math.pi*pulse)))
                 rotate = Matrix.Rotation(math.radians(35)*pulse, 4, 'Z')
                 pose = Matrix.Identity(4)
@@ -197,6 +200,9 @@ def main():
                                   for n in dynamic}
             print('Bullet frame', frame, 'max joint error', max(errors), flush=True)
     displacement = np.linalg.norm(positions[-1]-positions[0], axis=1)
+    late_positions = np.asarray(positions[-args.fps:])
+    late_rotations = np.asarray(angles[-args.fps:])
+    angular_speed = rotation_step_angles(late_rotations) * args.fps
     result = {'engine': 'Blender Bullet joint-only preview from delivered FSMP XML',
               'frames': frames, 'dynamic_bones': len(dynamic), 'max_joint_error': max(errors),
               'max_settle_speed': float(np.linalg.norm(positions[-1]-positions[-2], axis=1).max()*args.fps),
@@ -207,15 +213,23 @@ def main():
               'fastest_bone': dynamic[int(np.argmax(np.linalg.norm(positions[-1]-positions[-2], axis=1)))],
               'gravity_game_units': GRAVITY, 'fps': args.fps, 'solver_iterations': 16, 'substeps_per_frame': substeps,
               'arm_articulation': args.articulate_arms,
-              'settled_rms_speed': float(np.sqrt(np.square(np.diff(positions[-args.fps:], axis=0)*args.fps).sum(axis=2).mean())),
+              'stationary_anchors': args.stationary,
+              'inertia_semantics': 'direct Bullet local inertia in mass*game_units²',
+              'inertia_readback': inertia_checks,
+              'max_settled_speed': float(np.linalg.norm(np.diff(late_positions, axis=0)*args.fps, axis=2).max()),
+              'max_settled_angular_speed': float(angular_speed.max()),
+              'angular_measurement': 'atan2 skew/trace step angle',
+              'settled_rms_speed': float(np.sqrt(np.square(np.diff(late_positions, axis=0)*args.fps).sum(axis=2).mean())),
               'settled_rms_rotation_change': float(np.sqrt(np.square(np.diff(angles[-args.fps:], axis=0)*args.fps).mean())),
-              'limits': {'solver_joint_gap': 1., 'settled_joint_gap': .4, 'settling_speed': 1.},
+              'limits': {'solver_joint_gap': 1., 'settled_joint_gap': .4, 'settling_speed': .25,
+                         'settled_angular_speed_rad_s': .1},
               'mesh_contact_solver': 'FSMP runtime handles contacts; bone collisions disabled in this preview'}
     result['passed'] = bool(np.isfinite(displacement).all() and max(solver_errors) < 1. and
                             max(settled_errors) < .4 and
-                            displacement.max() > 1 and result['max_settle_speed'] < 1.)
+                            displacement.max() > 1 and result['max_settled_speed'] < .25 and
+                            result['max_settled_angular_speed'] < .1)
     (output/args.result).write_text(json.dumps(result, indent=2), encoding='utf8')
-    print({key: value for key, value in result.items() if key != 'frames'}, flush=True)
+    print({key: value for key, value in result.items() if key not in ('frames', 'inertia_readback')}, flush=True)
     if not result['passed'] and not args.allow_failure:
         raise ValueError('Physics preview failed joint/gravity checks')
 

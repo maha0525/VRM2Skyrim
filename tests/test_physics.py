@@ -5,10 +5,10 @@ import tempfile
 
 import numpy as np
 
-from fsmp import (GRAVITY, INERTIA_DIVISOR, LINK, MASS, PROXY, add_collision_proxy,
+from fsmp import (GRAVITY, LINK, MASS, PROXY, add_collision_proxy,
                   attach, joint_profile, local_points, protect_attachments, system_xml)
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
-from physics_rig import plan_bones, selected_meshes, spring_nodes
+from physics_rig import inertia_sphere_radius, plan_bones, selected_meshes, spring_nodes, rotation_step_angles
 from settings import FollowerSettings
 
 
@@ -97,11 +97,41 @@ class PhysicsTests(unittest.TestCase):
             if np.linalg.norm(com):
                 np.testing.assert_allclose(basis[:, 2], np.asarray(com)/np.linalg.norm(com))
         _, spring, damping = joint_profile([20, 0, 0], 3., np.eye(4))
-        inertia = .4 * MASS * 3**2 / INERTIA_DIVISOR + MASS * 20**2
+        inertia = .4 * MASS * 3**2 * 5 + MASS * 20**2
         ratio = damping[0] / (2*np.sqrt(inertia*(spring[0] + MASS*GRAVITY*20)))
         self.assertGreaterEqual(ratio, 1.)
         short = joint_profile([2, 0, 0], 3., np.eye(4))[2]
         self.assertGreater(damping[0], short[0]*10)
+
+    def test_delivered_inertia_matches_runtime_and_preview_not_a_divisor(self):
+        bones = {'long': {'parent': 'NPC Arm', 'dynamic': True, 'matrix': np.eye(4).tolist()},
+                 'short': {'parent': 'NPC Head', 'dynamic': True, 'matrix': np.eye(4).tolist()}}
+        xml = system_xml(bones, {'long': [[20, 0, 0]], 'short': [[2, 0, 0]]}, {})
+        values = {}
+        for name in bones:
+            bone = xml.find(f"bone[@name='{name}']")
+            mass = float(bone.findtext('mass'))
+            values[name] = [float(bone.find('inertia').attrib[a]) for a in 'xyz']
+            radius = inertia_sphere_radius(mass, values[name])
+            # Bullet sphere's I = 2/5 mr². A unit torque has acceleration 1/I,
+            # and must agree in the preview and FSMP's direct XML consumer.
+            np.testing.assert_allclose([.4*mass*radius**2]*3, values[name])
+        np.testing.assert_allclose(values['long'], [80.]*3)
+        np.testing.assert_allclose(values['short'], [.8]*3)
+        self.assertAlmostEqual((1/values['short'][0])/(1/values['long'][0]), 100.)
+        for invalid in ([0, 0, 0], [-1, -1, -1], [1, 2, 1], [float('nan')]*3):
+            with self.assertRaises(ValueError):
+                inertia_sphere_radius(.1, invalid)
+
+    def test_stationary_rounded_rotation_is_not_high_fps_twitching(self):
+        rounded = np.diag([1., .9999999, 1.]).astype(np.float32)
+        # acos(trace) alone incorrectly measures movement even against itself.
+        false_speed = np.arccos((np.trace(rounded.T@rounded)-1)/2)*120
+        self.assertGreater(false_speed, .05)
+        np.testing.assert_array_equal(rotation_step_angles([rounded, rounded]), [0.])
+        from scipy.spatial.transform import Rotation
+        rotations = Rotation.from_euler('z', [0., 10., 30.], degrees=True).as_matrix()
+        np.testing.assert_allclose(rotation_step_angles(rotations), np.radians([10., 20.]))
 
     def test_distal_chain_does_not_overload_its_root(self):
         bones = {'a': {'parent': 'NPC Arm', 'dynamic': True, 'matrix': np.eye(4).tolist()},
