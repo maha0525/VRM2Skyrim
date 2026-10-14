@@ -25,6 +25,23 @@ Show "前に作ったフォロワー" only inside STEP 01. Hide it automatically
 moving to STEP 02..05 or opening a conversion result; restore it when returning
 to STEP 01. Retain the existing saved-result and equipment-edit opening action.
 
+Expose the 18 individual skill settings even in automatic mode, with a clear
+switch to manual values. Explain that chosen Perks are granted explicitly;
+skill levels and Perks are separate settings. Display CLAS skill and attribute
+growth weights from actual DATA, without claiming predicted final skill values.
+By default show combat styles with positive usage evidence from NPCs using the
+character skeleton, resolving inherited race Traits. Other/unclassified styles
+remain available via an all-styles switch. Preserve imported choices, including
+styles outside the normal list. This is a recommendation filter, not a CSTY race
+restriction. New followers default to essential and morality 0; imported explicit
+protection and morality must not change. Verify actual UI navigation/import/export
+and read back generated NPC skill values, flags and morality.
+
+For isolated browser verification, run `python tests/browser-roles-fixture.py`
+then `node tests/browser-roles.cjs` with Playwright available. This reads local
+game records, serves the actual UI via mocked API responses, and exercises the
+controls without starting a conversion or changing installed game data.
+
 Preserve native headwear partitions 130/131/141/142/143 in the NIF. Their
 corresponding 30/31/41/42/43 values are used only for equipment masks and
 priority checks. Retain the native partition when splitting/exporting geometry,

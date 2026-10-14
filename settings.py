@@ -35,10 +35,10 @@ class FollowerSettings:
     health: int = 200
     magicka: int = 100
     stamina: int = 150
-    protection: str = "protected"
+    protection: str = "essential"
     confidence: int = 4
     aggression: int = 1
-    morality: int = 3
+    morality: int = 0
     marriage: bool = False
     height_scale: float = 1.0
     weapon: str = "SteelSword"

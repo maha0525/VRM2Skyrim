@@ -22,6 +22,7 @@ function applySettings(settings) {
   for(const key of skills) $('skill-'+key).value=settings.skills?.[key]??20;
   if(state.source)wardrobeLoad(state.source,settings);
   state.physicsNodes=new Set(!state.source||settings.appearance_source_sha256===state.source.sha256?settings.physics_nodes||[]:[]); renderPhysics();
+  if(state.choices)updateStyles(settings.combat_style);
   updateLevel(); updateMarriage(); renderChoices();
 }
 function collect() {
@@ -81,6 +82,7 @@ function setupChoices(choices) {
   state.choices=choices;
   for(const [id,key] of [['voice','voices'],['combat_class','classes'],['combat_style','styles'],['weapon','weapons'],['ammunition','ammunition']])fillSelect(id,choices[key],['weapon','ammunition'].includes(id));
   if(state.imported&&state.importPending){applySettings(state.imported);state.importPending=false;}
+  updateStyles();updateRoleDetails();
   updateMarriage();
   renderChoices();
   setupFitting();
@@ -148,7 +150,36 @@ function renderChoiceList(kind, term) {
   }
 }
 function renderChoices(){renderChoiceList('perks',$('perk-search').value);renderChoiceList('spells',$('spell-search').value);$('perk-count').textContent=state.perks.size;$('spell-count').textContent=state.spells.size;selectedTags('perks');selectedTags('spells');}
-function updateLevel() {$('fixed-level').hidden=$('level_mode').value!=='fixed';$('mult-level').hidden=$('level_mode').value!=='player';$('manual-skills').hidden=$('auto_calculate').value!=='false';}
+function updateStyles(selected=$('combat_style').value) {
+  if(!state.choices)return;
+  const items=state.choices.styles;
+  if(items.some(item=>item.id===selected&&!item.humanoid))$('all-styles').checked=true;
+  fillSelect('combat_style',items.filter(item=>$('all-styles').checked||item.humanoid));
+  if([...$('combat_style').options].some(option=>option.value===selected))$('combat_style').value=selected;
+  if(!$('combat_style').value)$('combat_style').value=state.defaults.combat_style;
+  updateRoleDetails();
+}
+function updateRoleDetails() {
+  const growth=state.choices?.classes.find(item=>item.id===$('combat_class').value)?.growth;
+  const target=$('class-details');target.replaceChildren();
+  if(growth){
+    const entries=Object.entries(growth.skills).filter(([,weight])=>weight>0).sort((a,b)=>b[1]-a[1]);
+    const skillText=entries.map(([key,weight])=>`${skillLabels[skills.indexOf(key)]} ${weight}`).join(' ／ ');
+    for(const text of [`得意スキルの成長配分：${skillText||'配分なし'}`,`体力 ${growth.attributes.health}：マジカ ${growth.attributes.magicka}：スタミナ ${growth.attributes.stamina}`, '数字は成長配分の比率です。自動計算で使われ、個別スキルの手動指定ではスキル値をこの配分から計算しません。']){const p=document.createElement('p');p.textContent=text;target.append(p);}
+  }else target.textContent='このクラスの成長配分を読み取れませんでした。';
+  const style=state.choices?.styles.find(item=>item.id===$('combat_style').value);
+  $('style-details').textContent=style?`${style.humanoid?'人型NPCでの使用例あり':'人型NPCでの使用例を確認できないスタイル'}。使用種族：${style.used_by?.join('、')||'確認できず'}。`:'';
+}
+function updateLevel() {
+  const manual=$('auto_calculate').value==='false';
+  $('fixed-level').hidden=$('level_mode').value!=='fixed';$('mult-level').hidden=$('level_mode').value!=='player';
+  $('skill-inputs').hidden=!manual;$('use-manual-skills').hidden=manual;
+  for(const key of skills)$('skill-'+key).disabled=!manual;
+  $('skills-hint').textContent=manual?'18スキルを0〜100で指定します。レベル追従を選んでも、スキルはこの指定値を使います。':'自動計算では、クラスとNPCのレベルからゲームがスキル値を決めます。数値を指定したい場合は手動設定へ切り替えてください。';
+  $('stat-hint').textContent=manual?'体力・マジカ・スタミナも指定値を使います。':'成長前の基礎値を指定します。クラスとNPCのレベルに応じた成長分が加わります。';
+  for(const [key,label] of [['health','体力'],['magicka','マジカ'],['stamina','スタミナ']])$(key).parentElement.firstChild.textContent=(manual?'':'基礎')+label;
+  updateRoleDetails();
+}
 function updateMarriage(){if(!state.choices)return;const supported=state.choices.marriage_voices.includes($('voice').value);$('marriage').disabled=!supported;if(!supported)$('marriage').checked=false;}
 function showStep(step) {
   state.step=step;error(); document.querySelectorAll('[data-step]').forEach(section=>section.hidden=Number(section.dataset.step)!==step);
@@ -199,7 +230,7 @@ async function create() {
 function preset() {
   const presets={warrior:{combat_class:'CombatWarrior1H',combat_style:'csHumanMeleeLvl1',weapon:'SteelSword',ammunition:'',spells:[]},twohand:{combat_class:'CombatWarrior2H',combat_style:'csHumanBoss2H',weapon:'SteelGreatsword',ammunition:'',spells:[]},archer:{combat_class:'CombatRanger',combat_style:'csHumanMissile',weapon:'HuntingBow',ammunition:'IronArrow',spells:[]},mage:{combat_class:'CombatMageDestruction',combat_style:'csHumanMagic',weapon:'',ammunition:'',spells:['Firebolt','FastHealing']},conjurer:{combat_class:'CombatMageConjurer',combat_style:'csHumanMagic',weapon:'',ammunition:'',spells:['ConjureFlameAtronach','FastHealing']}};
   const chosen=presets[$('preset').value];if(!chosen)return;for(const key of ['combat_class','combat_style','weapon','ammunition'])$(key).value=chosen[key];state.spells=new Set(chosen.spells.filter(id=>state.choices.spells.some(item=>item.id===id)));renderChoices();
-  const caster=['mage','conjurer'].includes($('preset').value);$('health').value=caster?150:200;$('magicka').value=caster?200:100;$('stamina').value=caster?100:150;
+  const caster=['mage','conjurer'].includes($('preset').value);$('health').value=caster?150:200;$('magicka').value=caster?200:100;$('stamina').value=caster?100:150;updateStyles(chosen.combat_style);updateRoleDetails();
 }
 async function init() {
   for(let i=0;i<skills.length;i++){const label=document.createElement('label');label.textContent=skillLabels[i];const input=document.createElement('input');input.id='skill-'+skills[i];input.type='number';input.min='0';input.max='100';input.value='20';label.append(input);$('skills').append(label);}
@@ -217,6 +248,9 @@ async function init() {
   $('merge-armor-patch').onclick=async()=>{const button=$('merge-armor-patch');button.disabled=true;$('armor-patch-status').textContent='互換パッチを作成しています…';try{const result=await api('/api/armor-patch',{game:$('game').value,profiles:[...$('fitted-followers').querySelectorAll('input:checked')].map(input=>input.value)});$('armor-patch-download').textContent='統合パッチを保存';$('armor-patch-download').href=fileURL(result.job_id,result.archive);$('armor-patch-status').textContent='選択したフォロワー分のパッチを作成しました。このZIPに差し替えてください。';}catch(e){$('armor-patch-status').textContent=e.message;}finally{button.disabled=false;}};
   $('source').onchange=()=>upload($('source').files[0]);const zone=document.querySelector('.dropzone');zone.ondragover=e=>{e.preventDefault();zone.classList.add('drag');};zone.ondragleave=()=>zone.classList.remove('drag');zone.ondrop=e=>{e.preventDefault();zone.classList.remove('drag');upload(e.dataTransfer.files[0]);};
   $('next').onclick=next;$('back').onclick=()=>showStep(state.step-1);$('create').onclick=create;$('level_mode').onchange=updateLevel;$('auto_calculate').onchange=updateLevel;$('preset').onchange=preset;
+  $('combat_class').onchange=updateRoleDetails;$('combat_style').onchange=updateRoleDetails;
+  $('all-styles').onchange=()=>{const selected=$('combat_style').value;const item=state.choices.styles.find(item=>item.id===selected);updateStyles(!$('all-styles').checked&&!item?.humanoid?state.defaults.combat_style:selected);};
+  $('use-manual-skills').onclick=()=>{$('auto_calculate').value='false';$('manual-skills').open=true;updateLevel();};
   $('mod_name').oninput=()=>{state.nameDirty=true;updateId();};$('npc_name').oninput=()=>state.nameDirty=true;$('mod_id').oninput=()=>state.idDirty=true;
   $('sex').onchange=async()=>{const sex=$('sex').value;$('voice').value=sex==='male'?'MaleNord':'FemaleEvenToned';updateMarriage();if(state.choices){try{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));const result=await api('/api/catalog',{game:$('game').value,blender:$('blender').value});if($('sex').value===sex){state.choices.armors=result.choices.armors;setupFitting();}}catch(e){error(e.message);}}};$('voice').onchange=updateMarriage;
   $('perk-search').oninput=renderChoices;$('spell-search').oninput=renderChoices;

@@ -1,9 +1,11 @@
 """Read selectable records from the user's Skyrim.esm, without bundled game data."""
+import logging
 import struct
 from pathlib import Path
 
 from plugin import records
 from bsa import BSA
+from settings import SKILLS
 
 KINDS = {b"NPC_", b"ARMO", b"ARMA", b"RACE", b"FACT", b"VTYP", b"WEAP", b"PACK",
          b"CLAS", b"CSTY", b"PERK", b"SPEL", b"FLST", b"CELL", b"REFR", b"AMMO", b"KYWD", b'BOOK'}
@@ -21,10 +23,21 @@ def castable_spell(record):
 CLASS_LABELS = {'Blade': 'ブレイズの戦士（デルフィンのクラス）'}
 
 
+def class_growth(record):
+    """CLAS DATA layout: xEdit wbDefinitionsTES5 Skill/Attribute Weights."""
+    values = record.values(b'DATA')
+    if not values or len(values[0]) < 36:
+        return None
+    data = values[0]
+    return {'skills': dict(zip(SKILLS, data[6:24])),
+            'attributes': dict(zip(('health', 'magicka', 'stamina'), data[32:35]))}
+
+
 class GameCatalog:
     def __init__(self, data):
         self.path = Path(data) / "Skyrim.esm"
-        self.by_editor_id = {r.editor_id: r for r in records(self.path, KINDS) if r.editor_id}
+        self.by_form_id = {r.form_id: r for r in records(self.path, KINDS)}
+        self.by_editor_id = {r.editor_id: r for r in self.by_form_id.values() if r.editor_id}
         # Spell type alone also includes shrine/script/trap effects. The books
         # identify the ordinary spells that actors can learn and cast.
         self.learnable_spells = {struct.unpack_from('<I', value, 4)[0] for r in self.by_editor_id.values()
@@ -92,6 +105,46 @@ class GameCatalog:
     def choices(self, kind):
         return sorted((r for r in self.by_editor_id.values() if r.kind == kind), key=lambda r: r.editor_id.lower())
 
+    def actor_race(self, actor, seen=None):
+        # Use Traits inherits RNAM. Leveled-list templates have multiple possible
+        # actors; leave those unclassified rather than guessing a race.
+        seen = set() if seen is None else seen
+        if actor.form_id in seen:
+            return None
+        seen.add(actor.form_id)
+        acbs = actor.values(b'ACBS')
+        if acbs and len(acbs[0]) >= 20 and struct.unpack_from('<H', acbs[0], 18)[0] & 1:
+            template = actor.values(b'TPLT')
+            parent = self.by_form_id.get(struct.unpack('<I', template[0])[0]) if template else None
+            return self.actor_race(parent, seen) if parent and parent.kind == b'NPC_' else None
+        race = actor.values(b'RNAM')
+        result = self.by_form_id.get(struct.unpack('<I', race[0])[0]) if race else None
+        return result if result and result.kind == b'RACE' else None
+
+    def style_usage(self):
+        """Positive usage evidence, not a claim that CSTY is race-restricted."""
+        usage = {}
+        for actor in self.choices(b'NPC_'):
+            acbs = actor.values(b'ACBS')
+            # Positive evidence only: skip deleted actors and AI-data inherited
+            # actors whose local ZNAM may not be their effective combat style.
+            if actor.flags & 4 or (acbs and len(acbs[0]) >= 20
+                                   and struct.unpack_from('<H', acbs[0], 18)[0] & 0x10):
+                continue
+            values = actor.values(b'ZNAM')
+            race = self.actor_race(actor)
+            if not values or not race:
+                continue
+            style = struct.unpack('<I', values[0])[0]
+            paths = [v.rstrip(b'\0').decode('utf8', 'replace').replace('\\', '/').lower()
+                     for v in race.values(b'ANAM')]
+            if not paths:
+                continue
+            kind = 'humanoid' if all(p.startswith('actors/character/') for p in paths) else 'other'
+            row = usage.setdefault(style, {'humanoid': set(), 'other': set()})
+            row[kind].add(self.label(race))
+        return usage
+
     def validate_settings(self, settings):
         voice = self.require(settings.voice, b"VTYP")
         if voice.form_id not in self.follower_voice_ids:
@@ -132,6 +185,14 @@ class GameCatalog:
                            and (kind != b'SPEL' or (castable_spell(r) and r.form_id in self.learnable_spells))]
         for item in result['classes']:
             item['label'] = CLASS_LABELS.get(item['id'], item['label'])
+            item['growth'] = class_growth(self.require(item['id']))
+        usage = self.style_usage()
+        for item in result['styles']:
+            row = usage.get(self.require(item['id']).form_id, {'humanoid': set(), 'other': set()})
+            item['humanoid'] = bool(row['humanoid'])
+            item['used_by'] = sorted(row['humanoid'] | row['other'])
+        logging.debug('Wizard catalog: %d classes, %d combat styles (%d with character-skeleton NPC usage)',
+                      len(result['classes']), len(result['styles']), sum(s['humanoid'] for s in result['styles']))
         result["marriage_voices"] = [r.editor_id for r in self.choices(b"VTYP") if r.form_id in self.marriage_voice_ids]
         from armor_catalog import official_choices, slot_mask
         from official_catalog import OfficialCatalog

@@ -7,14 +7,41 @@ import unittest
 
 from build_npc import build_npc, NPC_ID, RACE_ID, REFERENCE_ID
 from environment import find_game
-from game_catalog import GameCatalog
-from plugin import records
+from game_catalog import GameCatalog, class_growth
+from plugin import records, Record
 from settings import FollowerSettings
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class SettingsTests(unittest.TestCase):
+    def test_new_defaults_and_explicit_imported_protection(self):
+        self.assertEqual((FollowerSettings().protection, FollowerSettings().morality), ('essential', 0))
+        old = FollowerSettings.from_dict({'protection': 'protected', 'morality': 3})
+        self.assertEqual((old.protection, old.morality), ('protected', 3))
+
+    def test_class_data_layout_and_short_data(self):
+        data = bytes(6) + bytes(range(18)) + bytes(8) + bytes((4, 0, 2, 99))
+        record = Record(b'CLAS', 1, 0, [(b'DATA', data)])
+        growth = class_growth(record)
+        self.assertEqual(growth['skills']['OneHanded'], 0)
+        self.assertEqual(growth['skills']['Enchanting'], 17)
+        self.assertEqual(growth['attributes'], {'health': 4, 'magicka': 0, 'stamina': 2})
+        record.replace(b'DATA', bytes(35))
+        self.assertIsNone(class_growth(record))
+
+    def test_race_traits_inheritance_and_cycles(self):
+        race = Record(b'RACE', 1, 0, [])
+        base = Record(b'NPC_', 2, 0, [(b'RNAM', struct.pack('<I', 1))])
+        data = bytearray(24)
+        struct.pack_into('<H', data, 18, 1)
+        child = Record(b'NPC_', 3, 0, [(b'ACBS', bytes(data)), (b'TPLT', struct.pack('<I', 2))])
+        catalog = GameCatalog.__new__(GameCatalog)
+        catalog.by_form_id = {1: race, 2: base, 3: child}
+        self.assertIs(catalog.actor_race(child), race)
+        base.fields = [(b'ACBS', bytes(data)), (b'TPLT', struct.pack('<I', 3))]
+        self.assertIsNone(catalog.actor_race(child))
+
     def test_bad_configuration_is_rejected(self):
         for options in ({"mod_id": "../escape"}, {"mod_id": "unsafe/name"}, {"health": 0},
                         {"min_level": 30, "max_level": 5}, {"height_scale": float("nan")},
@@ -56,6 +83,28 @@ class FollowerIntegrationTests(unittest.TestCase):
         self.assertNotIn('AltarAkatoshSpell', spells)
         blade = next(c for c in choices['classes'] if c['id'] == 'Blade')
         self.assertIn('ブレイズ', blade['label'])
+
+    def test_class_weights_and_combat_style_usage_from_game(self):
+        choices = self.catalog.json_choices()
+        classes = {c['id']: c['growth'] for c in choices['classes']}
+        self.assertEqual(classes['CombatWarrior1H']['skills']['OneHanded'], 3)
+        self.assertEqual(classes['CombatWarrior1H']['attributes'], {'health': 4, 'magicka': 0, 'stamina': 2})
+        self.assertEqual(classes['CombatMageDestruction']['skills']['Destruction'], 3)
+        styles = {s['id']: s for s in choices['styles']}
+        for key in ('csHumanMeleeLvl1', 'csHumanBoss2H', 'csHumanMissile', 'csHumanMagic'):
+            self.assertTrue(styles[key]['humanoid'], key)
+        self.assertFalse(styles['csMammoth']['humanoid'])
+        self.assertTrue(styles['csMammoth']['used_by'])
+
+    def test_default_flags_and_all_manual_skills_reach_plugin(self):
+        from settings import SKILLS
+        values = {key: 40 + index for index, key in enumerate(SKILLS)}
+        _, by_kind = self.build(FollowerSettings(auto_calculate=False, skills=values))
+        npc = by_kind[b'NPC_']
+        flags = struct.unpack_from('<I', npc.values(b'ACBS')[0])[0]
+        self.assertEqual(flags & (2 | 0x800 | 0x10), 2)
+        self.assertEqual(npc.values(b'AIDT')[0][3], 0)
+        self.assertEqual(npc.values(b'DNAM')[0][:18], bytes(values.values()))
 
     def test_recruitment_relationship_and_temple_group(self):
         settings = FollowerSettings(npc_name="ソフィー", mod_name="TempleFollower")
