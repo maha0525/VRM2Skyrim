@@ -4,7 +4,7 @@ const state = {step:0, source:null, choices:null, defaults:null, job:null, impor
 const skills = ["OneHanded","TwoHanded","Marksman","Block","Smithing","HeavyArmor","LightArmor","Pickpocket","Lockpicking","Sneak","Alchemy","Speechcraft","Alteration","Conjuration","Destruction","Illusion","Restoration","Enchanting"];
 const skillLabels = ["片手武器","両手武器","弓術","防御","鍛冶","重装","軽装","スリ","開錠","隠密","錬金術","話術","変性","召喚","破壊","幻惑","回復","付呪"];
 const integers = new Set(["level","min_level","max_level","health","magicka","stamina","confidence","aggression","morality"]);
-const floats = new Set(["level_multiplier","height_scale","spawn_offset_x","spawn_offset_y","physics_stiffness"]);
+const floats = new Set(["level_multiplier","height_scale","spawn_offset_x","spawn_offset_y","physics_stiffness","sitting_offset"]);
 function error(message="") {$('error').hidden=!message; $('error').textContent=message;}
 async function api(path, data) {
   if(path==='/api/catalog')data={...data,sex:$('sex').value};

@@ -153,6 +153,7 @@ def validate(output, skeleton=None):
            if settings.fitting_enabled else 0)
         + ((5 + sum(bool(p['nodes']) for p in head_variants(settings))) if settings.head_switch_enabled else 0)
     )
+    expected_records += int(settings.sitting_enabled)
     if len(local_ids) != expected_records:
         raise ValueError(f"Expected {expected_records} private follower records")
     if any(form_id >> 24 != 1 for form_id in local_ids):
@@ -176,6 +177,7 @@ def validate(output, skeleton=None):
                     if value >> 24 == 1 and value not in local_ids:
                         raise ValueError("Dangling local record reference")
     by_name = {record.editor_id: record for record in generated}
+    npc = by_name[settings.prefix + 'NPC']
     race = by_name[settings.prefix + "Race"]
     for name in (settings.prefix + "NPC", settings.prefix + "Appearance"):
         if by_name[name].values(b"RNAM") != [struct.pack("<I", race.form_id)]:
@@ -245,7 +247,12 @@ def validate(output, skeleton=None):
             raise ValueError(
                 "Wardrobe default outfit must be empty, with clothes in ordinary inventory"
             )
-        if npc.values(b'VMAD') != [vmad(settings)]:
+        expected_vmad = vmad(settings)
+        if settings.sitting_enabled:
+            from seating import append_binding
+            seat_report = json.loads((output / 'seating.json').read_text(encoding='utf8'))
+            expected_vmad = append_binding(expected_vmad, settings, seat_report['offset'])
+        if npc.values(b'VMAD') != [expected_vmad]:
             raise ValueError('Wardrobe script properties do not match the follower')
         _, _, _, strings = pex_strings((mod/'scripts'/(script_name(settings)+'.pex')).read_bytes())
         if script_name(settings).encode() not in strings:
@@ -262,6 +269,9 @@ def validate(output, skeleton=None):
     ):
         raise ValueError("Private race references the wrong skeleton")
     npc = by_name[settings.prefix + "NPC"]
+    if settings.sitting_enabled:
+        from seating import validate_runtime
+        validate_runtime(output, settings, npc, {r.form_id: r for r in generated})
     if npc.form_id != NPC_ID or race.form_id != RACE_ID:
         raise ValueError("Wrong follower/race IDs")
     if npc.values(b"FULL") != [settings.npc_name.encode("utf8") + b"\0"]:

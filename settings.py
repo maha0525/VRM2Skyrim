@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import re
 
-VERSION = "0.9.5-dev"
+VERSION = "0.9.6-dev"
 
 
 def identifier(name):
@@ -41,6 +41,9 @@ class FollowerSettings:
     morality: int = 0
     marriage: bool = False
     height_scale: float = 1.0
+    sitting_enabled: bool = True
+    sitting_auto: bool = True
+    sitting_offset: float = 0.0
     weapon: str = "SteelSword"
     ammunition: str = ""
     perks: list = field(default_factory=list)  # {editor_id, rank}; rank is CK's zero-based rank
@@ -87,7 +90,8 @@ class FollowerSettings:
         if self.min_level > self.max_level:
             raise ValueError("Minimum level exceeds maximum level")
         for name, low, high in (("level_multiplier", .1, 10), ("height_scale", .25, 3),
-                                ("spawn_offset_x", -200, 200), ("spawn_offset_y", -200, 200)):
+                                ("spawn_offset_x", -200, 200), ("spawn_offset_y", -200, 200),
+                                ("sitting_offset", -100, 100)):
             value = getattr(self, name)
             if not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
                 raise ValueError(f"{name} must be in {low}–{high}")
@@ -103,7 +107,8 @@ class FollowerSettings:
                 raise ValueError("Perks require editor_id and a zero-based integer rank")
         if any(not isinstance(spell, str) for spell in self.spells):
             raise ValueError("Spell IDs must be strings")
-        for name in ("auto_calculate", "marriage", "render_previews", "armor_support", "physics_enabled"):
+        for name in ("auto_calculate", "marriage", "render_previews", "armor_support", "physics_enabled",
+                     "sitting_enabled", "sitting_auto"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be true or false")
         if (not isinstance(self.physics_nodes, list) or

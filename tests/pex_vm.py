@@ -61,7 +61,7 @@ class PexVM:
                 for _ in range(self.read('H')):
                     op = self.read('B')
                     counts = {1: 3, 5: 3, 10: 2, 13: 2, 14: 2, 15: 3, 16: 3, 18: 3,
-                              20: 1, 22: 2, 23: 3, 25: 3, 26: 1, 27: 3}
+                              20: 1, 21: 2, 22: 2, 23: 3, 25: 3, 26: 1, 27: 3}
                     args = [self.value() for _ in range(counts[op])]
                     extra = []
                     if op in (23, 25):
@@ -128,17 +128,25 @@ class PexVM:
             elif op == 22:
                 if not get(args[0]):
                     advance = get(args[1])
+            elif op == 21:
+                if get(args[0]):
+                    advance = get(args[1])
             elif op == 26:
                 return get(args[0])
             elif op == 25:
-                assert args[0][1].lower() == 'debug' and args[1][1].lower() == 'trace'
-                self.actor.logs.append(get(extra[0]))
-                put(args[2], None)
+                if args[0][1].lower() == 'debug' and args[1][1].lower() == 'trace':
+                    self.actor.logs.append(get(extra[0]))
+                    result = None
+                else:
+                    result = self.actor.global_call(args[0][1].lower(), args[1][1].lower(), [get(v) for v in extra])
+                put(args[2], result)
             elif op == 23:
                 method, target = args[0][1].lower(), get(args[1])
                 values = [get(v) for v in extra]
                 if target is self.actor:
                     result = self.run(method, *values) if method in self.functions else self.actor.call(method, values)
+                elif hasattr(target, 'call'):
+                    result = target.call(method, values)
                 elif method == 'getsize':
                     result = len(target)
                 elif method == 'getat':

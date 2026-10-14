@@ -212,6 +212,7 @@ def build_npc(game_data, output, settings=None, catalog=None):
     factions = configure_actor(npc, settings, catalog, base_stats)
     configure_native_head(npc, race)
     appearance += head_records(settings, RACE_ID)
+    script_data = None
     if settings.armor_support:
         appearance += runtime_records(settings, profile=fitting if settings.fitting_enabled else None)
         if settings.head_switch_enabled:
@@ -219,7 +220,18 @@ def build_npc(game_data, output, settings=None, catalog=None):
             skin = next(r for r in appearance if r.form_id == ARMOR_ID)
             fixed = next(r for r in appearance if r.form_id == 0x01000808)
             appearance += head_skin_records(settings, skin, fitting if settings.fitting_enabled else None, fixed)
-        after(npc, b"EDID", [(b"VMAD", vmad(settings))])
+        script_data = vmad(settings)
+    seated = output / 'seating.json'
+    if settings.sitting_enabled and seated.exists():
+        from seating import append_binding, runtime_records as seat_records, write_runtime as write_seat_runtime
+        seat_report = json.loads(seated.read_text(encoding='utf8'))
+        appearance += seat_records(game_data, settings)
+        script_data = append_binding(script_data, settings, seat_report['offset'])
+        write_seat_runtime(output, settings)
+    elif settings.sitting_enabled and (output / 'mod/meshes' / settings.asset_dir / 'skeleton.nif').exists():
+        raise ValueError('Calculate seated height before building the follower plugin')
+    if script_data:
+        after(npc, b'EDID', [(b'VMAD', script_data)])
     if inventory:
         existing = npc.values(b"CNTO")
         npc.remove(b"COCT")
