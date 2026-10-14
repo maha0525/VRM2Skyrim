@@ -21,6 +21,10 @@ castable spells. Preserve imported settings.
 Verify browser controls/export/reimport and a real headgear preview. Read back
 standard-slot clothing geometry and plugin masks; run the existing regressions.
 
+Show "前に作ったフォロワー" only inside STEP 01. Hide it automatically when
+moving to STEP 02..05 or opening a conversion result; restore it when returning
+to STEP 01. Retain the existing saved-result and equipment-edit opening action.
+
 Preserve native headwear partitions 130/131/141/142/143 in the NIF. Their
 corresponding 30/31/41/42/43 values are used only for equipment masks and
 priority checks. Retain the native partition when splitting/exporting geometry,
