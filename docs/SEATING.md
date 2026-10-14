@@ -2,6 +2,10 @@
 
 [日本語](#日本語)
 
+0.9.9 retries entry-state detection up to 40 times at 0.1-second intervals when events
+precede the engine state. It also marks the offset as applied before the native
+node write, preventing a nested event during that call from adding it twice.
+
 0.9.8 applies the correction from chair-entry animations instead of waiting for
 the seated idle. Original behavior start events and time-zero animation annotations
 trigger a check of the real chair and sit state. Cancelled entry restores the
@@ -74,3 +78,7 @@ DLCや追加MOD独自の家具は対象リストに含みません。元の家�
 減らしました。実際の椅子と着座状態を確認してから適用し、着座を中断したときも
 元の高さへ戻します。アニメーション置換で開始イベントが届かない場合は、従来の
 着座完了イベントで補正します。
+
+0.9.9では、開始イベントと着座状態の切り替わりに時間差がある場合も、0.1秒間隔で最大40回
+確認を続けます。骨格への書き込み前に適用済み状態を確定し、別イベントによる二重加算も
+防ぎます。補正値は座り始めと着座後で同じです。

@@ -29,6 +29,13 @@ Recheck the actual furniture, sleep and mount state every time. Preserve the
 OnSit fallback for replaced animations, re-register after 3D rebuilds and restore
 owned baseline on cancelled entry. Do not alter the skeleton or animations.
 
+0.9.9 review found two isolated timing defects: a single 0.1-second retry could
+miss the later transition from standing to entering, and publishing `applied`
+after the node-write native could allow a nested event to add the offset twice.
+Bound the entry-state retry window to four seconds, never shift standing state
+from an event alone, and publish ownership before the write native. Test delayed
+state visibility, retry timeout/unload and a second event inside the write call.
+
 Verify neutral skeleton globals/local animation transforms are preserved, sampled
 seated pelvis residuals, actual compiled PEX lifecycle execution, VMAD/FLST readback,
 browser controls/export/reimport, and a rebuilt Sumire ZIP using her existing assets.

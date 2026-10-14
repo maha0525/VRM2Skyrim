@@ -6,6 +6,7 @@ Float Property Offset Auto
 Bool applied = False
 Float baseline = 0.0
 Float expected = 0.0
+Int entryRetries = 0
 
 Function ClearCorrection()
     If applied && Is3DLoaded() && NetImmerse.HasNode(Self, "NPC", False)
@@ -35,10 +36,20 @@ EndFunction
 
 Function RefreshSeating()
     If !Is3DLoaded()
+        entryRetries = 0
         Return
     EndIf
     Bool seated = False
     Int sitState = GetSitState()
+    ; Animation notification and native sit state are not synchronized. Retry
+    ; at 0.1-second intervals, at most 40 times, instead of a single-frame retry.
+    If sitState == 0 && entryRetries > 0
+        entryRetries = entryRetries + -1
+        ClearCorrection()
+        RegisterForSingleUpdate(0.1)
+        Return
+    EndIf
+    entryRetries = 0
     If (sitState == 2 || sitState == 3) && GetSleepState() == 0 && !IsOnMount()
         ObjectReference furniture = GetFurnitureReference()
         If furniture && Seats.HasForm(furniture.GetBaseObject())
@@ -51,8 +62,10 @@ Function RefreshSeating()
             If !applied
                 baseline = current
                 expected = baseline + Offset
-                NetImmerse.SetNodeLocalPositionZ(Self, "NPC", expected, False)
+                ; Publish ownership before this native call can yield to a
+                ; second event; otherwise that event could add Offset again.
                 applied = True
+                NetImmerse.SetNodeLocalPositionZ(Self, "NPC", expected, False)
                 Debug.Trace("VRM2Skyrim: chair height=" + Offset + "; sitState=" + sitState)
             ElseIf current == baseline
                 ; Recover a reset node without adding the offset twice.
@@ -75,6 +88,7 @@ Event OnInit()
 EndEvent
 
 Event OnLoad()
+    entryRetries = 0
     ClearCorrection()
     RegisterForNiNodeUpdate()
     RegisterChairEvents()
@@ -97,12 +111,12 @@ Event OnAnimationEvent(ObjectReference akSource, String asEventName)
     If akSource == Self
         If asEventName == "IdleFurnitureStart" || asEventName == "IdleChairEnterStart" || asEventName == "IdleLeftChairEnterStart" || asEventName == "IdleRightChairEnterStart" || asEventName == "SoundPlay.NPCHumanSitChairDown" || asEventName == "SoundPlay.NPCHumanSitChairDownLR"
             ; Event may precede state 2. Never shift a standing actor solely
-            ; from a notification; retry once after the state becomes visible.
+            ; from a notification; use a bounded retry window for state visibility.
             If GetSitState() == 0
-                RegisterForSingleUpdate(0.1)
-            Else
-                RefreshSeating()
+                entryRetries = 40
             EndIf
+            Debug.Trace("VRM2Skyrim: chair-entry event=" + asEventName)
+            RefreshSeating()
         EndIf
     EndIf
 EndEvent
@@ -120,6 +134,7 @@ Event OnNiNodeUpdate(ObjectReference akActor)
 EndEvent
 
 Event OnUnload()
+    entryRetries = 0
     UnregisterForUpdate()
     ClearCorrection()
 EndEvent

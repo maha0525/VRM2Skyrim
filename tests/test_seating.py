@@ -131,6 +131,58 @@ class SeatingTests(unittest.TestCase):
                 vm.run('OnAnimationEvent', actor, 'IdleFurnitureStart')
                 self.assertEqual(actor.writes, [])
 
+    def test_entry_waits_across_delayed_engine_state_and_stops_after_timeout(self):
+        actor, vm = self.fixture()
+        vm.run('OnAnimationEvent', actor, 'IdleChairEnterStart')
+        for _ in range(15):
+            actor.pending = False
+            vm.run('OnUpdate')
+            self.assertTrue(actor.pending)
+            self.assertEqual(actor.writes, [])
+        actor.sit = 2
+        vm.run('OnUpdate')
+        self.assertEqual(actor.writes, [14.0])
+        actor.sit = 3
+        vm.run('OnSit', actor.furniture)
+        self.assertEqual(actor.writes, [14.0])
+        actor.sit = 0
+        vm.run('OnUpdate')
+        self.assertEqual(actor.position, 0.0)
+        actor, vm = self.fixture()
+        vm.run('OnAnimationEvent', actor, 'IdleChairEnterStart')
+        for _ in range(41):
+            actor.pending = False
+            vm.run('OnUpdate')
+        self.assertFalse(actor.pending)
+        self.assertEqual(actor.writes, [])
+
+    def test_nested_event_during_native_write_does_not_add_offset_twice(self):
+        class ReentrantActor(SeatedActor):
+            def global_call(self, target, name, values):
+                result = super().global_call(target, name, values)
+                if name == 'setnodelocalpositionz' and len(self.writes) == 1:
+                    vm.run('OnUpdate')
+                return result
+        actor = ReentrantActor()
+        data = rename_pex((ROOT / 'runtime/V2SSeating.pex').read_bytes(), 'V2S_TestSeating', 'V2SSeating')
+        vm = PexVM(data, actor, {'Seats': (200,), 'Offset': 14.0})
+        actor.sit = 2
+        actor.position = 7.0
+        vm.run('OnAnimationEvent', actor, 'IdleChairEnterStart')
+        self.assertEqual(actor.writes, [21.0])
+        actor.sit = 0
+        vm.run('OnUpdate')
+        self.assertEqual(actor.position, 7.0)
+
+    def test_unload_stops_entry_retries_without_touching_unloaded_3d(self):
+        actor, vm = self.fixture()
+        vm.run('OnAnimationEvent', actor, 'IdleChairEnterStart')
+        actor.loaded = False
+        vm.run('OnUnload')
+        self.assertFalse(actor.pending)
+        self.assertEqual(vm.variables['entryretries'], 0)
+        self.assertEqual(actor.writes, [])
+
     def test_seated_load_rebuild_and_delayed_exit_are_idempotent(self):
         actor, vm = self.fixture()
         vm.run('OnInit')
