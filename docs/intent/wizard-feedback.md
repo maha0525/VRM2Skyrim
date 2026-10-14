@@ -8,6 +8,8 @@ items include the displaced original skin, without changing the avatar shape.
 Move garment grouping controls into the generated-clothes area and present a
 visible plus item for adding clothes. Explain that mesh reassignment reset
 restores the name-based suggestions and discards those manual assignments.
+Place this reset action after the mesh-assignment list so users encounter it
+after editing the assignments, before the generated-clothes section.
 Simplify overall-preview language, head-policy global defaults and reset labels.
 Show one selected headgear model at a time with an avatar wearing it; reuse
 geometry conversion when only visibility policy changes. Explain source-profile

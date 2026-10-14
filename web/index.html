@@ -43,8 +43,8 @@
             <p class="hint">同じ形の装備は共有して変換します。鎧・手袋・靴を装備すると、対応する元衣装が外れます。専用種族用の互換パッチは別のZIPです。変換後にはOutfit Studio用の身体・骨格と編集用装備も出力します。</p>
           </div>
           <p id="wardrobe-warning" role="status"></p>
-          <details class="reset-help"><summary>メッシュの割り当てをやり直す</summary><p class="hint">身体・下着・顔・髪・衣服の手動割り当てと衣服グループを消し、読み込み時の名前から推定した割り当てに戻します。</p><button type="button" id="wardrobe-reset" class="secondary">読み込み時の自動割り当てに戻す</button></details>
           <div id="wardrobe-parts" class="wardrobe-parts"></div>
+          <details class="reset-help"><summary>メッシュの割り当てをやり直す</summary><p class="hint">身体・下着・顔・髪・衣服の手動割り当てと衣服グループを消し、読み込み時の名前から推定した割り当てに戻します。</p><button type="button" id="wardrobe-reset" class="secondary">読み込み時の自動割り当てに戻す</button></details>
           <h3>生成する衣服</h3><p class="hint">胴の衣装セット・手袋・靴に分けると、同じ部位の防具とゲーム本来の処理で入れ替わります。マントやアクセサリーは別枠で併用できます。</p><p id="wardrobe-migration" class="hint" hidden>以前の設定を読み込み、鎧と入れ替える衣服を部位ごとのセットへまとめました。衣服名・装備枠・初期装備を確認してください。</p><div class="wardrobe-actions"><button type="button" id="wardrobe-combine" class="secondary">衣服を一品にまとめる</button><button type="button" id="wardrobe-split" class="secondary">胴・手袋・靴に分ける</button></div><div id="wardrobe-garments"></div><button type="button" id="wardrobe-add" class="add-garment">＋ 衣服を追加</button><p class="hint">上のメッシュ一覧で「着脱する衣服」を選び、追加した衣服へ割り当てます。同じ枠の品は同時装備できません。重ね着を作る場合だけ追加枠を指定します。</p>
           <label>全体の見た目をプレビュー<select id="wardrobe-preview-state"><option value="all">全ての服を着る</option><option value="underwear">服を外す（身体と下着）</option></select></label><button type="button" id="wardrobe-preview" class="secondary">プレビュー</button>
           <p id="wardrobe-preview-status" class="hint" aria-live="polite"></p><div id="wardrobe-preview-images" class="preview-grid"></div>
