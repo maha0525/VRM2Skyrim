@@ -15,9 +15,11 @@ The manual field adds an offset in Skyrim units: positive moves up, negative
 moves down. With automatic calculation off, this is the entire correction.
 Turn the correction off when using another furniture-height correction MOD.
 
-A private unanimated node applies the correction while the follower is seated.
-The shipped node's transform is identity: standing height and proportions stay
-unchanged. The script reconciles state on load, sitting/getting up, skeleton
+The existing unanimated NPC node applies the correction while the follower is
+seated. Its original parent and standing transforms stay unchanged; no root
+wrapper is added. The script saves the pre-correction height and restores only
+the value it still owns. Standing code does not force the height to zero.
+The script reconciles state on load, sitting/getting up, skeleton
 rebuilds and updates during furniture use; repeated events do not add offsets.
 It never moves the placed reference or changes equipment.
 
@@ -37,6 +39,9 @@ Implementation sources: [SKSE NetImmerse functions](https://github.com/ianpatt/s
 and [xEdit's FURN schema](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.6/Core/wbDefinitionsTES5.pas).
 The runtime is original MIT-licensed code, not a copy of another height-fix MOD.
 
+Version 0.9.7 replaces 0.9.6's unsafe root wrapper. Replace the whole follower ZIP
+and restart Skyrim so both the skeleton and every appearance mesh are replaced.
+
 ## 日本語
 
 STEP 03の「椅子に座ったときの高さ補正」で設定します。初期値は補正有効・
@@ -55,3 +60,7 @@ DLCや追加MOD独自の家具は対象リストに含みません。元の家�
 立っているときの身長・体型は変えません。立ち上がり・再ロード・装備による骨格の
 再生成にも対応し、補正を重ねて加算しません。衣服の装備やNPC参照の座標は操作しません。
 計算結果は各フォロワーの`seating.json`に保存します。
+
+0.9.7では、0.9.6で立ち姿を壊したルートの親ノード追加を撤去しました。正常版の
+骨格・モデル階層を保ち、既存のNPCノードを着座時だけ補正します。全身のNIFと
+スクリプトを含むフォロワーZIP全体を置き換えてDeployし、Skyrimを再起動してください。

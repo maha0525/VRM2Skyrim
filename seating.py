@@ -11,7 +11,7 @@ from scipy.spatial.transform import Rotation
 from plugin import Record, records
 
 ROOT = Path(__file__).resolve().parent
-NODE = 'VRM2SkyrimSeating'
+NODE = 'NPC'
 TEMPLATE = 'V2SSeating'
 SEATS_ID = 0x01000870
 PELVIS = 'NPC Pelvis [Pelv]'
@@ -70,8 +70,7 @@ def calculate(output, settings):
         with NifFile(str(path)) as nif:
             local = {name: matrix(node.transform) for name, node in nif.nodes.items()}
             parents = {name: node.parent.name if node.parent else None for name, node in nif.nodes.items()}
-            if path != Path(report['source']) and (NODE not in local or not np.allclose(local[NODE], np.eye(4))):
-                raise ValueError('Seating requires an identity private skeleton node')
+            validate_root(nif)
         samples.append(np.array([animated_pelvis(local, parents, names, animation.tracks, i)
                                  for i in range(animation.num_frames)]))
     differences = samples[0] - samples[1]
@@ -140,7 +139,7 @@ def write_runtime(output, settings):
 
 
 def validate_runtime(output, settings, npc, by_id):
-    from custom_skeleton import NifFile, matrix
+    from custom_skeleton import NifFile
     from equipment_runtime import pex_strings, vmad
     output = Path(output)
     report = json.loads((output / 'seating.json').read_text(encoding='utf8'))
@@ -152,12 +151,24 @@ def validate_runtime(output, settings, npc, by_id):
         if by_id[record.form_id].fields != record.fields:
             raise ValueError('Seating furniture list differs from game chair records')
     with NifFile(str(output / 'mod/meshes' / settings.asset_dir / 'skeleton.nif')) as nif:
-        if NODE not in nif.nodes or not np.allclose(matrix(nif.nodes[NODE].transform), np.eye(4)):
-            raise ValueError('Seated correction must be zero in delivered standing skeleton')
+        validate_root(nif)
+    for path in (output / 'mod/meshes' / settings.asset_dir).glob('*.nif'):
+        with NifFile(str(path)) as nif:
+            if NODE in nif.nodes:
+                validate_root(nif)
     data = (output / 'mod/scripts' / (settings.prefix + 'Seating.pex')).read_bytes()
     _, _, _, strings = pex_strings(data)
     if (settings.prefix + 'Seating').encode() not in strings:
         raise ValueError('Seating PEX private name mismatch')
     if {s.lower() for s in strings} & {b'setposition', b'translateto', b'setscale', b'equipitem', b'unequipitem'}:
         raise ValueError('Seating runtime contains prohibited reference/equipment mutations')
-    logging.info('Read back seated offset %.4f, private PEX, chair list and identity skeleton node', report['offset'])
+    logging.info('Read back seated offset %.4f, private PEX, chair list and unchanged NPC root hierarchy', report['offset'])
+
+
+def validate_root(nif):
+    # Rest matrices alone do not prove compatibility. The engine skeleton and
+    # exported skins must retain NPC directly beneath their original scene root.
+    if NODE not in nif.nodes or nif.nodes[NODE].parent is None or nif.nodes[NODE].parent.id != nif.rootNode.id:
+        raise ValueError('Seating must preserve NPC directly under the original scene root')
+    if 'VRM2SkyrimSeating' in nif.nodes:
+        raise ValueError('Unsupported seating wrapper would change the engine root hierarchy')

@@ -6,9 +6,11 @@ shared settings and wizard. Defaults: enabled, automatic, manual adjustment 0.
 Require SKSE64 only; no RaceMenu dependency, furniture overrides or equip changes.
 
 Calculate the offset by sampling the official sex-specific chair idle HKX on
-both the delivered custom skeleton and vanilla skeleton. Shift an unanimated,
-identity private node above NPC, not an animation-controlled pelvis or a shared
-RaceMenu override. Its resting transform stays identity. Apply the offset only
+both the delivered custom skeleton and vanilla skeleton. Preserve NPC directly
+beneath the original scene root in both skeleton and meshes. Do not insert a
+wrapper above NPC. Apply a temporary Z offset to the existing unanimated NPC
+node, saving its previous value and restoring only the value this script owns.
+Standing code must never force the node to zero. Apply the offset only
 while seated on recognized chair furniture. Exclude sleeping, mounted actors,
 workbenches and ground/ledge markers. Classify Skyrim.esm FURN records by actual
 marker type and workbench data, never editor-ID name guesses; no global FURN edits.
@@ -23,3 +25,13 @@ furniture-height correction mod. Imported explicit settings remain unchanged.
 Verify neutral skeleton globals/local animation transforms are preserved, sampled
 seated pelvis residuals, actual compiled PEX lifecycle execution, VMAD/FLST readback,
 browser controls/export/reimport, and a rebuilt Sumire ZIP using her existing assets.
+
+0.9.6 regression: an identity wrapper above NPC changed the engine-facing root
+hierarchy in the skeleton and all exported skins. Equal rest/FK matrices and
+passing script tests did not establish that this hierarchy was safe; the user
+observed a destroyed standing body. Reject that exact topology in validation.
+For the fix, compare all node parents, locals/globals, skin binds, vertex weights,
+geometry and texture contents against the known-good 0.9.5 output, and render the
+delivered standing mesh. Structural contracts and output appearance are separate
+requirements from mathematical pose checks. Use this invariant for every future
+root/helper-node change, not only seated height correction.

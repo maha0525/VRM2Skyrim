@@ -8,7 +8,7 @@ import numpy as np
 
 from equipment_runtime import rename_pex
 from plugin import Record
-from seating import chair_record, animated_pelvis, binding, NODE
+from seating import chair_record, animated_pelvis, binding, NODE, validate_root
 from settings import FollowerSettings
 from tests.pex_vm import Actor, PexVM
 from environment import find_game
@@ -116,6 +116,50 @@ class SeatingTests(unittest.TestCase):
                 vm.run('OnLoad')
                 self.assertEqual(actor.writes, [])
 
+    def test_standing_does_not_write_existing_root_adjustments(self):
+        actor, vm = self.fixture()
+        actor.position = 7.0  # Another component owns this standing adjustment.
+        for event in ('OnInit', 'OnLoad', 'OnUpdate', 'OnGetUp'):
+            vm.run(event, actor.furniture) if event == 'OnGetUp' else vm.run(event)
+        self.assertEqual(actor.writes, [])
+        actor.sit = 3
+        vm.run('OnSit', actor.furniture)
+        self.assertEqual(actor.position, 21)
+        actor.sit = 0
+        vm.run('OnGetUp', actor.furniture)
+        self.assertEqual(actor.position, 7)
+        actor.sit = 3
+        vm.run('OnSit', actor.furniture)
+        actor.position = 9.0  # A new transform replaces our correction.
+        actor.sit = 0
+        vm.run('OnGetUp', actor.furniture)
+        self.assertEqual(actor.position, 9)
+
+    def test_saved_tracking_with_rebuilt_or_existing_3d_does_not_accumulate(self):
+        actor, vm = self.fixture()
+        actor.sit = 3
+        vm.run('OnSit', actor.furniture)
+        vm.run('OnLoad')  # Same node is still at its previously corrected value.
+        self.assertEqual(actor.position, 14)
+        actor.position = 0  # Reload reconstructed the original skeleton.
+        vm.run('OnLoad')
+        self.assertEqual(actor.position, 14)
+        actor.sit = 0
+        actor.position = 0
+        vm.run('OnLoad')
+        self.assertEqual(actor.position, 0)
+
+    def test_identity_wrapper_is_rejected_despite_equal_rest_transforms(self):
+        root = type('Node', (), {'id': 0})()
+        npc = type('Node', (), {'parent': root})()
+        nif = type('Nif', (), {'rootNode': root, 'nodes': {'NPC': npc}})()
+        validate_root(nif)
+        wrapper = type('Node', (), {'id': 1, 'parent': root})()
+        npc.parent = wrapper
+        nif.nodes['VRM2SkyrimSeating'] = wrapper
+        with self.assertRaisesRegex(ValueError, 'original scene root'):
+            validate_root(nif)
+
     def test_actual_marker_classification(self):
         chair = Record(b'FURN', 200, 0, [(b'MODL', b'chair.nif\0'), (b'FNPR', struct.pack('<HH', 1, 15))])
         self.assertTrue(chair_record(chair))
@@ -156,7 +200,7 @@ class SeatingNativeTests(unittest.TestCase):
         import json
         from build_npc import build_npc, NPC_ID
         from converter import references
-        from custom_skeleton import NifFile, matrix, create_skeleton, save_report, add_seating_node
+        from custom_skeleton import NifFile, matrix, create_skeleton, save_report
         from plugin import records
         from seating import prepare, validate_runtime, SEATS_ID
         root = ROOT / 'build/test-tmp'
@@ -168,7 +212,7 @@ class SeatingNativeTests(unittest.TestCase):
                 settings = FollowerSettings(sex=sex, voice=voice, sitting_offset=2.5)
                 source = references(game / 'Data', sex)
                 target = output / 'mod/meshes' / settings.asset_dir / 'skeleton.nif'
-                report = create_skeleton(source, target, {}, seating=True)
+                report = create_skeleton(source, target, {})
                 save_report(report, output)
                 (output / 'references.json').write_text(json.dumps({'root': str(source.parents[4])}))
                 result = prepare(output, game / 'Data', settings)
@@ -177,9 +221,7 @@ class SeatingNativeTests(unittest.TestCase):
                 with NifFile(str(source)) as nif:
                     original = {name: matrix(node.global_transform) for name, node in nif.nodes.items()}
                 with NifFile(str(target)) as nif:
-                    before = len(nif.nodes)
-                    add_seating_node(nif)
-                    self.assertEqual(len(nif.nodes), before)
+                    validate_root(nif)
                     for name, value in original.items():
                         np.testing.assert_allclose(matrix(nif.nodes[name].global_transform), value, atol=5e-5)
                 plugin = build_npc(game / 'Data', output, settings)

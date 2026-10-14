@@ -290,8 +290,7 @@ def main():
         LOG.info('FSMP: preserving %s secondary bones, %s dynamic', len(physics_bones),
                  sum(i['dynamic'] for i in physics_bones.values()))
     custom_path = output / "mod/meshes" / settings.asset_dir / "skeleton.nif"
-    skeleton_report = create_skeleton(args.skeleton, custom_path, custom_positions, physics_bones,
-                                      seating=settings.sitting_enabled)
+    skeleton_report = create_skeleton(args.skeleton, custom_path, custom_positions, physics_bones)
     save_report(skeleton_report, output)
     bpy.data.objects.remove(target_rig, do_unlink=True)
     bpy.context.view_layer.objects.active = None

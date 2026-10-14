@@ -43,22 +43,7 @@ def set_children(file, node, ids):
     nifly.setNodeChildren(file._handle, node.id, buf, len(ids))
 
 
-def add_seating_node(file):
-    """Insert an identity node above NPC; standing transforms remain unchanged."""
-    name = 'VRM2SkyrimSeating'
-    if name in file.nodes:
-        return
-    npc = file.nodes['NPC']
-    parent = npc.parent
-    if parent is None:
-        raise ValueError('Expected NPC beneath skeleton scene root')
-    original_children = children(file, parent)
-    proxy = file.add_node(name, rigid_buffer(np.eye(4)), parent)
-    set_children(file, proxy, [npc.id])
-    set_children(file, parent, [proxy.id if index == npc.id else index for index in original_children])
-
-
-def create_skeleton(source, destination, positions, extra_bones=None, seating=False):
+def create_skeleton(source, destination, positions, extra_bones=None):
     """positions is a dict of original bone names to desired global joint positions.
 
     The unanimated proxy transform P satisfies P @ V = C, where V is the
@@ -119,8 +104,9 @@ def create_skeleton(source, destination, positions, extra_bones=None, seating=Fa
 
         for name in extra_bones:
             add_extra(name)
-        if seating:
-            add_seating_node(file)
+        npc = file.nodes.get('NPC')
+        if npc and (npc.parent is None or npc.parent.id != file.rootNode.id):
+            raise ValueError('Preserve NPC directly under the original skeleton root')
         file.filepath = str(destination)
         file.save()
     errors = {}
@@ -142,7 +128,6 @@ def create_skeleton(source, destination, positions, extra_bones=None, seating=Fa
     report = {"source": str(source), "skeleton": str(destination), "nodes": node_count,
               "proxy_offsets": offsets, "joint_positions": {key: list(value) for key, value in positions.items()},
               "animation_local_transforms_unchanged": True, "bone_scale": 1.0,
-              "seating_node": 'VRM2SkyrimSeating' if seating else None,
               "physics_bones": extra_bones,
               "game_verified": False, "ragdoll_fit_verified": False}
     logging.info("Custom skeleton: %s nodes, %s rigid offsets", node_count, len(offsets))

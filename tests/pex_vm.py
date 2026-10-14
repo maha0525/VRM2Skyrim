@@ -60,7 +60,7 @@ class PexVM:
                 code = []
                 for _ in range(self.read('H')):
                     op = self.read('B')
-                    counts = {1: 3, 5: 3, 10: 2, 13: 2, 14: 2, 15: 3, 16: 3, 18: 3,
+                    counts = {1: 3, 2: 3, 5: 3, 10: 2, 13: 2, 14: 2, 15: 3, 16: 3, 18: 3,
                               20: 1, 21: 2, 22: 2, 23: 3, 25: 3, 26: 1, 27: 3}
                     args = [self.value() for _ in range(counts[op])]
                     extra = []
@@ -117,9 +117,9 @@ class PexVM:
                 value = get(args[1])
                 kind = types[args[0][1].lower()]
                 put(args[0], bool(value) if kind == 'bool' else str(value) if kind == 'string' else value)
-            elif op in (1, 5, 15, 16, 18, 27):
+            elif op in (1, 2, 5, 15, 16, 18, 27):
                 left, right = get(args[1]), get(args[2])
-                put(args[0], {1: lambda: left+right, 5: lambda: left*right, 15: lambda: left == right, 16: lambda: left<right,
+                put(args[0], {1: lambda: left+right, 2: lambda: left+right, 5: lambda: left*right, 15: lambda: left == right, 16: lambda: left<right,
                               18: lambda: left>right, 27: lambda: str(left)+str(right)}[op]())
             elif op == 10:
                 put(args[0], not get(args[1]))
