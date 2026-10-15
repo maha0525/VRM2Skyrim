@@ -26,6 +26,7 @@ class FollowerSettings:
     voice: str = "FemaleEvenToned"
     combat_class: str = "CombatWarrior1H"
     combat_style: str = "csHumanMeleeLvl1"
+    combat_preset: str = "warrior"  # Wizard selection only; never reapplies game settings on import.
     level_mode: str = "player"
     auto_calculate: bool = True
     level: int = 10
@@ -78,6 +79,7 @@ class FollowerSettings:
             if not isinstance(value, str) or not value.strip() or len(value) > 128 or any(ord(c) < 32 for c in value):
                 raise ValueError(f"Invalid {name}")
         choices = {"sex": ("female", "male"), "level_mode": ("player", "fixed"),
+                   "combat_preset": ("warrior", "twohand", "archer", "mage", "conjurer", "custom"),
                    "protection": ("protected", "essential", "mortal")}
         for name, options in choices.items():
             if getattr(self, name) not in options:
@@ -192,6 +194,8 @@ class FollowerSettings:
 
     @classmethod
     def from_dict(cls, value):
+        # Older JSON has no evidence of the originally chosen starting preset.
+        value = {"combat_preset": "custom", **value}
         if value.get('armor_support') and 'wardrobe_policy' not in value:
             from wardrobe import migrate_legacy_parts
             value = {**value, 'appearance_parts': migrate_legacy_parts(value['appearance_parts']),

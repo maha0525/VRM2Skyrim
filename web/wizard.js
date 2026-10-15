@@ -13,6 +13,7 @@ async function api(path, data) {
 }
 function download(name, value) {const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"})); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function applySettings(settings) {
+  $('preset').value=settings.combat_preset??'custom';
   if(settings.physics_stiffness!==undefined&&!Array.from($('physics_stiffness').options).some(o=>o.value===String(settings.physics_stiffness)))$('physics_stiffness').add(new Option(tr("指定値 ")+settings.physics_stiffness,String(settings.physics_stiffness)));
   for(const [key,value] of Object.entries(settings)) {const input=$(key); if(!input)continue; if(input.type==='checkbox') input.checked=value; else input.value=String(value);}
   state.perks=new Map((settings.perks||[]).map(item=>[item.editor_id,item.rank])); state.spells=new Set(settings.spells||[]);
@@ -32,6 +33,7 @@ function collect() {
     settings[key]=input.type==='checkbox'?input.checked:integers.has(key)?Number.parseInt(input.value,10):floats.has(key)?Number(input.value):typeof value==='boolean'?input.value==='true':input.value.trim();
   }
   settings.perks=[...state.perks].map(([editor_id,rank])=>({editor_id,rank})); settings.spells=[...state.spells];
+  settings.combat_preset=$('preset').value;
   settings.skills=settings.auto_calculate?{}:Object.fromEntries(skills.map(key=>[key,Number($('skill-'+key).value)])); Object.assign(settings,wardrobeCollect());
   settings.fit_armors=settings.armor_support&&$('fit-enabled').checked?[...$('fit-armors').selectedOptions].map(o=>o.value):[];
   settings.fit_mode=settings.armor_support&&$('fit-enabled').checked?$('fit_mode').value:'selected';

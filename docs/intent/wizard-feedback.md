@@ -1,5 +1,16 @@
 # Wizard controls, standard clothing slots and headgear preview
 
+## Combat preset selection round trip
+
+Save the selected wizard preset ID as `combat_preset` in settings JSON,
+including conversion output and reopened saved followers. Restore its label
+without invoking the preset handler: imported class, combat style, weapons,
+spells and attributes may have been customized and must remain authoritative.
+Keep the selected starting preset even after individual adjustments. Old JSON
+without this field shows Custom; do not guess an original selection from a
+class/style pair. New defaults retain Warrior. Verify actual JSON export/import
+before and after catalog loading, language switching, and legacy JSON.
+
 ## 2026-10-15 skill browsing and version consistency
 
 The running 0.9.5-dev server returned old protection/morality defaults and no

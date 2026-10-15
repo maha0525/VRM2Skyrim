@@ -15,6 +15,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SettingsTests(unittest.TestCase):
+    def test_preset_roundtrip_preserves_customized_values_and_legacy_is_custom(self):
+        self.assertEqual(FollowerSettings().combat_preset, 'warrior')
+        values = dict(combat_preset='mage', combat_class='CombatWarrior1H',
+                      combat_style='csHumanMissile', health=321, magicka=123,
+                      weapon='HuntingBow', spells=['FastHealing'])
+        (ROOT/'build/test-tmp').mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ROOT/'build/test-tmp') as directory:
+            path = Path(directory)/'settings.json'
+            FollowerSettings(**values).save(path)
+            restored = FollowerSettings.load(path)
+            for key, value in values.items():
+                self.assertEqual(getattr(restored, key), value)
+        legacy = {k: v for k, v in values.items() if k != 'combat_preset'}
+        self.assertEqual(FollowerSettings.from_dict(legacy).combat_preset, 'custom')
+        self.assertNotIn('combat_preset', legacy)
+        for invalid in ('unknown', None, [], True):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                FollowerSettings(combat_preset=invalid)
+
     def test_new_defaults_and_explicit_imported_protection(self):
         self.assertEqual((FollowerSettings().protection, FollowerSettings().morality), ('essential', 0))
         old = FollowerSettings.from_dict({'protection': 'protected', 'morality': 3})
@@ -91,6 +110,11 @@ class FollowerIntegrationTests(unittest.TestCase):
                 self.assertEqual(by_kind[b'RACE'].values(b'WNAM'), [struct.pack('<I', ARMOR_ID)])
                 for tag in (b'MOD2', b'MOD3'):
                     self.assertEqual(addon.values(tag), [(settings.asset_dir.replace('/', '\\')+'\\avatar.nif\0').encode()])
+
+    def test_preset_label_does_not_change_generated_game_records(self):
+        first, _ = self.build(FollowerSettings(combat_preset='mage'))
+        second, _ = self.build(FollowerSettings(combat_preset='custom'))
+        self.assertEqual([r.encode() for r in first], [r.encode() for r in second])
 
     def test_wizard_spells_are_castable_and_blade_is_the_faction_class(self):
         choices = self.catalog.json_choices('female')
