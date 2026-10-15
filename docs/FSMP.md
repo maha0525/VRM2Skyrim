@@ -208,6 +208,32 @@ and the combined armor patch are retained; no save reset is required.
 
 ## Diagnostics and editing
 
+### Secondary surface contacts (0.11.0-toon.2)
+
+The toon development branch extends single-owner contacts to hair, skirts
+and capes as well as sleeves. Blended visual vertices no longer apply one
+contact to multiple bones. All mass centres use actual skin weights.
+Unweighted intermediate helpers retain their joints but do not collide at
+their pivots inside animated limbs.
+
+A wrapped sleeve or curved hair can have its mass centre inside the body.
+Its collision patch instead uses a nearby strongly weighted original surface
+vertex, preferring clearance from body hulls. Dynamics retain the weighted
+mass centre. Visible geometry, skinning and attachment protection are retained.
+Established sleeve centres already clear of the body are preserved, retaining
+Quon's stable sleeve response. The default spring, damping, wind and angular
+limits are unchanged; this corrects contact generation rather than requiring
+per-avatar stiffness overrides.
+`physics.json` records `rigid_secondary_contacts_v6`, contact points and
+excluded helpers. Replace the complete follower ZIP and restart Skyrim.
+
+For Aifi, the private FSMP-4.1.1-style contact diagnostic at 60 Hz measured a
+stationary last-three-second peak speed of 202.81 game units/s before and
+2.93 after this change. After anchor translation/turning/arm articulation,
+the revised result was 1.54 game units/s. Static 30/60/120 Hz cases and Quon
+static/moving cases retain single-owner contacts without weak-weight feedback.
+These are offline diagnostic measurements, not in-game FPS guarantees.
+
 `skeleton.json` records the source-to-private bone identities and full rest
 transforms. `conversion.json` records each mesh's physics mapping.
 `physics.json` lists NIF/XML pairs. Readback checks resolve links, bones,
@@ -227,6 +253,11 @@ original cloth meshes outside the tool, regenerate the affected NIF/XML pair
 and keep bone names, skinning and the root XML link together.
 
 ## 日本語での要点
+
+0.11.0-toon.2では、髪・スカート・ケープも一つの骨が一つの接触点を
+受け持ちます。身体を囲む服の重心は身体の内側に来る場合があるため、
+衝突点は実際の布表面から選びます。見た目のメッシュを支えていない
+補助骨は関節を残し、身体の中にある支点では衝突しないようにします。
 
 有効化すると元VRMの独立した骨とウェイトを残し、髪・布用の物理設定を
 生成します。VRMに揺れ設定がなくても、独立した骨があれば対応できます。

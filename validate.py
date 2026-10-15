@@ -36,7 +36,7 @@ def validate(output, skeleton=None):
         from toon import validate_toon
         validate_toon(output)
     if settings.physics_enabled:
-        from fsmp import validate_physics, PROXY, ARM_PROXY
+        from fsmp import validate_physics, PROXY, ARM_PROXY, SECONDARY_PROXY
         validate_physics(output)
     skeleton = mod / "meshes" / settings.asset_dir / "skeleton.nif"
     with NifFile(str(skeleton)) as reference:
@@ -60,7 +60,7 @@ def validate(output, skeleton=None):
             if policies:
                 validate_alpha_order(nif, policies)
             for shape in nif.shapes:
-                if settings.physics_enabled and shape.name in {PROXY, ARM_PROXY}:
+                if settings.physics_enabled and shape.name in {PROXY, ARM_PROXY, SECONDARY_PROXY}:
                     continue  # Checked separately by validate_physics, never rendered.
                 if part.get('retained_skin') and shape.name.startswith('V2SClothingSkin_'):
                     continue  # Validated against the partitioned original skin below, not counted twice.

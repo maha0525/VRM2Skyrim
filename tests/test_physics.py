@@ -5,9 +5,9 @@ import tempfile
 
 import numpy as np
 
-from fsmp import (ARM_PROXY, GRAVITY, LINK, MASS, PROXY, add_arm_collision_proxy,
+from fsmp import (ARM_PROXY, SECONDARY_PROXY, GRAVITY, LINK, MASS, PROXY, add_arm_collision_proxy,
                   add_collision_proxy, arm_cloth_bones, attach, joint_profile,
-                  local_points, protect_attachments, skin_samples, system_xml)
+                  local_points, protect_attachments, skin_samples, system_xml, contact_surface_points)
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
 from physics_rig import inertia_sphere_radius, plan_bones, selected_meshes, spring_nodes, rotation_step_angles
 from settings import FollowerSettings
@@ -15,6 +15,18 @@ from physics_frames import shift_frames, translation
 
 
 class PhysicsTests(unittest.TestCase):
+    def test_contact_uses_strong_real_surface_outside_body_instead_of_wrapped_centre(self):
+        bone = {'dynamic': True, 'matrix': np.eye(4).tolist(), 'node_centre': [0, 0, 0]}
+        hull = [[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)]
+        points = contact_surface_points({'cloth': bone, 'helper': bone},
+                                        {'cloth': [[0, 0, 0], [2, 0, 0], [10, 0, 0]]},
+                                        {'cloth': [1, 1, .01]}, {'body': hull}, {'body': np.eye(4)})
+        self.assertEqual(points, {'cloth': [2, 0, 0]})
+        bone['node_centre'] = [3, 0, 0]
+        preserved = contact_surface_points({'cloth': bone}, {'cloth': [[2, 0, 0], [4, 0, 0]]},
+                                           {'cloth': [1, 1]}, {'body': hull}, {'body': np.eye(4)}, {'cloth'})
+        self.assertEqual(preserved, {'cloth': [3, 0, 0]})
+
     def test_default_off_and_setting_validation(self):
         self.assertFalse(FollowerSettings().physics_enabled)
         for values in ({'physics_enabled': 1}, {'physics_nodes': [True]},
@@ -307,6 +319,30 @@ class PhysicsTests(unittest.TestCase):
         proxy = root.find(f"per-vertex-shape[@name='{ARM_PROXY}']")
         self.assertEqual(proxy.findtext('can-collide-with-tag'), 'V2SBody')
         self.assertEqual(proxy.findtext('margin'), '0.4')
+
+    def test_hair_and_waist_contacts_are_rigid_and_exclude_visual_feedback(self):
+        bones = {n: {'parent': 'NPC Head', 'dynamic': True, 'matrix': np.eye(4).tolist()}
+                 for n in ('hair', 'waist')}
+        root = system_xml(bones, {n: [[1, 0, 0], [100, 0, 0]] for n in bones}, {'NPC Head': []},
+                          mesh_names=['mixed'], sample_weights={n: [1, .01] for n in bones},
+                          secondary_contacts=set(bones))
+        for name in bones:
+            centre = root.find(f"bone[@name='{name}']/centerOfMassTransform/origin")
+            self.assertAlmostEqual(float(centre.attrib['x']), 2/1.01, places=6)
+            self.assertEqual(root.findtext(f"per-vertex-shape[@name='mixed']/weight-threshold[@bone='{name}']"), '1')
+        proxy = root.find(f"per-vertex-shape[@name='{SECONDARY_PROXY}']")
+        self.assertEqual(proxy.findtext('can-collide-with-tag'), 'V2SBody')
+        self.assertIsNone(root.find(f"per-vertex-shape[@name='{ARM_PROXY}']"))
+
+    def test_unweighted_chain_helper_keeps_joint_without_colliding_at_pivot(self):
+        bones = {n: {'parent': 'NPC Arm', 'dynamic': True, 'matrix': np.eye(4).tolist()}
+                 for n in ('helper', 'surface')}
+        root = system_xml(bones, {'surface': [[0, 0, 1]]}, {'NPC Arm': []},
+                          arm_contacts={'helper'}, secondary_contacts={'surface'}, noncontact_helpers={'helper'})
+        self.assertIsNotNone(root.find("generic-constraint[@bodyB='helper']"))
+        self.assertGreater(float(root.findtext("bone[@name='helper']/mass")), 0)
+        self.assertEqual(root.findtext(f"per-vertex-shape[@name='{ARM_PROXY}']/weight-threshold[@bone='helper']"), '1')
+        self.assertIsNone(root.find(f"per-vertex-shape[@name='{SECONDARY_PROXY}']/weight-threshold"))
 
     def test_native_sleeve_patch_single_owner_hidden_at_mass_centre_and_excluded_from_sampling(self):
         with tempfile.TemporaryDirectory() as directory:
