@@ -1,6 +1,17 @@
 "use strict";
 // UI copy only. Game record names/descriptions come from the game's English tables.
 const englishUI = {
+  "アバターのテクスチャをプレビュー用に準備しています": "Preparing avatar textures for previews",
+
+  "装備の一覧を読み込んでいます… 完了するまでお待ちください。": "Loading the equipment list… Please wait until it is ready.",
+  "読み込み中…": "Loading…",
+  "装備の一覧を読み込めませんでした。もう一度チェックを付けるか「次へ」で再試行してください。": "Could not load the equipment list. Enable fitting again or select Next to retry.",
+  "頭装備の初回プレビューは、アバターの準備に約1分かかる場合があります。次の装備からは準備済みのモデルを再利用します。プレビューではMODのESPやZIPは作りません。": "The first headgear preview may take about a minute to prepare the avatar. Subsequent equipment previews reuse the prepared model. Previews do not create a MOD ESP or ZIP.",
+  "アバターを初回準備しています（約1分かかる場合があります）": "Preparing the avatar for the first preview (this may take about a minute)",
+  "プレビュー用の身体と衣服を準備しています": "Preparing the body and clothing for previews",
+  "アバターを再利用し、選んだ頭装備だけを体型に合わせています": "Reusing the avatar and fitting only the selected headgear",
+  "準備済みのモデルで頭装備の見た目を描画しています": "Rendering headgear using the prepared model",
+
   "対象は本体・導入済みDLC・公式追加コンテンツの装備です。装備MODが新しく追加したアイテムは対象外です。": "Includes equipment from the base game, installed DLC and official Creations. New items added by third-party equipment mods are outside this scope.",
   "置換モデルを使う場合は、導入済みの身体と装備のBodySlideプリセットを揃えてください。": "When using replacement models, use matching BodySlide presets for your installed body and equipment.",
 

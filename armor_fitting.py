@@ -4,7 +4,6 @@ import json
 import logging
 from pathlib import Path
 import struct
-import subprocess
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -15,6 +14,7 @@ from game_assets import GameAssets
 from custom_skeleton import NifFile, matrix
 from official_catalog import OfficialCatalog
 from settings import load_settings, reference_root
+from textures import decode_dds
 
 LOG = logging.getLogger(__name__)
 BODY_SLOTS = {32, 33, 34, 37, 38}
@@ -58,7 +58,7 @@ def combine(parts, parents):
     return np.concatenate(points), np.concatenate(tris), np.concatenate(partitions), weights
 
 
-def fit(output, game_data, blender, skin_only=False):
+def fit(output, game_data, blender, skin_only=False, reuse_body=False):
     """Called after original conversion; modifies only the new output folder."""
     output, game_data = Path(output).resolve(), Path(game_data).resolve()
     settings = load_settings(output)
@@ -280,10 +280,7 @@ def fit(output, game_data, blender, skin_only=False):
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(texture_path.read_bytes())
                 plan["textures"][texture] = relative
-                decoded = output / "dds-preview"
-                decoded.mkdir(exist_ok=True)
-                command = [str(Path(__file__).parent / "dependencies/texconv.exe"), "-nologo", "-y", "-ft", "png", "-o", str(decoded), str(dest)]
-                subprocess.run(command, check=True, capture_output=True)
+                decode_dds(dest, output/'dds-preview')
         offset = 0
         for part in target_parts:
             count = len(part["tris"])
@@ -298,4 +295,5 @@ def fit(output, game_data, blender, skin_only=False):
     if not (work / "body.nif").exists():
         (work / "body.nif").write_bytes(original_body.read_bytes())
     from converter import run_blender
-    run_blender(blender, "fit_armor_blender.py", ["--output", output, *(['--skin-only'] if skin_only else [])], output, "Fit armor")
+    run_blender(blender, "fit_armor_blender.py", ["--output", output, *(['--skin-only'] if skin_only else []),
+                                               *(['--reuse-body'] if reuse_body else [])], output, "Fit armor")

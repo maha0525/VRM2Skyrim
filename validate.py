@@ -3,14 +3,13 @@
 import argparse
 import json
 import logging
-import locale
 from pathlib import Path
 import struct
-import subprocess
 import sys
 
 import numpy as np
 from scipy.spatial import cKDTree
+from textures import decode_dds
 
 from follower_plugin import follower_records
 from settings import load_settings
@@ -292,19 +291,7 @@ def validate(output, skeleton=None):
     texture_reports = []
     for texture in sorted(textures):
         texture_reports.append({'path': texture.relative_to(mod).as_posix(), **validate_dds(texture)})
-        command = [
-            str(ROOT / "dependencies/texconv.exe"),
-            "-nologo",
-            "-y",
-            "-ft",
-            "png",
-            "-o",
-            str(preview),
-            str(texture),
-        ]
-        result = subprocess.run(command, capture_output=True, text=True, encoding=locale.getencoding(), errors='replace')
-        if result.returncode:
-            raise RuntimeError(result.stdout + result.stderr)
+        decode_dds(texture, preview)
     report = {
         "nif_shapes": shapes,
         "total_triangles": sum(shape["triangles"] for shape in shapes),

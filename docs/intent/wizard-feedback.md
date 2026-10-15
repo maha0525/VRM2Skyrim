@@ -101,3 +101,33 @@ models, fallback to vanilla, and that newly added third-party items are outside
 the official item catalog. Both produce private equipment for the VRM body.
 Update Japanese and English together and verify actual browser layout, support
 and physics toggles, selection/export, and overall preview interaction.
+
+
+## 2026-10-16 catalog feedback and reusable headgear previews
+
+Immediately show the fitting panel and a localized live loading message when
+fitting is enabled. Disable Next while the catalog is loading and reuse the
+same in-flight request; reuse a loaded catalog for the same environment. Show
+failure with a retry path. New UI sessions default to all official equipment;
+explicit imported selected/all settings remain authoritative.
+
+Headgear previews must not generate ESPs, scripts, validation animations, edit
+kits or MOD ZIPs. Share avatar/skeleton/texture/body preparation across different
+headgear. Cache fitted headgear separately from face/hair policy renders, reuse
+completed caches across restarts, and invalidate for changed avatar geometry,
+classification, sex/height, source profile, source assets or converter code.
+Only publish a ready cache after success; incomplete/corrupt caches rebuild.
+Show first-use preparation guidance (about a minute, depending on the model),
+current phase and reuse feedback. Verify two different real headgear requests
+plus a policy-only rerender, with one avatar preparation and no MOD packaging.
+
+
+Verification: 124 Python tests and four browser flows pass. Slow catalog tests
+hold the real fetch response while checking live feedback, disabled Next, input
+reload/language changes, one-request reuse, failure/retry and imported settings.
+The real Erys preview run took 62.37s initially, 14.49s for a different helmet,
+12.10s for a policy-only render and 0.99s for the same image after app restart.
+There were no ESP/ZIP files anywhere in the preview cache. The Falmer close-up
+is pixel-identical to the previous full-conversion preview; Iron Helmet images
+were visually inspected. A normal full MOD conversion and final validator also
+pass after extracting shared appearance and DDS preview preparation.

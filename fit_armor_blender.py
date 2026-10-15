@@ -78,6 +78,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument('--mesh-key')
     parser.add_argument('--skin-only', action='store_true')
+    parser.add_argument('--reuse-body', action='store_true')
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
     output = args.output.resolve()
     settings = load_settings(output)
@@ -132,11 +133,12 @@ def main():
             nif.save()
         logging.info("Fitted NIF: %s (%s shapes)", path.name, len(objects))
 
-    manifest = json.loads((output / "appearance.json").read_text())
-    manifest["components"] = [part for part in manifest["components"] if part["role"] != "body"]
+    manifest = json.loads((output / "appearance.json").read_text(encoding='utf8'))
+    if not args.reuse_body:
+        manifest["components"] = [part for part in manifest["components"] if part["role"] != "body"]
     region_sets = (("body", (32, 34, 38)), ("hands", (33,)), ("feet", (37,)))
     for region, slots in region_sets:
-        if args.mesh_key:
+        if args.mesh_key or args.reuse_body:
             continue
         objects = []
         for part in plan["body"]:

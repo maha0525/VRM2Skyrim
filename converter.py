@@ -226,6 +226,40 @@ The original VRM is not included. Respect its author's permissions when sharing.
     return archive
 
 
+def prepare_source(source, output, settings):
+    """Validate and persist source metadata shared by conversion and previews."""
+    report = inspect(source)
+    if settings.fitting_enabled and not settings.appearance_heads:
+        fixed = set(settings.appearance_parts.get('fixed', []))
+        face = [p['node'] for p in report['parts'] if p['node'] in fixed and
+                (any(word in p['name'].lower() for word in ('face', 'head', 'eye', 'mouth')) or
+                 any(any(word in m.lower() for word in ('face', 'eyelash', 'eyebrow')) for m in p['materials']))
+                and 'hair' not in p['name'].lower()]
+        hair = [p['node'] for p in report['parts'] if p['node'] in fixed and 'hair' in p['name'].lower()]
+        settings.appearance_heads = {'face': face, 'hair': hair}
+        if not face:
+            raise ValueError('頭装備を合わせるため、顔のメッシュを分類してください')
+    if settings.physics_enabled:
+        if settings.physics_nodes and settings.appearance_source_sha256 not in ('', report['sha256']):
+            raise ValueError('物理演算のメッシュ選択は別のVRM用です。対象を選び直してください。')
+        settings.appearance_source_sha256 = report['sha256']
+    settings.save(output / 'settings.json')
+    from wardrobe import validate_source
+    validate_source(settings, report)
+    (output / "source.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf8")
+    return report
+
+
+def convert_appearance(source, game, blender, output, settings, progress):
+    """Build the shared avatar geometry/textures without NPC or MOD packaging."""
+    progress("骨格・モデルの変換")
+    skeleton = references(Path(game) / "Data", settings.sex)
+    (output / "references.json").write_text(json.dumps({"root": str(skeleton.parents[4])}), encoding="utf8")
+    run_blender(blender, "convert_blender.py", ["--source", source, "--output", output, "--skeleton", skeleton], output, "Convert model")
+    progress("テクスチャの変換")
+    convert_textures(output)
+
+
 def convert(source, game, blender, output, settings, progress=None):
     def stage(name):
         logging.info("Stage: %s", name)
@@ -247,35 +281,12 @@ def convert(source, game, blender, output, settings, progress=None):
     run = {"version": VERSION, "state": "converting", "game_verified": False}
     try:
         stage("入力と設定の検査")
-        report = inspect(source)
-        if settings.fitting_enabled and not settings.appearance_heads:
-            fixed = set(settings.appearance_parts.get('fixed', []))
-            face = [p['node'] for p in report['parts'] if p['node'] in fixed and
-                    (any(word in p['name'].lower() for word in ('face', 'head', 'eye', 'mouth')) or
-                     any(any(word in m.lower() for word in ('face', 'eyelash', 'eyebrow')) for m in p['materials']))
-                    and 'hair' not in p['name'].lower()]
-            hair = [p['node'] for p in report['parts'] if p['node'] in fixed and 'hair' in p['name'].lower()]
-            settings.appearance_heads = {'face': face, 'hair': hair}
-            if not face:
-                raise ValueError('頭装備を合わせるため、顔のメッシュを分類してください')
-        if settings.physics_enabled:
-            if settings.physics_nodes and settings.appearance_source_sha256 not in ('', report['sha256']):
-                raise ValueError('物理演算のメッシュ選択は別のVRM用です。対象を選び直してください。')
-            settings.appearance_source_sha256 = report['sha256']
-        settings.save(output / 'settings.json')
-        from wardrobe import validate_source
-        validate_source(settings, report)
+        report = prepare_source(source, output, settings)
         run["source_sha256"] = report["sha256"]
-        (output / "source.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf8")
         catalog = GameCatalog(Path(game) / "Data")
         catalog.validate_settings(settings)
         (output / "run.json").write_text(json.dumps(run, indent=2), encoding="utf8")
-        stage("骨格・モデルの変換")
-        skeleton = references(Path(game) / "Data", settings.sex)
-        (output / "references.json").write_text(json.dumps({"root": str(skeleton.parents[4])}), encoding="utf8")
-        run_blender(blender, "convert_blender.py", ["--source", source, "--output", output, "--skeleton", skeleton], output, "Convert model")
-        stage("テクスチャの変換")
-        convert_textures(output)
+        convert_appearance(source, game, blender, output, settings, stage)
         if settings.head_switch_enabled:
             stage('顔・髪の表示切替モデル')
             run_blender(blender, 'head_variants_blender.py', ['--output', output], output, 'Head variants')

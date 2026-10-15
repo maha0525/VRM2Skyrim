@@ -25,7 +25,8 @@
         <p id="source-status" class="source-status" aria-live="polite">まだ選択されていません</p>
         <label>衣服・防具の扱い<select id="armor_support"><option value="false">対応なし：元の衣服を着脱しない</option><option value="true">対応あり：身体・下着・衣服を分けて着脱</option></select></label>
         <div id="wardrobe-editor" hidden>
-          <label class="checkbox"><input id="fit-enabled" type="checkbox">既存装備をこの身体に合わせる</label>
+          <label class="checkbox"><input id="fit-enabled" type="checkbox" aria-describedby="catalog-status">既存装備をこの身体に合わせる</label>
+          <p id="catalog-status" class="hint" role="status" aria-live="polite" hidden></p>
           <div id="fit-panel" hidden><p class="hint">体型合わせの利用にはSkyPatcherとSKSE64が必要です。登録設定はMOD ZIPに同梱します。</p>
             <label>対応させる装備<select id="fit_mode"><option value="all_official">公式装備すべて（本体・導入済みDLC・公式追加コンテンツ）</option><option value="selected">一覧から選んだ公式装備</option></select></label>
             <p class="hint">対象は本体・導入済みDLC・公式追加コンテンツの装備です。装備MODが新しく追加したアイテムは対象外です。</p>
@@ -37,6 +38,7 @@
             <details><summary>頭装備で顔・髪を隠す設定</summary>
               <label class="checkbox"><input id="head-hide-face" type="checkbox">顔を隠す（全体デフォルト設定）</label>
               <label class="checkbox"><input id="head-hide-hair" type="checkbox" checked>髪の枠を使う装備では髪を隠す（全体デフォルト設定）</label>
+              <p class="hint">頭装備の初回プレビューは、アバターの準備に約1分かかる場合があります。次の装備からは準備済みのモデルを再利用します。プレビューではMODのESPやZIPは作りません。</p>
               <label>装備を検索<input id="head-search" type="search" placeholder="兜・フードの名前"></label>
               <label>見た目を確認する頭装備<select id="head-model"></select></label><p id="head-count" class="hint"></p><div id="head-policies"></div><p id="head-preview-status" class="hint" role="status"></p><div id="head-preview-images" class="preview-grid"></div><p class="hint">同じ装備モデルの付呪違いにも反映します。サークレットは既定で髪を残します。顔・髪の切替にはSKSE64が必要です。</p>
             </details>

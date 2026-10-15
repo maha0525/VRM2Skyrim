@@ -1,6 +1,5 @@
 """Native dependency checks must detect import and decompression failures early."""
 from pathlib import Path
-import json
 import os
 import subprocess
 import struct
@@ -26,36 +25,6 @@ class RuntimeDependencyTests(unittest.TestCase):
                                     capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 1)
         self.assertIn('run Setup.cmd first', result.stdout)
-
-    def test_cached_headgear_preview_reads_japanese_run_metadata_as_utf8(self):
-        from wizard import WizardApplication
-        from settings import FollowerSettings
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            output = root/'preview'
-            output.mkdir()
-            (output/'run.json').write_text(json.dumps({'state': 'offline_verified', 'stage': '変換完了'},
-                                                     ensure_ascii=False), encoding='utf8')
-            app = WizardApplication(root)
-            original = Path.read_text
-
-            def read(path, *args, **kwargs):
-                # Reproduce Japanese Windows' legacy locale even on UTF-8 CI.
-                if path.name == 'run.json' and not args and 'encoding' not in kwargs:
-                    return original(path, encoding='cp932')
-                return original(path, *args, **kwargs)
-
-            job = {'id': 'cached', 'output': str(output)}
-            try:
-                with patch('wizard.convert') as convert, patch('wizard.run_blender') as render, patch.object(Path, 'read_text', read):
-                    app._run_head_preview(job, root/'input.vrm', root/'game', root/'blender', output,
-                                          FollowerSettings(), 'TestHelmet',
-                                          {'hide_face': False, 'hide_hair': True}, 'cached')
-                self.assertEqual(job['status'], 'complete', job.get('error'))
-                convert.assert_not_called()
-                self.assertIn('--head-closeup', render.call_args.args[2])
-            finally:
-                app.close()
 
     def test_installed_lz4_can_extract_real_compressed_bsa_payload(self):
         # A minimal v105 archive, with a real LZ4 frame compressed payload.

@@ -13,6 +13,21 @@ from settings import load_settings
 ROOT = Path(__file__).resolve().parent
 
 
+def decode_dds(texture, preview):
+    """Decode the produced DDS for Blender, independently of MOD validation."""
+    texture, preview = Path(texture), Path(preview)
+    validate_dds(texture)
+    preview.mkdir(parents=True, exist_ok=True)
+    command = [str(ROOT/'dependencies/texconv.exe'), '-nologo', '-y', '-ft', 'png', '-o', str(preview), str(texture)]
+    result = subprocess.run(command, capture_output=True, text=True, encoding=locale.getencoding(), errors='replace')
+    if result.returncode:
+        raise RuntimeError(result.stdout+result.stderr)
+    image = preview/(texture.stem+'.png')
+    with Image.open(image) as decoded:
+        decoded.verify()
+    return image
+
+
 def bake_base_color(image, factor):
     """Bake linear glTF RGB multipliers into sRGB pixels, keeping texture alpha."""
     if len(factor) != 3 or any(type(n) not in (int, float) or not math.isfinite(n) or not 0 <= n <= 1

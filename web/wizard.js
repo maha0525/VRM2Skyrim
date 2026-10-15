@@ -58,7 +58,7 @@ async function updateId() {
   $('mod_id').value=id;
 }
 async function upload(file) {
-  if(!file)return; error(); $('next').disabled=true; $('source-status').textContent=tr("VRMを読み込んでいます…");
+  if(!file)return; error(); state.sourceLoading=true;$('next').disabled=true; $('source-status').textContent=tr("VRMを読み込んでいます…");
   try {
     const response=await fetch('/api/source',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Filename':encodeURIComponent(file.name)},body:file});
     const result=await response.json(); if(!response.ok)throw new Error(result.error);
@@ -69,7 +69,7 @@ async function upload(file) {
     $('source-status').textContent=tr("{0} · {1}メッシュ · {2}三角形", result.filename, result.mesh_count, result.triangles.toLocaleString());
     if(!state.nameDirty&&!state.imported){$('npc_name').value=result.suggested_name; $('mod_name').value=result.suggested_name+'Follower'; await updateId();}
   }catch(e){state.source=null; error(e.message); $('source-status').textContent=tr("読み込めませんでした");}
-  finally{$('next').disabled=false;}
+  finally{state.sourceLoading=false;renderCatalogStatus();}
 }
 function loadPhysics(settings){
   const selected=settings.physics_nodes||[];
@@ -118,6 +118,30 @@ function setupChoices(choices, localizing=false) {
   setupFitting(!localizing);
   renderCombatStyle();
 }
+function catalogIdentity(){return JSON.stringify([$('game').value,$('blender').value,$('sex').value]);}
+function renderCatalogStatus(){
+  const busy=!!state.catalogLoading;
+  $('catalog-status').hidden=!busy&&!state.catalogError;
+  $('catalog-status').textContent=busy?tr('装備の一覧を読み込んでいます… 完了するまでお待ちください。'):state.catalogError?tr(state.catalogError):'';
+  $('fit-panel').setAttribute('aria-busy',String(busy));
+  $('fit-enabled').disabled=busy;
+  $('fit-count').hidden=busy;
+  $('next').disabled=busy||!!state.sourceLoading||!!state.navigationLoading;
+  $('next').textContent=busy||state.sourceLoading?tr('読み込み中…'):tr('次へ →');
+}
+async function loadCatalog(){
+  const identity=catalogIdentity();
+  if(state.catalogPromise){await state.catalogPromise;return loadCatalog();}
+  if(state.choices&&state.catalogIdentity===identity)return {choices:state.choices,checks:state.catalogChecks};
+  state.catalogLoading=true;state.catalogError='';renderCatalogStatus();
+  state.catalogPromise=api('/api/catalog',{game:$('game').value,blender:$('blender').value});
+  try{
+    const result=await state.catalogPromise;
+    if(catalogIdentity()!==identity){state.catalogPromise=null;return await loadCatalog();}
+    setupChoices(result.choices);state.catalogIdentity=identity;state.catalogChecks=result.checks;return result;
+  }catch(e){state.catalogError='装備の一覧を読み込めませんでした。もう一度チェックを付けるか「次へ」で再試行してください。';throw e;}
+  finally{state.catalogPromise=null;state.catalogLoading=false;renderCatalogStatus();}
+}
 function setupFitting(autoDefaults=true) {
   const selected=state.fitArmors||new Set(); $('fit-armors').replaceChildren();
   for(const item of state.choices?.armors||[]){const option=new Option(`${recordLabel(item)} (${item.editor_id}) · ${item.plugin}`,item.id);option.dataset.editorId=item.editor_id;option.selected=selected.has(item.id)||selected.has(item.editor_id);$('fit-armors').add(option);}
@@ -145,8 +169,8 @@ function renderHeadPolicies(){
   const policy=state.headOverrides?.[addon.key]||{hide_face:$('head-hide-face').checked,hide_hair:$('head-hide-hair').checked&&!!(addon.mask&2)};
   for(const [key,label]of [['hide_face',tr("顔を隠す")],['hide_hair',tr("髪を隠す")]]){const box=document.createElement('label');box.className='checkbox';const input=document.createElement('input');input.type='checkbox';input.checked=policy[key];input.dataset.policy=key;input.onchange=()=>{state.headOverrides??={};state.headOverrides[addon.key]={...policy,[key]:input.checked};$('head-preview-images').replaceChildren();renderHeadPolicies();};box.append(input,document.createTextNode(label));controls.append(box);}row.append(controls);
   const reset=document.createElement('button');reset.type='button';reset.className='secondary';reset.textContent=tr("リセット");reset.onclick=()=>{delete state.headOverrides[addon.key];$('head-preview-images').replaceChildren();renderHeadPolicies();};
-  const preview=document.createElement('button');preview.type='button';preview.className='secondary';preview.id='head-preview';preview.textContent=tr("この頭装備を着せてプレビュー");
-  preview.onclick=async()=>{preview.disabled=true;error();$('head-preview-images').replaceChildren();$('head-preview-status').textContent=tr("頭装備をアバターに合わせています…");const identity=addon.key+JSON.stringify(policy),signature=headPreviewSignature();try{const result=await api('/api/head-preview',{source_id:state.source.source_id,game:$('game').value,blender:$('blender').value,settings:collect(),armor:addon.armor,policy});for(;;){const job=await api('/api/jobs/'+result.job_id);$('head-preview-status').textContent=uiMessage(job.stage);if(job.status==='failed')throw new Error(job.error);if(job.status==='complete'){const current=state.headOverrides?.[addon.key]||{hide_face:$('head-hide-face').checked,hide_hair:$('head-hide-hair').checked&&!!(addon.mask&2)};if($('head-model').value+JSON.stringify(current)!==identity||headPreviewSignature()!==signature){$('head-preview-status').textContent=tr("設定が変わりました。プレビューを更新してください。");break;}for(const path of job.previews){const img=document.createElement('img');img.src=fileURL(job.id,path);img.alt=addon.label+tr("を装着したアバター");$('head-preview-images').append(img);}break;}await new Promise(r=>setTimeout(r,1000));}}catch(e){error(e.message);$('head-preview-status').textContent=tr("プレビューを作成できませんでした");}finally{preview.disabled=false;}};
+  const preview=document.createElement('button');preview.type='button';preview.className='secondary';preview.id='head-preview';preview.disabled=!!state.headPreviewLoading;preview.textContent=tr("この頭装備を着せてプレビュー");
+  preview.onclick=async()=>{state.headPreviewLoading=true;preview.disabled=true;error();$('head-preview-images').replaceChildren();$('head-preview-status').textContent=tr("頭装備をアバターに合わせています…");const identity=addon.key+JSON.stringify(policy),signature=headPreviewSignature();try{const result=await api('/api/head-preview',{source_id:state.source.source_id,game:$('game').value,blender:$('blender').value,settings:collect(),armor:addon.armor,policy});for(;;){const job=await api('/api/jobs/'+result.job_id);$('head-preview-status').textContent=uiMessage(job.stage);if(job.status==='failed')throw new Error(job.error);if(job.status==='complete'){const current=state.headOverrides?.[addon.key]||{hide_face:$('head-hide-face').checked,hide_hair:$('head-hide-hair').checked&&!!(addon.mask&2)};if($('head-model').value+JSON.stringify(current)!==identity||headPreviewSignature()!==signature){$('head-preview-status').textContent=tr("設定が変わりました。プレビューを更新してください。");break;}for(const path of job.previews){const img=document.createElement('img');img.src=fileURL(job.id,path);img.alt=addon.label+tr("を装着したアバター");$('head-preview-images').append(img);}break;}await new Promise(r=>setTimeout(r,1000));}}catch(e){error(e.message);$('head-preview-status').textContent=tr("プレビューを作成できませんでした");}finally{state.headPreviewLoading=false;preview.disabled=false;const current=$('head-preview');if(current)current.disabled=false;}};
   row.append(reset,preview);target.append(row);
 }
 async function checkDeployedPatch(){
@@ -234,12 +258,12 @@ function summarize(settings) {
 async function next() {
   error(); const current=document.querySelector(`[data-step="${state.step}"]`);
   for(const field of current.querySelectorAll('input,select'))if(!field.checkValidity()){field.reportValidity();return;}
-  $('next').disabled=true;
+  state.navigationLoading=true;$('next').disabled=true;
   try {
-    if(state.step===0){if(!state.source)throw new Error(tr("VRMファイルを選択してください"));const result=await api('/api/catalog',{game:$('game').value,blender:$('blender').value});$('checks').replaceChildren();for(const [key,value]of Object.entries(result.checks)){const badge=document.createElement('span');badge.textContent=key+(value?' ✓':tr(" 未準備"));badge.className=value?'':'missing';$('checks').append(badge);}if(Object.values(result.checks).some(value=>!value))throw new Error(tr("環境が未準備です。パスを確認し、初回はSetup.cmdを実行してください。"));setupChoices(result.choices);}
+    if(state.step===0){if(!state.source)throw new Error(tr("VRMファイルを選択してください"));const result=await loadCatalog();$('checks').replaceChildren();for(const [key,value]of Object.entries(result.checks)){const badge=document.createElement('span');badge.textContent=key+(value?' ✓':tr(" 未準備"));badge.className=value?'':'missing';$('checks').append(badge);}if(Object.values(result.checks).some(value=>!value))throw new Error(tr("環境が未準備です。パスを確認し、初回はSetup.cmdを実行してください。"));}
     const result=await api('/api/validate',{source_id:state.source.source_id,game:$('game').value,settings:collect()});if(state.step===3)summarize(result.settings);
     showStep(state.step+1);
-  }catch(e){error(e.message);}finally{$('next').disabled=false;}
+  }catch(e){error(e.message);}finally{state.navigationLoading=false;renderCatalogStatus();}
 }
 function fileURL(job,name){return `/api/jobs/${job}/file?name=${encodeURIComponent(name)}`;}
 function showResult(job) {
@@ -289,13 +313,13 @@ async function init() {
     $('next').disabled=true;$('create').disabled=true;$('source').disabled=true;
     throw new Error(tr("ウィザードの再起動が必要です（起動中 {0}／画面 {1}）。古いウィザードのターミナルで Ctrl+C を押し、Launch.cmd を開き直してください。新しく開いたページを使ってください（ポート番号が変わることがあります）。設定JSONを保存済みなら再起動後に読み込めます。", env.version, expected));
   }
-  state.defaults=env.defaults;$('version').textContent='VRM2Skyrim '+env.version;$('game').value=env.game;$('blender').value=env.blender;applySettings(env.defaults);
+  state.defaults={...env.defaults,fit_mode:'all_official'};$('version').textContent='VRM2Skyrim '+env.version;$('game').value=env.game;$('blender').value=env.blender;applySettings(env.defaults);$('fit_mode').value='all_official';
   $('legacy-armor-notice').hidden=!env.armor_registration?.legacy_patch;
   initWardrobe();
   await refreshSavedResults();
   $('check-deployed-patch').onclick=checkDeployedPatch;
   $('open-saved').onclick=async()=>{try{const job=await api('/api/jobs/'+$('saved-job').value);$('wizard').hidden=true;showResult(job);}catch(e){error(e.message);}};
-  $('fit-enabled').onchange=async()=>{if($('fit-enabled').checked&&!state.choices){$('next').disabled=true;try{const result=await api('/api/catalog',{game:$('game').value,blender:$('blender').value});setupChoices(result.choices);}catch(e){error(e.message);$('fit-enabled').checked=false;}finally{$('next').disabled=false;}}setupFitting();};
+  $('fit-enabled').onchange=async()=>{error();setupFitting();if($('fit-enabled').checked){try{await loadCatalog();}catch(e){error(e.message);$('fit-enabled').checked=false;setupFitting();}}};
   $('fit-armors').onchange=()=>{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));renderHeadPolicies();};
   $('head-model').onchange=()=>{$('head-preview-images').replaceChildren();renderHeadPolicies();};$('fit_mode').onchange=setupFitting;$('head-search').oninput=renderHeadPolicies;
   $('head-hide-face').onchange=$('head-hide-hair').onchange=()=>{$('head-preview-images').replaceChildren();$('head-preview-status').textContent='';renderHeadPolicies();};$('fit_source').onchange=()=>{$('head-preview-images').replaceChildren();$('head-preview-status').textContent='';};
@@ -306,7 +330,7 @@ async function init() {
   $('all-styles').onchange=()=>{const selected=$('combat_style').value;const item=state.choices.styles.find(item=>item.id===selected);updateStyles(!$('all-styles').checked&&!item?.humanoid?state.defaults.combat_style:selected);};
   $('use-manual-skills').onclick=()=>{$('auto_calculate').value='false';$('manual-skills').open=true;updateLevel();};
   $('mod_name').oninput=()=>{state.nameDirty=true;updateId();};$('npc_name').oninput=()=>state.nameDirty=true;$('mod_id').oninput=()=>state.idDirty=true;
-  $('sex').onchange=async()=>{const sex=$('sex').value;$('voice').value=sex==='male'?'MaleNord':'FemaleEvenToned';updateMarriage();if(state.choices){try{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));const result=await api('/api/catalog',{game:$('game').value,blender:$('blender').value});if($('sex').value===sex){state.choices.armors=result.choices.armors;setupFitting();}}catch(e){error(e.message);}}};$('voice').onchange=updateMarriage;
+  $('sex').onchange=async()=>{const sex=$('sex').value;$('voice').value=sex==='male'?'MaleNord':'FemaleEvenToned';updateMarriage();if(state.choices){try{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));await loadCatalog();}catch(e){error(e.message);}}};$('voice').onchange=updateMarriage;
   $('perk-search').oninput=renderChoices;$('spell-search').oninput=renderChoices;
   $('perk-category').onchange=renderChoices;$('spell-category').onchange=renderChoices;
   $('export-settings').onclick=()=>download($('mod_id').value+'-settings.json',collect());
@@ -321,7 +345,7 @@ document.addEventListener('languagechange',()=>{
     state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(option=>option.value));
     setupChoices(state.choices,true);
   }
-  renderWardrobe();renderPhysics();updateLevel();
+  renderWardrobe();renderPhysics();updateLevel();renderCatalogStatus();
   if(state.source)$('source-status').textContent=tr('{0} · {1}メッシュ · {2}三角形',state.source.filename,state.source.mesh_count,state.source.triangles.toLocaleString(i18n.language));
   if(state.step===4&&state.reviewSettings)summarize(state.reviewSettings);
   if(state.completedJob&&!$('result').hidden)renderResultAppearance(state.completedJob);

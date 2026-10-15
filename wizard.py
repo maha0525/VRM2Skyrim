@@ -96,7 +96,6 @@ class WizardApplication:
         self.source_reports = {}
         self.jobs = {}
         self.catalogs = {}
-        self.head_preview_outputs = {}
         self.lock = threading.Lock()
         self.executor = ThreadPoolExecutor(max_workers=1)
         for path in self.workspace.glob('*/wizard-job.json'):
@@ -225,17 +224,10 @@ class WizardApplication:
         policy = request.get('policy', {})
         if set(policy) != {'hide_face', 'hide_hair'} or any(type(v) is not bool for v in policy.values()):
             raise ValueError('Invalid preview visibility')
-        signature = json.dumps(dict(source=self.source_reports[source_id]['sha256'],
-                         parts=settings.appearance_parts, heads=settings.appearance_heads, sex=settings.sex,
-                         profile=settings.fit_source, height=settings.height_scale, armor=catalog.key(armor),
-                         physics=(settings.physics_enabled, settings.physics_nodes, settings.physics_stiffness),
-                         fitting_schema='native-headwear-and-wardrobe-2'), sort_keys=True)
-        key = hashlib.sha256(signature.encode()).hexdigest()[:24]
-        output = self.head_preview_outputs.get(key, self.workspace/'head-previews'/key)
         settings.fit_mode = 'selected'
         settings.fit_armors = [catalog.key(armor)]
-        settings.render_previews = False
-        settings.mod_id = 'Preview_'+key
+        key = uuid.uuid4().hex
+        output = self.workspace/'head-previews'/key
         with self.lock:
             if any(j['status'] in ('queued', 'running') for j in self.jobs.values()):
                 raise ValueError('変換・プレビューの完了を待ってください')
@@ -244,27 +236,22 @@ class WizardApplication:
                        stage='頭装備を体型へ合わせています', events=[])
             self.jobs[job_id] = job
         self.executor.submit(self._run_head_preview, job, self.sources[source_id], Path(request['game']),
-                             Path(request['blender']), output, settings, armor.editor_id, policy, key)
+                             Path(request['blender']), settings, policy)
         return {'job_id': job_id}
 
-    def _run_head_preview(self, job, source, game, blender, output, settings, editor_id, policy, key):
+    def _run_head_preview(self, job, source, game, blender, settings, policy):
         job['status'] = 'running'
         try:
-            complete = output/'run.json'
-            if not complete.is_file() or json.loads(complete.read_text(encoding='utf8')).get('state') != 'offline_verified':
-                if output.exists():
-                    output = output.with_name(output.name+'_'+job['id'][:8])
-                    job['output'] = str(output)
-                convert(source, game, blender, output, settings)
-            self.head_preview_outputs[key] = output
-            job['stage'] = '装着した見た目を描画しています'
-            arguments = ['--output', output, '--wardrobe', 'armor:'+editor_id, '--keep-clothes', '--head-closeup',
-                         '--hide-face' if policy['hide_face'] else '--no-hide-face',
-                         '--hide-hair' if policy['hide_hair'] else '--no-hide-hair']
-            run_blender(blender, 'render_blender.py', arguments, output, 'Headgear preview')
+            from head_preview import preview
+
+            def progress(stage):
+                with self.lock:
+                    job['stage'] = stage
+                logging.info('Head preview stage: %s', stage)
+
+            result = preview(self.workspace, source, game, blender, settings, settings.fit_armors[0], policy, progress)
             with self.lock:
-                job.update(status='complete', stage='頭装備のプレビューを更新しました',
-                           previews=[f'previews/wardrobe-armor-{editor_id}-rest-01.png'])
+                job.update(result, status='complete', stage='頭装備のプレビューを更新しました')
         except Exception as error:
             logging.exception('Headgear preview failed')
             with self.lock:
