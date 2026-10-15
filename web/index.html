@@ -16,6 +16,7 @@
   </aside>
   <main>
     <div id="error" role="alert" hidden></div>
+    <p id="legacy-armor-notice" class="note" hidden>旧式の防具互換パッチが見つかりました。移行する場合は、体型合わせを使う全フォロワーをこの版で再出力してMODを置き換え、その後でVRM2SkyrimArmorPatch.espを無効にしてください。</p>
     <form id="wizard" novalidate>
       <section data-step="0">
         <section id="saved-results" hidden><h3>前に作ったフォロワー</h3><label>変換結果<select id="saved-job"></select></label><button id="open-saved" type="button" class="secondary">結果と装備編集を開く</button></section>
@@ -29,7 +30,7 @@
           <h3>身体と衣服を分類する</h3><p class="hint">名前から分類候補を出しています。身体、下着、顔・髪などの常時表示、着脱する衣服を確認してください。身体と服が一体のメッシュは、この画面では切断しません。</p>
           <p class="hint">元VRMの服を着脱する装備にできます。身体が独立しているモデルでは、本体ゲームの鎧・手袋・靴を体型へ合わせることもできます。</p>
           <label class="checkbox"><input id="fit-enabled" type="checkbox">既存装備をこの身体に合わせる</label>
-          <div id="fit-panel" hidden>
+          <div id="fit-panel" hidden><p class="hint">体型合わせの利用にはSkyPatcherとSKSE64が必要です。登録設定はMOD ZIPに同梱します。</p>
             <label>変換範囲<select id="fit_mode"><option value="all_official">公式の全装備（本体・導入済みDLC・公式追加コンテンツ）</option><option value="selected">選んだ装備</option></select></label>
             <label>どの装備データを変換するか<select id="fit_source"><option value="official">本体・DLCの標準装備を変換</option><option value="installed">現在導入している装備を変換（体型MOD用の装備など）</option></select></label>
             <p class="hint">装備をUNP/CBBE版へ置き換えた、またはBodySlideで出力した場合は「現在導入している装備」。元の鎧を使う場合は「標準装備」を選びます。体型MODを入れているだけでは、下を選ぶ必要はありません。どちらでも変換先はVRMの体型です。導入済みの身体と装備は同じBodySlideプリセットに揃えてください。</p>
@@ -41,7 +42,7 @@
               <label>装備を検索<input id="head-search" type="search" placeholder="兜・フードの名前"></label>
               <label>見た目を確認する頭装備<select id="head-model"></select></label><p id="head-count" class="hint"></p><div id="head-policies"></div><p id="head-preview-status" class="hint" role="status"></p><div id="head-preview-images" class="preview-grid"></div><p class="hint">同じ装備モデルの付呪違いにも反映します。サークレットは既定で髪を残します。顔・髪の切替にはSKSE64が必要です。</p>
             </details>
-            <p class="hint">同じ形の装備は共有して変換します。鎧・手袋・靴を装備すると、対応する元衣装が外れます。専用種族用の互換パッチは別のZIPです。変換後にはOutfit Studio用の身体・骨格と編集用装備も出力します。</p>
+            <p class="hint">同じ形の装備は共有して変換します。鎧・手袋・靴を装備すると、対応する元衣装が外れます。SkyPatcher用の登録設定はフォロワーのZIPに同梱します。変換後にはOutfit Studio用の身体・骨格と編集用装備も出力します。</p>
           </div>
           <p id="wardrobe-warning" role="status"></p>
           <div id="wardrobe-parts" class="wardrobe-parts"></div>
@@ -98,7 +99,7 @@
       <nav id="navigation"><button id="back" type="button" class="secondary" hidden>戻る</button><span></span><button id="next" type="button" class="primary">次へ →</button><button id="create" type="button" class="primary" hidden>フォロワーMODを作る</button></nav>
     </form>
     <section id="progress" hidden><p class="eyebrow">CONVERTING</p><h2>世界への入口を作っています</h2><p id="stage" aria-live="polite"></p><div class="progress-bar"><div></div></div><ol id="events"></ol><pre id="failure" hidden></pre></section>
-    <section id="result" hidden><p class="eyebrow">READY TO INSTALL</p><h2 id="result-title"></h2><p class="lead">フォロワーMODのZIPを作成しました。</p><a id="download" class="primary" download>MOD ZIPを保存</a><div id="armor-patch-result" hidden><h3>装備の互換パッチ</h3><p id="deployed-patch-status" role="status"></p><button id="check-deployed-patch" type="button" class="secondary">Deploy後に確認</button><a id="armor-patch-download" class="secondary" download>このフォロワーだけのパッチを保存</a><p class="hint">このフォロワーとパッチの両方を導入し、フォロワーESPの後でVRM2SkyrimArmorPatch.espを有効化します。対応装備を渡すと、元衣装は自動で外れます。以前のパッチは無効にし、新しいパッチを優先してDeployしてください。</p><p class="note">体型合わせを使うフォロワーが複数いる場合は、下で全員を選び、統合パッチを作ってください。有効にする防具パッチは一つだけです。</p><div id="fitted-followers"></div><button id="merge-armor-patch" type="button" class="secondary">選択したフォロワー分を一つのパッチにまとめる</button><p id="armor-patch-status" role="status"></p><p class="hint">体型合わせを使うフォロワーを追加・削除したらパッチを更新してください。インストール済み、またはこのウィザードで変換済みのフォロワーを選べます。有効な互換パッチは一つにします。</p></div><div class="install"><h3>ゲームへ迎える</h3><ol><li>ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行。</li><li><code id="plugin-name"></code>を有効にして、Skyrimを起動し直す。</li><li>ホワイトランのキナレス聖堂で話しかけて仲間にする。</li></ol><p>待機・解散などは標準のフォロワー会話を使います。元衣装の着脱確認コマンドはZIP内のvrm2skyrim/&lt;MOD ID&gt;/README.txtにあります。</p></div><div id="previews" class="preview-grid"></div><p class="hint">画像は出力ファイルを読み戻したプレビューです。勧誘・衣服の着脱・装備交換・再起動後の状態は導入後に確認してください。転倒時の物理は未対応です。</p><button id="again" type="button" class="secondary">もう一体作る</button><p id="output-folder" class="hint"></p></section>
+    <section id="result" hidden><p class="eyebrow">READY TO INSTALL</p><h2 id="result-title"></h2><p class="lead">フォロワーMODのZIPを作成しました。</p><a id="download" class="primary" download>MOD ZIPを保存</a><div id="armor-patch-result" hidden><h3>防具の体型合わせ</h3><div id="skypatcher-install-help"><p class="hint">登録設定はこのフォロワーのMOD ZIPに含まれています。SkyPatcherを一度導入すれば、フォロワーの追加・削除ごとの統合パッチ作成は不要です。変更後はゲームを再起動してください。</p><p class="hint">SkyPatcher.iniのiEnableArmorPatchingとiEnableFormlistPatchingを1にしてください。別のフォロワーの設定やSkyPatcher.iniは、このZIPで上書きしません。</p></div><p id="deployed-patch-status" role="status"></p><button id="check-deployed-patch" type="button" class="secondary">Deploy後に確認</button></div><div class="install"><h3>ゲームへ迎える</h3><ol><li>ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行。</li><li><code id="plugin-name"></code>を有効にして、Skyrimを起動し直す。</li><li>ホワイトランのキナレス聖堂で話しかけて仲間にする。</li></ol><p>待機・解散などは標準のフォロワー会話を使います。元衣装の着脱確認コマンドはZIP内のvrm2skyrim/&lt;MOD ID&gt;/README.txtにあります。</p></div><div id="previews" class="preview-grid"></div><p class="hint">画像は出力ファイルを読み戻したプレビューです。勧誘・衣服の着脱・装備交換・再起動後の状態は導入後に確認してください。転倒時の物理は未対応です。</p><button id="again" type="button" class="secondary">もう一体作る</button><p id="output-folder" class="hint"></p></section>
     <section id="equipment-edit" hidden>
       <h3>Outfit Studioで形を仕上げる</h3><a id="edit-kit-download" class="secondary" download>身体・骨格・編集用装備を保存</a>
       <label>仕上げた装備を戻す<select id="edit-mesh"></select></label>

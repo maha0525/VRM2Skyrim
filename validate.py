@@ -12,7 +12,7 @@ import sys
 import numpy as np
 from scipy.spatial import cKDTree
 
-from plugin import records
+from follower_plugin import follower_records
 from settings import load_settings
 from build_npc import NPC_ID, RACE_ID
 from wardrobe import components, equip_slots, keyword_names, skin_components, nif_partition
@@ -143,7 +143,7 @@ def validate(output, skeleton=None):
                     "triangles": sum(s["triangles"] for s in part_shapes),
                 }
             )
-    generated = list(records(mod / settings.plugin_name))
+    generated = follower_records(mod / settings.plugin_name)
     head_visibility = validate_head_visibility(generated, settings)
     for path in (mod / 'meshes' / settings.asset_dir / 'native_head_empty.nif',
                  mod / 'meshes/actors/character/facegendata/facegeom' / settings.plugin_name / '00000800.nif'):

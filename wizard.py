@@ -82,6 +82,11 @@ def port_is_listening(port):
         return False
 
 
+def armor_environment(game):
+    from skypatcher import installation_status
+    return installation_status(Path(game)/'Data') if game else None
+
+
 class WizardApplication:
     def __init__(self, workspace=None):
         self.workspace = Path(workspace or ROOT / "build/wizard").resolve()
@@ -90,7 +95,6 @@ class WizardApplication:
         self.source_reports = {}
         self.jobs = {}
         self.catalogs = {}
-        self.fitting_profiles = {}
         self.head_preview_outputs = {}
         self.lock = threading.Lock()
         self.executor = ThreadPoolExecutor(max_workers=1)
@@ -116,42 +120,6 @@ class WizardApplication:
         if key not in self.catalogs:
             self.catalogs[key] = GameCatalog(path)
         return self.catalogs[key]
-
-    def fitted_profiles(self, game):
-        """Only trusted local output/installed metadata, never client file paths."""
-        data = Path(game).resolve() / "Data"
-        paths = [Path(job["output"]) / "armor-fitting.json" for job in reversed(list(self.jobs.values()))
-                 if job["status"] == "complete"]
-        paths += sorted(data.glob("vrm2skyrim/*/armor-fitting.json"))
-        profiles, seen = [], set()
-        for path in paths:
-            if not path.is_file():
-                continue
-            value = json.loads(path.read_text(encoding="utf8"))
-            plugin = value["plugin"]
-            if plugin.casefold() in seen:
-                continue
-            seen.add(plugin.casefold())
-            handle = uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())).hex
-            self.fitting_profiles[handle] = path
-            profiles.append({"id": handle, "plugin": plugin, "deployed": (data/plugin).is_file()})
-        return profiles
-
-    def make_armor_patch(self, request):
-        available = {p["id"] for p in self.fitted_profiles(request["game"])}
-        ids = request.get("profiles")
-        if not isinstance(ids, list) or not ids or len(ids) > 64 or len(ids) != len(set(ids)):
-            raise ValueError("防具互換パッチに含めるフォロワーを選んでください")
-        if set(ids) - available:
-            raise ValueError("フォロワーの候補が更新されました。結果画面を読み込み直してください")
-        paths = [self.fitting_profiles[key] for key in ids]
-        job_id = uuid.uuid4().hex
-        output = self.workspace / ("armor_patch_" + job_id)
-        from armor_patch import build_patch
-        archive = build_patch(Path(request["game"]) / "Data", paths, output)
-        with self.lock:
-            self.jobs[job_id] = {"id": job_id, "status": "complete", "output": str(output), "archive": archive.name}
-        return {"job_id": job_id, "archive": archive.name}
 
     def upload(self, name, blob):
         if Path(name).suffix.lower() != ".vrm":
@@ -222,6 +190,8 @@ class WizardApplication:
 
     def start_edit(self, job_id, mesh_key, blob, blender):
         original = self.snapshot(job_id)
+        if original.get('armor_patch') and original.get('armor_registration') != 'skypatcher':
+            raise ValueError('これは旧式パッチを使う変換結果です。SkyPatcher方式へ移行するには、このフォロワーを再出力してください。')
         if original['status'] != 'complete' or mesh_key not in {i['key'] for i in original.get('edit_meshes', [])}:
             raise ValueError('変換済みの装備を選んでください')
         with self.lock:
@@ -341,7 +311,7 @@ class WizardApplication:
                            previews=sorted(path.relative_to(output).as_posix() for path in (output / "previews").glob("*.png")),
                            game_verified=False)
                 if settings.fitting_enabled:
-                    job["armor_patch"] = "armor-patch/VRM2SkyrimArmorPatch.zip"
+                    job["armor_registration"] = "skypatcher"
                     fitting = json.loads((output/'armor-fitting.json').read_text())
                     job['fit_armors'] = list(dict.fromkeys(i['editor_id'] for i in fitting['equipment']))
                     job['edit_kit'] = 'OutfitStudio-EditKit.zip'
@@ -410,20 +380,17 @@ def handler_for(app):
                 if url.path == "/api/environment":
                     return self.reply({"game": str(find_game() or ""), "blender": str(find_blender() or ""),
                                        "defaults": asdict(FollowerSettings()), "version": VERSION,
-                                       "restart_required": source_fingerprint() != BOOT_FINGERPRINT})
+                                       "restart_required": source_fingerprint() != BOOT_FINGERPRINT,
+                                        "armor_registration": armor_environment(find_game())})
                 if url.path == '/api/jobs':
                     with app.lock:
                         return self.reply({'jobs': [dict(job) for job in app.jobs.values()
                                                    if job['status'] == 'complete' and job.get('plugin_name')]})
-                if url.path == "/api/fitted-followers":
-                    game = parse_qs(url.query).get("game", [""])[0]
-                    return self.reply({"profiles": app.fitted_profiles(game)})
                 if url.path == '/api/patch-status':
                     query = parse_qs(url.query)
                     job = app.snapshot(query.get('job', [''])[0])
-                    profile = json.loads((Path(job['output'])/'armor-fitting.json').read_text(encoding='utf8'))
-                    from armor_patch import installed_patch_status
-                    return self.reply(installed_patch_status(Path(query.get('game', [''])[0])/'Data', profile))
+                    from skypatcher import installation_status
+                    return self.reply(installation_status(Path(query.get('game', [''])[0])/'Data', job.get('plugin_name'), job['output']))
                 if url.path.startswith("/api/jobs/"):
                     job_id = url.path.split("/")[3]
                     job = app.snapshot(job_id)
@@ -483,7 +450,7 @@ def handler_for(app):
                 if self.path == '/api/head-preview':
                     return self.reply(app.start_head_preview(request), 202)
                 if self.path == "/api/armor-patch":
-                    return self.reply(app.make_armor_patch(request))
+                    raise ValueError("共有防具パッチは廃止されました。体型合わせを使うフォロワーを再出力してください。")
                 raise ValueError("Unknown API")
             except (ValueError, OSError, KeyError, TypeError, IndexError) as error:
                 logging.info("Wizard request rejected: %s", error)

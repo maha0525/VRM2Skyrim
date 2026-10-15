@@ -1,6 +1,25 @@
 # Skyrim record and skeleton sources
 
-## 0.7.0 equipment identities and private models
+## 0.12.0 independent equipment registration
+
+New exports bundle per-follower SkyPatcher armor and formList rules named exactly
+`<follower>.esp.ini` in their own namespace. Readers skip that file if its ESP is
+not loaded; armor rules also use hasPlugins and exclude already-added addons.
+No aggregate ESP or separate armor-patch ZIP is generated. Original ARMO records,
+models, stats and other followers are not overwritten by an exported follower.
+
+Visibility lists receive plugin-relative original item references at startup.
+Private fitted ARMA records retain original SNDD footstep references directly;
+only their required official masters are added to the follower. Local FormIDs
+are unchanged. Conversion/validation use canonical own-file index 1 while the
+serializer maps the real MAST order, including VMAD, race, outfit, head, combat
+style, relationship and placed-reference links. See follower_plugin.py.
+
+Legacy 0.11.x and earlier shared patches must be removed only after every fitted
+follower depending on them has been re-exported/replaced. The wizard shows the
+migration notice independently of whether the current follower uses fitting.
+
+## Historical 0.7.0 equipment identities and private models
 
 The official catalog reads installed base/DLC/Creation masters, resolving every
 disk FormID through that file's MAST array, including ESL files. Saved equipment
@@ -163,13 +182,13 @@ weights; exported equipment receives the target body's weights. Both weight
 variants retain the same target geometry. Output skin and fitted NIFs share the
 original custom skeleton and their textures use private per-MOD paths.
 
-Private fitted ARMA records start at local 0x880. The follower ESP does not override
+Legacy private fitted ARMA records started at local 0x880 (current exports start at 0x1000). The follower ESP does not override
 the original ARMO. `vrm2skyrim/<mod_id>/armor-fitting.json` publishes the local
-manifest to the user's installed Data folder. The separate combined armor patch
-has Skyrim.esm and the chosen follower ESPs as masters, appends their ARMA FormIDs
+manifest to the user's installed Data folder. Before 0.12.0, a separate combined armor patch
+had Skyrim.esm and the chosen follower ESPs as masters, appends their ARMA FormIDs
 to original ARMO Armature lists, and retains stats and original addons. Localized
 names/descriptions are resolved into inline strings for the unlocalized patch.
-Only one combined patch should be active. Installed metadata and completed wizard
+For those legacy exports, only one combined patch should be active. Installed metadata and completed wizard
 outputs provide trusted candidates; the API accepts handles, not file paths.
 
 The preview renderer uses the complete original skin as its common import rig:

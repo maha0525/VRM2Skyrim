@@ -79,6 +79,9 @@ def package(output, settings=None):
     output = Path(output)
     settings = settings or load_settings(output)
     mod = output / "mod"
+    if settings.fitting_enabled:
+        from skypatcher import validate_registration
+        validate_registration(output)
     metadata = mod / settings.asset_dir
     metadata.mkdir(parents=True, exist_ok=True)
     appearance_description = "Original outfit stays together; clothing is not removable."
@@ -128,11 +131,12 @@ should retain the base body, underwear, face and hair. Follower inventory,
         fitting_help = """Fitted original equipment:
 """ + "\n".join(rows) + """
 
-Install the separate armor-patch/VRM2SkyrimArmorPatch.zip too. Enable the follower
-ESP, then VRM2SkyrimArmorPatch.esp. This keeps the original armor items/stats and
-adds private-race appearances. Only one combined armor patch should be active.
-The wizard can rebuild a combined patch for several installed/converted followers.
-After changing that set, replace the combined patch and deploy again.
+Install SkyPatcher (with matching SKSE64) once. The follower ZIP already includes
+its own armor and head-visibility configuration. Enable armor and form-list
+patching in SkyPatcher.ini. Add/remove each follower MOD independently and restart
+the game; no combined armor-patch ESP needs to be generated or installed.
+When migrating, re-export ALL followers using fitted equipment with this version,
+replace their MODs, then disable/remove the old VRM2SkyrimArmorPatch.esp.
 
 Fitted equipment and VRM garments switch by their body/hands/feet groups.
 Equipping fitted torso armor removes body-group garments; boots remove feet
@@ -302,6 +306,10 @@ def convert(source, game, blender, output, settings, progress=None):
             stage('実験的なVRM専用トゥーン材質')
             from toon import prepare_materials
             prepare_materials(output)
+        if settings.fitting_enabled:
+            stage('SkyPatcherの防具登録設定')
+            from skypatcher import write_registration
+            write_registration(output)
         stage("出力の読み戻し検査")
         from validate import validate
         from verify_animation import verify_animation
@@ -312,9 +320,6 @@ def convert(source, game, blender, output, settings, progress=None):
         if settings.fitting_enabled:
             from armor_validation import validate_fitting
             validate_fitting(output)
-            from armor_patch import build_patch
-            stage("専用種族用の防具互換パッチ")
-            build_patch(Path(game) / "Data", [output / "armor-fitting.json"], output / "armor-patch")
             from outfit_edits import export_kit
             export_kit(output)
         if settings.render_previews:

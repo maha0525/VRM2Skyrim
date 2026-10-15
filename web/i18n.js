@@ -41,7 +41,7 @@ const i18n = (() => {
     const previous=language;language=next;
     try{localStorage.setItem(storageKey,next);}catch{/* The current page still switches. */}
     staticText();
-    for(const id of ['source-status','import-status','wardrobe-preview-status','head-preview-status','error','failure','stage','edit-status','armor-patch-status','armor-patch-download','deployed-patch-status']){
+    for(const id of ['source-status','import-status','wardrobe-preview-status','head-preview-status','error','failure','stage','edit-status','deployed-patch-status']){
       const walker=document.createTreeWalker(document.getElementById(id),NodeFilter.SHOW_TEXT);
       while(walker.nextNode())walker.currentNode.textContent=message(walker.currentNode.textContent,previous,next);
     }

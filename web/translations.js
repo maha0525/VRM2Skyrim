@@ -381,3 +381,31 @@ Object.assign(englishUI,{
   "すべての調整をコピー元の値に戻しますか？": "Reset all adjustments to the source style values?",
   "専用戦闘スタイル": "Private combat style"
 });
+
+Object.assign(englishUI, {
+  "旧式の防具互換パッチが見つかりました。移行する場合は、体型合わせを使う全フォロワーをこの版で再出力してMODを置き換え、その後でVRM2SkyrimArmorPatch.espを無効にしてください。": "A legacy armor patch was found. To migrate, re-export and replace ALL followers using fitted equipment with this version, then disable VRM2SkyrimArmorPatch.esp.",
+  "防具の体型合わせ：SkyPatcher": "Fitted equipment: SkyPatcher",
+  "登録設定はこのフォロワーのMOD ZIPに含まれています。SkyPatcherを一度導入すれば、フォロワーの追加・削除ごとの統合パッチ作成は不要です。変更後はゲームを再起動してください。": "Registration is included in this follower's MOD ZIP. Install SkyPatcher once; adding or removing followers does not require rebuilding a combined patch. Restart the game after changes.",
+  "SkyPatcher.iniのiEnableArmorPatchingとiEnableFormlistPatchingを1にしてください。別のフォロワーの設定やSkyPatcher.iniは、このZIPで上書きしません。": "Set iEnableArmorPatching and iEnableFormlistPatching to 1 in SkyPatcher.ini. This ZIP does not overwrite SkyPatcher.ini or another follower's configuration.",
+  "同じ形の装備は共有して変換します。鎧・手袋・靴を装備すると、対応する元衣装が外れます。SkyPatcher用の登録設定はフォロワーのZIPに同梱します。変換後にはOutfit Studio用の身体・骨格と編集用装備も出力します。": "Equipment sharing the same mesh is converted once. Equipping armor, gauntlets or boots replaces original clothing in the corresponding slots. SkyPatcher registration is included in the follower ZIP. Conversion also creates an Outfit Studio body, skeleton and equipment editing kit.",
+  "SkyPatcherが未導入です。対応するSKSE64とSkyPatcherを導入してください。": "SkyPatcher is missing. Install SkyPatcher and matching SKSE64.",
+  "このSkyPatcherには必要な機能がありません。SkyPatcherを更新してください。": "This SkyPatcher build lacks required features. Update SkyPatcher.",
+  "このフォロワーの登録設定が未配備です。MOD ZIPを導入してDeployしてください。": "This follower's configuration is not deployed. Install the MOD ZIP and deploy it.",
+  "SkyPatcher.iniのiEnableArmorPatchingを1にしてください。": "Set iEnableArmorPatching to 1 in SkyPatcher.ini.",
+  "SkyPatcher.iniのiEnableFormlistPatchingを1にしてください。": "Set iEnableFormlistPatching to 1 in SkyPatcher.ini.",
+  "SkyPatcher.iniを読み取れませんでした。設定ファイルを確認してください。": "Could not read SkyPatcher.ini. Check the configuration file.",
+  "SkyPatcherと、このフォロワーの登録設定を確認しました。ゲームを再起動して反映してください。": "SkyPatcher and this follower's configuration files are present. Restart the game to apply them.",
+  "これは旧式パッチを使う変換結果です。SkyPatcher方式へ移行するには、このフォロワーを再出力してください。": "This output uses the legacy armor patch. Re-export this follower to migrate to SkyPatcher.",
+  "SkyPatcherの防具登録設定": "SkyPatcher armor registration",
+  "共有防具パッチは廃止されました。体型合わせを使うフォロワーを再出力してください。": "Shared armor patches have been retired. Re-export followers that use fitted equipment."
+});
+
+Object.assign(englishUI, {
+  "防具の体型合わせ": "Fitted equipment",
+  "体型合わせの利用にはSkyPatcherとSKSE64が必要です。登録設定はMOD ZIPに同梱します。": "Fitted equipment requires SkyPatcher and SKSE64. Registration is included in the MOD ZIP."
+});
+
+Object.assign(englishUI, {
+  "このフォロワーのESPが未配備です。MOD ZIPを導入してDeployしてください。": "This follower's ESP is not deployed. Install the MOD ZIP and deploy it.",
+  "登録設定が古い出力のものです。最新のMOD ZIPへ置き換えてDeployしてください。": "The deployed configuration differs from this output. Replace it with the latest MOD ZIP and deploy again."
+});

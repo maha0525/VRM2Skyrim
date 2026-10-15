@@ -9,7 +9,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from custom_skeleton import NifFile
-from plugin import records
+from follower_plugin import follower_records
 from settings import load_settings
 from armor_catalog import partition_slot, native_partition
 
@@ -73,7 +73,7 @@ def validate_fitting(output):
         raise ValueError("Body partitioning changed, lost or duplicated original skin faces")
     with NifFile(str(root / "skeleton.nif")) as skeleton:
         bones = set(skeleton.nodes)
-    addons = {r.form_id & 0xFFFFFF: r for r in records(output / "mod" / settings.plugin_name, {b"ARMA"})}
+    addons = {r.form_id & 0xFFFFFF: r for r in follower_records(output / "mod" / settings.plugin_name) if r.kind == b"ARMA"}
     result, cache = [], {}
     for item in profile["equipment"]:
         if item['addon_local_id'] in cache:

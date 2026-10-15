@@ -67,9 +67,9 @@ def head_skin_records(settings, skin, profile, fixed_addon):
                 addon.replace(tag, (settings.asset_dir.replace('/', '\\')+'\\'+variant['file']+'\0').encode())
             result.append(addon)
     for name, flag in (('FaceHidingEquipment', 'hide_face'), ('HairHidingEquipment', 'hide_hair')):
-        ids = sorted({i['original_form_id'] for i in (profile or {}).get('equipment', [])
-                      if i.get(flag) and i.get('origin_plugin', 'Skyrim.esm').lower() == 'skyrim.esm'} |
-                     {0x01000811 + 2 * g.get('record_index', index)
+        # Fitted official headgear is registered once by SkyPatcher. Keep only
+        # follower-owned headwear here; native formsToAdd does not deduplicate.
+        ids = sorted({0x01000811 + 2 * g.get('record_index', index)
                       for index, g in enumerate(settings.appearance_parts['garments']) if g.get(flag, False)})
         result.append(Record(b'FLST', IDS[name], 0, [(b'EDID', (settings.prefix+name+'\0').encode()),
                                                   *[(b'LNAM', struct.pack('<I', n)) for n in ids]]))

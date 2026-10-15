@@ -12,7 +12,7 @@ Materials retain the original VRM's single/double-sided rendering and transparen
 
 Followers start **inside the Temple of Kynareth in Whiterun**. The tool sets up the vanilla follower factions, a friendly relationship with the player, a recruitment-compatible voice, and a persistent placed reference, so the NPC can be recruited through dialogue.
 
-The stable version on `main` is **0.11.2**. It includes a Japanese/English wizard, optional hair/cloth physics, removable original VRM headwear, seated height correction, material fidelity fixes, and class growth details with categorized Perks/spells. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
+This development version is **0.12.0** (SkyPatcher armor registration). It includes a Japanese/English wizard, optional hair/cloth physics, removable original VRM headwear, seated height correction, material fidelity fixes, and class growth details with categorized Perks/spells. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
 
 An **experimental, off-by-default** option adds MToon-like lighting for converted avatars using a separate Community Shaders adapter. The adapter is pinned to a verified shader source and is not a general replacement for other CS versions. See [adapter creation, installation, removal and verification](docs/TOON.md).
 
@@ -131,9 +131,9 @@ If an update prevents opening inventory or causes incorrect equipment behavior, 
 1. **Restore the previous follower MOD and armor patch, then load a save from before the update.** Keep that save and the old ZIPs as backups.
 2. **Recover entrusted items.** Take back weapons, armor, and other items except the original clothing added by this follower MOD. Also check equipment and cargo stored separately by AFT or another manager. If you moved the follower's original clothing to the player or a storage container, return it to that follower.
 3. **Dismiss the follower and unregister it from your follower manager, if used.** Complete the AFT preparation below where applicable. Then move to another location without the follower, save manually into a new slot, and quit the game.
-4. **Disable the follower MOD and armor patches that reference it, then load the save from step 3.** In Vortex, also deploy. For a shared multi-follower patch, rebuild it without this follower to preserve fitting for the others. Do not leave an enabled patch that depends on the disabled follower ESP.
+4. **Disable the follower MOD and armor patches that reference it, then load the save from step 3.** In Vortex, also deploy. For legacy shared patches, migrate the other fitted followers to 0.12.0 before removing the patch; new exports have independent SkyPatcher registration. Do not leave an enabled patch that depends on the disabled follower ESP.
 5. **Save manually into another slot and quit.** Do not overwrite the original backup or the save from step 3.
-6. **Install and enable the updated follower MOD and a matching armor patch, then load the save from step 5.** Deploy again in Vortex.
+6. **Install and enable the updated follower MOD (and its bundled SkyPatcher configuration), then load the save from step 5.** Deploy again in Vortex.
 7. **Recruit the follower again at Whiterun's Temple of Kynareth.** Return the recovered equipment and redo the follower-manager settings you use.
 
 **AFT preparation:** Dismissal alone leaves the management registration in place, so use the individual **Reset NPC** in step 3. The AFT author's sequence is: recover gear and turn off outfit management → dismiss this follower and all other active followers → wait 24 in-game hours → fast travel elsewhere and enter an interior → save, quit, restart, and reload that save → talk to the target NPC and choose **Settings → Reset NPC** → save and quit. This is different from resetting all of AFT. Translations may use different menu names. [AFT author's instructions](https://www.nexusmods.com/skyrimspecialedition/mods/80675?tab=posts)
@@ -175,9 +175,9 @@ Without `--blender`, the CLI imports and saves a finishing edit for the next con
 python outfit_edits.py --output <conversion-folder> --mesh-key <manifest-source_key> --edited <edited-NIF>
 ```
 
-In addition to the follower ZIP, install the **armor compatibility patch ZIP** from the result page. Enable `VRM2SkyrimArmorPatch.esp` after the follower ESP, deploy in Vortex, and restart the game. Equipping fitted official equipment replaces original clothing occupying the same slots; clothing deliberately assigned to extra slots remains. Test FormIDs and commands are included in the generated README.
+Fitted equipment requires [SkyPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/106659) and matching SKSE64. Each follower ZIP includes its own uniquely named armor and head-visibility registration. Install the follower MOD normally; enable armor and form-list patching in SkyPatcher.ini, and restart Skyrim. Adding, disabling or removing one follower does not require rebuilding other followers or a combined patch. The generated configuration preserves original armor models and stats and applies only while that follower ESP is loaded.
 
-For several fitted followers, select them on the result page and combine them into one armor patch. Installed followers and followers converted with this wizard appear as candidates. Keep only one compatibility patch enabled, and rebuild it when adding or removing followers. It preserves original item stats, display names, and original-race Addons, but MODs overriding the same equipment may need load-order adjustments or further compatibility patches.
+**Migration from 0.11.x:** re-export and replace ALL followers that use fitted equipment, then disable/remove the old `VRM2SkyrimArmorPatch.esp`. Do not disable the old patch while still relying on it for followers you have not migrated. New exports do not produce that shared ESP or a separate patch ZIP. The wizard detects an old patch and explains the migration.
 
 Lip sync, blinking, and hair/clothing physics are not supported. MToon shading and outlines are not reproduced. Fingers without finger bones are fixed to the hands. Ragdoll dimensions and constraints for falls/death are derived from the standard skeleton; avatar-specific adjustment and validation remain necessary.
 
@@ -217,7 +217,7 @@ $env:VRM2SKYRIM_TEST_VRM='C:\path\test-avatar.vrm'
 npm run test:ui
 # For a test VRM with separate body, underwear, and several garments:
 npm run test:wardrobe
-# To include equipment selection and armor-patch generation:
+# To include equipment selection and independent SkyPatcher registration:
 $env:VRM2SKYRIM_TEST_FIT='true'
 npm run test:fitting
 ```

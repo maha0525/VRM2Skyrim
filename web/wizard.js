@@ -133,15 +133,17 @@ async function checkDeployedPatch(){
   const target=$('deployed-patch-status');
   try{
     const value=await api('/api/patch-status?job='+encodeURIComponent(state.resultJob)+'&game='+encodeURIComponent($('game').value));
-    target.textContent=value.status==='current'?tr("ゲーム内のパッチは、このフォロワーの{0}品に対応しています。", value.expected_items.toLocaleString()):tr("ゲーム内のパッチ：{0}品。このフォロワー用の装備登録が{1}件不足しています。生成した防具互換パッチZIPを旧版と置き換え、Deployしてください。", value.installed_items.toLocaleString(), value.missing_bindings.toLocaleString());
-    target.className=value.status==='current'?'hint':'note';
+    const messages={missing_follower:tr("このフォロワーのESPが未配備です。MOD ZIPを導入してDeployしてください。"),outdated_config:tr("登録設定が古い出力のものです。最新のMOD ZIPへ置き換えてDeployしてください。"),missing_runtime:tr("SkyPatcherが未導入です。対応するSKSE64とSkyPatcherを導入してください。"),unsupported_runtime:tr("このSkyPatcherには必要な機能がありません。SkyPatcherを更新してください。"),missing_config:tr("このフォロワーの登録設定が未配備です。MOD ZIPを導入してDeployしてください。"),iEnableArmorPatching:tr("SkyPatcher.iniのiEnableArmorPatchingを1にしてください。"),iEnableFormlistPatching:tr("SkyPatcher.iniのiEnableFormlistPatchingを1にしてください。"),invalid_config:tr("SkyPatcher.iniを読み取れませんでした。設定ファイルを確認してください。")};
+    target.textContent=value.ready?tr("SkyPatcherと、このフォロワーの登録設定を確認しました。ゲームを再起動して反映してください。"):value.problems.map(p=>messages[p]||p).join(' ');
+    target.className=value.ready?'hint':'note';
   }catch(e){target.textContent=e.message;}
 }
 async function showArmorPatch(job) {
-  $('armor-patch-result').hidden=!job.armor_patch; if(!job.armor_patch)return;
-  $('armor-patch-download').textContent=tr("このフォロワーだけのパッチを保存");$('armor-patch-download').href=fileURL(job.id,job.armor_patch);$('armor-patch-download').download='VRM2SkyrimArmorPatch.zip';await checkDeployedPatch();
-  const result=await api('/api/fitted-followers?game='+encodeURIComponent($('game').value));$('fitted-followers').replaceChildren();
-  for(const profile of result.profiles){const label=document.createElement('label'),input=document.createElement('input');label.className='checkbox';input.type='checkbox';input.value=profile.id;input.checked=profile.plugin===job.plugin_name||profile.deployed;label.append(input,document.createTextNode(profile.plugin));$('fitted-followers').append(label);}
+  $('armor-patch-result').hidden=!job.armor_registration&&!job.armor_patch;
+  $('skypatcher-install-help').hidden=job.armor_registration!=='skypatcher';
+  $('check-deployed-patch').hidden=job.armor_registration!=='skypatcher';
+  if(job.armor_registration==='skypatcher')await checkDeployedPatch();
+  else if(job.armor_patch)$('deployed-patch-status').textContent=tr("これは旧式パッチを使う変換結果です。SkyPatcher方式へ移行するには、このフォロワーを再出力してください。");
 }
 function selectedTags(kind) {
   const selected=kind==='perks'?state.perks.keys():state.spells; const target=$('selected-'+kind); target.replaceChildren();
@@ -222,7 +224,7 @@ async function next() {
 function fileURL(job,name){return `/api/jobs/${job}/file?name=${encodeURIComponent(name)}`;}
 function showResult(job) {
   state.completedJob=job;
-  state.resultJob=job.id;$('equipment-edit').hidden=!job.edit_kit;
+  state.resultJob=job.id;$('equipment-edit').hidden=!job.edit_kit||!!job.armor_patch;
   if(job.edit_kit){$('edit-kit-download').href=fileURL(job.id,job.edit_kit);$('edit-mesh').replaceChildren(...job.edit_meshes.map(i=>new Option(i.name,i.key)));}
   showArmorPatch(job).catch(e=>error(e.message));
   renderResultAppearance(job);
@@ -252,7 +254,8 @@ function preset() {
   const caster=['mage','conjurer'].includes($('preset').value);$('health').value=caster?150:200;$('magicka').value=caster?200:100;$('stamina').value=caster?100:150;updateStyles(chosen.combat_style);updateRoleDetails();
 }
 async function refreshSavedResults(preferred=$('saved-job').value) {
-  const saved=await api('/api/jobs');
+  $('saved-job').disabled=true;$('open-saved').disabled=true;
+  let saved;try{saved=await api('/api/jobs');}finally{$('saved-job').disabled=false;$('open-saved').disabled=false;}
   $('saved-job').replaceChildren(...saved.jobs.map(job=>new Option(job.npc_name+' · '+job.plugin_name,job.id)));
   if(saved.jobs.some(job=>job.id===preferred))$('saved-job').value=preferred;
   $('saved-results').hidden=saved.jobs.length===0;
@@ -267,6 +270,7 @@ async function init() {
     throw new Error(tr("ウィザードの再起動が必要です（起動中 {0}／画面 {1}）。古いウィザードのターミナルで Ctrl+C を押し、Launch.cmd を開き直してください。新しく開いたページを使ってください（ポート番号が変わることがあります）。設定JSONを保存済みなら再起動後に読み込めます。", env.version, expected));
   }
   state.defaults=env.defaults;$('version').textContent='VRM2Skyrim '+env.version;$('game').value=env.game;$('blender').value=env.blender;applySettings(env.defaults);
+  $('legacy-armor-notice').hidden=!env.armor_registration?.legacy_patch;
   initWardrobe();
   await refreshSavedResults();
   $('check-deployed-patch').onclick=checkDeployedPatch;
@@ -276,7 +280,6 @@ async function init() {
   $('head-model').onchange=()=>{$('head-preview-images').replaceChildren();renderHeadPolicies();};$('fit_mode').onchange=setupFitting;$('head-search').oninput=renderHeadPolicies;
   $('head-hide-face').onchange=$('head-hide-hair').onchange=()=>{$('head-preview-images').replaceChildren();$('head-preview-status').textContent='';renderHeadPolicies();};$('fit_source').onchange=()=>{$('head-preview-images').replaceChildren();$('head-preview-status').textContent='';};
   $('import-edit').onclick=async()=>{const file=$('edit-nif').files[0];if(!file){$('edit-status').textContent=tr("編集したNIFを選んでください");return;}$('import-edit').disabled=true;try{const response=await fetch('/api/equipment-edit',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Job-Id':state.resultJob,'X-Mesh-Key':$('edit-mesh').value,'X-Blender':encodeURIComponent($('blender').value)},body:file});const result=await response.json();if(!response.ok)throw new Error(result.error);for(;;){const job=await api('/api/jobs/'+result.job_id);$('edit-status').textContent=uiMessage(job.stage);if(job.status==='failed')throw new Error(job.error);if(job.status==='complete'){showResult(job);$('edit-status').textContent=tr("仕上げを反映しました。更新されたMOD ZIPを保存してください。");break;}await new Promise(r=>setTimeout(r,1000));}}catch(e){$('edit-status').textContent=e.message;}finally{$('import-edit').disabled=false;}};
-  $('merge-armor-patch').onclick=async()=>{const button=$('merge-armor-patch');button.disabled=true;$('armor-patch-status').textContent=tr("互換パッチを作成しています…");try{const result=await api('/api/armor-patch',{game:$('game').value,profiles:[...$('fitted-followers').querySelectorAll('input:checked')].map(input=>input.value)});$('armor-patch-download').textContent=tr("統合パッチを保存");$('armor-patch-download').href=fileURL(result.job_id,result.archive);$('armor-patch-status').textContent=tr("選択したフォロワー分のパッチを作成しました。このZIPに差し替えてください。");}catch(e){$('armor-patch-status').textContent=e.message;}finally{button.disabled=false;}};
   $('source').onchange=()=>upload($('source').files[0]);const zone=document.querySelector('.dropzone');zone.ondragover=e=>{e.preventDefault();zone.classList.add('drag');};zone.ondragleave=()=>zone.classList.remove('drag');zone.ondrop=e=>{e.preventDefault();zone.classList.remove('drag');upload(e.dataTransfer.files[0]);};
   $('next').onclick=next;$('back').onclick=()=>showStep(state.step-1);$('create').onclick=create;$('level_mode').onchange=updateLevel;$('auto_calculate').onchange=updateLevel;$('preset').onchange=preset;
   $('combat_class').onchange=updateRoleDetails;$('combat_style').onchange=updateRoleDetails;

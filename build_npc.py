@@ -9,7 +9,8 @@ import struct
 from game_catalog import GameCatalog
 from head_visibility import HEAD_COVER_ID, configure_native_head, head_records
 from equipment_runtime import runtime_records, vmad, write_runtime
-from plugin import Record, records, write_plugin
+from plugin import Record
+from follower_plugin import follower_records, write_follower
 from settings import SKILLS, load_settings
 from wardrobe import components, equip_slots, keyword_names, skin_components, is_headwear
 
@@ -201,8 +202,11 @@ def build_npc(game_data, output, settings=None, catalog=None):
     struct.pack_into("<ff", data, 16, 1., 1.)
     race.replace(b"DATA", bytes(data))
     appearance, inventory = appearance_records(settings, catalog)
+    extra_masters, sound_refs = [], {}
     if settings.fitting_enabled:
         fitting = json.loads((output / "armor-fitting.json").read_text())
+        from skypatcher import footstep_bindings
+        extra_masters, sound_refs = footstep_bindings(game_data, fitting)
         seen = set()
         for item in fitting["equipment"]:
             if item['addon_local_id'] in seen:
@@ -215,6 +219,9 @@ def build_npc(game_data, output, settings=None, catalog=None):
                 (b"DNAM", bytes((item["priority"], item["priority"], 2, 2, 0, 0, 0, 0)) + struct.pack("<f", 0.)),
                 (b"MOD2", text(path + "\\" + item["file"])),
                 (b"MOD3", text(path + "\\" + item["file"]))]))
+        for addon in appearance:
+            if addon.kind == b'ARMA' and addon.form_id & 0xFFFFFF in sound_refs:
+                addon.replace(b'SNDD', uint(sound_refs[addon.form_id & 0xFFFFFF]))
     template = "HousecarlWhiterun" if settings.sex == "female" else "HousecarlWindhelm"
     npc = copy.deepcopy(catalog.require(template, b"NPC_"))
     npc.form_id, npc.flags = NPC_ID, 0
@@ -266,12 +273,12 @@ def build_npc(game_data, output, settings=None, catalog=None):
         (b"DATA", struct.pack("<6f", *location))])
     plugin_path = output / "mod" / settings.plugin_name
     items = [race, *appearance, npc, relation]
-    write_plugin(plugin_path, items, author=settings.author or "VRM2Skyrim",
-                 placement=(cell, actor))
+    write_follower(plugin_path, items, author=settings.author or "VRM2Skyrim",
+                   placement=(cell, actor), extra_masters=extra_masters)
     write_runtime(output, settings)
     from gear_head_runtime import write_runtime as write_head_runtime
     write_head_runtime(output, settings)
-    generated = list(records(plugin_path))
+    generated = follower_records(plugin_path)
     if len(generated) != len(items) + 3 or len({r.form_id for r in generated}) != len(generated):
         raise RuntimeError("Follower plugin record count mismatch")
     reference = next(r for r in generated if r.kind == b"ACHR")
