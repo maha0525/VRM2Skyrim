@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import re
 
-VERSION = "0.11.0-toon.2"
+VERSION = "0.11.0"
 
 
 def identifier(name):

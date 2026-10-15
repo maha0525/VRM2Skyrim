@@ -10,19 +10,27 @@
 
 ### ゲームで試す
 
+まず、Community Shadersを別途導入した環境で、VRM2Skyrimのフォルダから次を実行して専用アダプターを作ります（セットアップ済みのPythonを使用）。`<Skyrim>` は実際のゲームフォルダに置き換えてください。
+
+```powershell
+.\.venv\Scripts\python.exe toon.py --shader-root "<Skyrim>/Data/Shaders" --output build/toon-prototype
+```
+
+対応するシェーダーソースなら、`build/toon-prototype/VRM2Skyrim-Toon-Shader-Prototype-1.zip` を生成します。既にアダプターを導入している場合は、生成元に元のCommunity Shaders MODの `Shaders` フォルダを指定するか、ゲーム終了中にアダプターを無効化してDeployし、元のCSシェーダーに戻してから実行してください。変更済みのファイルも非対応として拒否します。それでも非対応と表示された場合は、そのCS環境では使えません。MO2の場合も元のCS MODの実際の `Shaders` フォルダを指定します。このコマンドはゲームへ配置しません。
+
 1. Skyrimを終了します。
-2. 確認用アイフィのフォロワーZIPをVortex / MO2で導入します。通常版のアイフィを、同じ `Ai_Fi_Follower.esp` の試作版へ置き換えてください。ESPを二つ同時に有効にしません。元VRMとセーブを削除する必要はありません。
+2. 下記のウィザード設定で生成したフォロワーZIPをVortex / MO2で導入します。既存フォロワーを更新する場合は同じMOD IDのZIPを置き換え、旧版と新版を同時に有効にしません。トゥーン描画の切替だけなら、元VRMとセーブを削除する必要はありません。
 3. `VRM2Skyrim-Toon-Shader-Prototype-1.zip` を別MODとして導入します。**Community Shadersより後に読み込み、`Shaders/Lighting.hlsl` はこの試作版を優先**します。VortexではDeployします。このZIPにはCS本体のDLLは入りません。
 4. コンパイル済みシェーダーを退避します。ゲーム終了中に、Skyrimの **`Data/ShaderCache` フォルダを別名へ変更**してください。例：`ShaderCache-before-toon`。キャッシュは次の起動で作り直されます。MOD本体や `Data/Shaders` は移動しません。
-5. SKSEから起動し、シェーダーのコンパイルが終わるまで待ちます。アイフィの顔・袖・髪の明暗の境界を確認します。背景、床、通常のNPCは従来の表示のままです。光源に対して向きを変え、屋内外でも確認してください。
+5. SKSEから起動し、シェーダーのコンパイルが終わるまで待ちます。変換したフォロワーの顔・衣服・髪の明暗の境界を確認します。背景、床、通常のNPCは従来の表示のままです。光源に対して向きを変え、屋内外でも確認してください。
 
-このPCのキャッシュ場所は `E:\SteamLibrary\steamapps\common\Skyrim Special Edition\Data\ShaderCache` です。MO2でキャッシュをOverwriteへ出している構成では、その実際のキャッシュを退避します。
+MO2でキャッシュをOverwriteへ出している構成では、その実際のキャッシュを退避します。
 
 戻すときは、**シェーダー試作MODを無効化してDeployし、キャッシュを再度退避して再起動**します。試作用の材質自体は発光量0なので、シェーダーが無ければ通常の陰影へ戻ります。必要ならフォロワーZIPも通常版へ戻せます。Community Shadersを更新する場合も、先にこのシェーダー試作MODを無効化してください。
 
 ### ウィザードから使う
 
-`codex/vrm-toon-shading` ブランチで `Launch.cmd` を開き直し、STEP 02の「実験的なトゥーン描画」を有効にします。既定はOFFです。生成フォロワーと別配布のシェーダー試作MODを両方導入してください。通常のBlenderプレビューはトゥーンシェーダーを動かしません。
+`main` の0.11.0以降で `Launch.cmd` を開き、STEP 02の「実験的なトゥーン描画」を有効にします。既定はOFFです。生成フォロワーと専用のシェーダー試作MODを両方導入してください。通常のBlenderプレビューはトゥーンシェーダーを動かしません。
 
 ### この試作の範囲
 
@@ -56,6 +64,22 @@ The first adapter is pinned to the tested Community Shaders 1.9.0.0 installation
 and Lighting.hlsl SHA256 `5cb3f71e483d6aba661f9adb10ac8d06db36878f6d6f05c4c8ec383be9fd40e8`.
 The builder rejects unverified sources. It never installs into the game.
 
+Use version 0.11.0 or later on `main`. In STEP 02, enable the experimental toon
+option (off by default) and generate the follower. Create the separate adapter
+from the installed Community Shaders sources with the setup environment:
+
+```powershell
+.\.venv\Scripts\python.exe toon.py --shader-root "<Skyrim>/Data/Shaders" --output build/toon-prototype
+```
+
+Replace `<Skyrim>` with the game directory. The source must be the original,
+unmodified CS shader. If an adapter is already installed, point to the original
+CS mod's `Shaders` folder, or close Skyrim, disable the adapter and deploy to
+restore the original shader first. For MO2, use the original CS mod's actual
+`Shaders` folder. The resulting ZIP is
+`build/toon-prototype/VRM2Skyrim-Toon-Shader-Prototype-1.zip`. An unsupported
+source is rejected; do not install the adapter with a different CS source.
+
 Install the generated follower ZIP and the separate shader prototype ZIP.
 Give the prototype priority over Community Shaders for `Shaders/Lighting.hlsl`.
 With Skyrim closed, rename `Data/ShaderCache` to a backup name so the new shaders
@@ -72,3 +96,12 @@ The wizard option is experimental and off by default. Its usual Blender
 previews do not execute the runtime toon shader. Offscreen comparisons use
 the actual CS pixel shaders with native NIF/DDS inputs in Direct3D 11; they
 are not screenshots from a running Skyrim session.
+
+## Licenses / ライセンス
+
+The adapter contains shader code from Community Shaders' MIT-licensed
+`package/Shaders` directory and this project's MIT-licensed additions. Both
+license texts and copyright notices are included in the generated ZIP.
+Community Shaders' DLL and C++ sources are not bundled.
+
+アダプターにはCommunity ShadersのMIT対象ディレクトリのシェーダーと、本プロジェクトのMITの追加処理を含みます。両方のライセンス全文・著作権表示を生成ZIPへ同梱します。CS本体のDLLとC++ソースは同梱しません。

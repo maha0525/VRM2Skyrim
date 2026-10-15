@@ -1,11 +1,10 @@
 # Optional hair and cloth physics / 髪・布の物理演算
 
-The development branch `codex/fsmp-physics` exports optional FSMP systems.
-The stable `main` branch remains 0.8.1.
+Version **0.11.0** on `main` exports optional FSMP systems.
 
 ## Using the wizard
 
-1. Select your VRM. Enable **髪・布を揺らす（FSMP・開発版）**.
+1. Select your VRM. Enable **髪・布を揺らす（FSMP）**.
 2. Select the hair and cloth meshes that should move. Leave rigid accessories,
    shoes and the avatar's body out of this selection. With no explicit selection,
    assigned hair/clothing and actually weighted VRM spring meshes are candidates.
@@ -33,7 +32,9 @@ It does not invent cloth weights for an entirely rigid mesh.
   systems do not drive the same dynamic bone.
 - Original body vertices generate compact collision hulls. A hidden skinned
   `V2SCollision_Body` shape carries them inside each owning NIF. FSMP uses a
-  per-triangle body surface and per-vertex hair/cloth surfaces for contacts.
+  per-triangle body surface and hidden rigid per-vertex contact patches for
+  hair/cloth. Each patch is owned by one moving bone; blended visible vertices
+  do not produce contacts.
   Bone collision shapes alone cannot provide these contacts: FSMP excludes
   rigid bone bodies from Bullet's normal collision broadphase.
 - XMLs live under `SKSE/Plugins/hdtSkinnedMeshConfigs/vrm2skyrim/<mod-id>/`.
@@ -208,9 +209,9 @@ and the combined armor patch are retained; no save reset is required.
 
 ## Diagnostics and editing
 
-### Secondary surface contacts (0.11.0-toon.2)
+### Secondary surface contacts (0.11.0)
 
-The toon development branch extends single-owner contacts to hair, skirts
+Version 0.11.0 extends single-owner contacts to hair, skirts
 and capes as well as sleeves. Blended visual vertices no longer apply one
 contact to multiple bones. All mass centres use actual skin weights.
 Unweighted intermediate helpers retain their joints but do not collide at
@@ -254,7 +255,7 @@ and keep bone names, skinning and the root XML link together.
 
 ## 日本語での要点
 
-0.11.0-toon.2では、髪・スカート・ケープも一つの骨が一つの接触点を
+0.11.0では、髪・スカート・ケープも一つの骨が一つの接触点を
 受け持ちます。身体を囲む服の重心は身体の内側に来る場合があるため、
 衝突点は実際の布表面から選びます。見た目のメッシュを支えていない
 補助骨は関節を残し、身体の中にある支点では衝突しないようにします。
