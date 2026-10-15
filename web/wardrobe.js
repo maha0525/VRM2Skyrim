@@ -80,6 +80,7 @@ function wardrobeClearPreview(){
 }
 function renderWardrobe(){
   allocateWardrobeSlots();$('wardrobe-editor').hidden=$('armor_support').value!=='true'||!state.source;
+  $('wardrobe-preview-panel').hidden=$('wardrobe-editor').hidden;
   $('wardrobe-add').disabled=wardrobeState.garments.size>=16;
   const target=$('wardrobe-parts');target.replaceChildren();
   if(!state.source)return;

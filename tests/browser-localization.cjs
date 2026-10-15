@@ -24,6 +24,8 @@ const source={source_id:'fixture',sha256:'a'.repeat(64),filename:'テスト.vrm'
    if(url.pathname==='/api/environment')data={defaults,game:'Read-only fixture',blender:'Fixture Blender',version:'test'};
    else if(url.pathname==='/api/jobs')data=request.method()==='POST'?{job_id:'new'}:{jobs:[]};
    else if(url.pathname==='/api/source')data=source;
+   else if(url.pathname==='/api/appearance-preview')data={job_id:'appearance'};
+   else if(url.pathname==='/api/jobs/appearance')data={id:'appearance',status:'complete',previews:[]};
    else if(url.pathname==='/api/catalog'){
     const subset=structuredClone(choices);if(catalogMissing)for(const kind of ['perks','spells','classes','weapons','armors'])for(const item of subset[kind]){item.labels.en=item.id;item.descriptions={ja:item.description||'',en:''};}
     data={checks:{ready:true},choices:subset};
@@ -52,12 +54,34 @@ const source={source_id:'fixture',sha256:'a'.repeat(64),filename:'テスト.vrm'
   assert.match(await page.locator('#fit-armors option:checked').textContent(),/Elven Helmet/);
   await page.locator('#head-policies').waitFor({state:'attached'});
   assert.match(await page.locator('#head-model option:checked').textContent(),/Elven Helmet/);
+  await page.locator('#physics_enabled').check();await page.locator('#physics-meshes input[data-node="2"]').check();
+  const positions=await page.evaluate(()=>['armor_support','fit-enabled','wardrobe-parts','wardrobe-garments','physics-settings','wardrobe-preview-panel'].map(id=>document.getElementById(id).getBoundingClientRect().top));
+  assert.ok(positions.every((y,i)=>i===0||y>positions[i-1]),'Equipment, classification, clothes, physics and preview follow the requested visual order');
+  assert.match(await page.locator('#fit_source').locator('..').textContent(),/Source equipment appearance/);
+  assert.match(await page.locator('#fit-panel').textContent(),/New items added by third-party equipment mods are outside this scope/);
+  await page.locator('#armor_support').selectOption('false');
+  assert.equal(await page.locator('#wardrobe-editor').isVisible(),false);assert.equal(await page.locator('#wardrobe-preview-panel').isVisible(),false);
+  assert.equal(await page.locator('#physics-panel').isVisible(),true);assert.equal(await page.locator('#physics-meshes input[data-node="2"]').isChecked(),true);
+  await page.locator('#armor_support').selectOption('true');
+  await page.locator('#wardrobe-preview-state').selectOption('underwear');
+  const previewRequest=page.waitForRequest(r=>r.url().endsWith('/api/appearance-preview'));
+  await page.locator('#wardrobe-preview').click();
+  const preview=(await previewRequest).postDataJSON();assert.equal(preview.wardrobe,'underwear');assert.deepEqual(preview.settings.physics_nodes,[2]);
+  await page.waitForFunction(()=>!document.querySelector('#wardrobe-preview').disabled);
+  assert.equal(await page.locator('#wardrobe-preview-status').textContent(),'Preview the avatar with or without clothing.');
   await page.locator('#language').selectOption('ja');
+  assert.match(await page.locator('#fit_mode').locator('..').textContent(),/対応させる装備/);
+  assert.match(await page.locator('#fit_source').locator('..').textContent(),/元にする装備の見た目/);
   assert.equal(await page.locator('#next').textContent(),'次へ →');
   assert.equal(await page.locator('#source').evaluate(e=>e.files.length),1);
   assert.equal(await page.locator('#wardrobe-garments [data-field="name"]').first().inputValue(),'旅の衣服');
   assert.equal(await page.locator('#fit-armors').inputValue(),helmet.id);
   assert.match(await page.locator('#fit-armors option:checked').textContent(),/エルフ/);
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+  await page.screenshot({path:path.join(fixture,'step01-japanese-order-mobile.png'),fullPage:true});
+  await page.setViewportSize({width:1440,height:1100});
+  await page.screenshot({path:path.join(fixture,'step01-japanese-order-desktop.png'),fullPage:true});
   await page.locator('#language').selectOption('en');
   assert.equal(await page.locator('#wardrobe-garments [data-field="name"]').first().inputValue(),'旅の衣服');
   assert.match(await page.locator('#wardrobe-parts select').first().locator('option[value="face"]').textContent(),/Face/);

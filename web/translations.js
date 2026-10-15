@@ -1,6 +1,9 @@
 "use strict";
 // UI copy only. Game record names/descriptions come from the game's English tables.
 const englishUI = {
+  "対象は本体・導入済みDLC・公式追加コンテンツの装備です。装備MODが新しく追加したアイテムは対象外です。": "Includes equipment from the base game, installed DLC and official Creations. New items added by third-party equipment mods are outside this scope.",
+  "置換モデルを使う場合は、導入済みの身体と装備のBodySlideプリセットを揃えてください。": "When using replacement models, use matching BodySlide presets for your installed body and equipment.",
+
   "保存した揺れの選択は別VRM用のため適用していません。このVRMで揺らすメッシュを選び直してください。": "The saved physics selection belongs to a different VRM and was not applied. Select the meshes to simulate for this VRM.",
   "保存した揺れの選択に、このVRMに存在しないメッシュがあります。選択を確認してください。": "Some meshes in the saved physics selection are missing from this VRM. Review the selection.",
 
@@ -43,14 +46,14 @@ const englishUI = {
   "名前から分類候補を出しています。身体、下着、顔・髪などの常時表示、着脱する衣服を確認してください。身体と服が一体のメッシュは、この画面では切断しません。": "Assignments are suggested from mesh names. Check the body, underwear, face, hair, fixed accessories and removable clothing. This screen does not cut a combined body-and-clothing mesh apart.",
   "元VRMの服を着脱する装備にできます。身体が独立しているモデルでは、本体ゲームの鎧・手袋・靴を体型へ合わせることもできます。": "The original VRM clothes can become removable equipment. If the body is a separate mesh, you can also fit Skyrim armor, gauntlets and boots to it.",
   "既存装備をこの身体に合わせる": "Fit existing equipment to this body",
-  "変換範囲": "Equipment to convert",
-  "公式の全装備（本体・導入済みDLC・公式追加コンテンツ）": "All official equipment (base game, installed DLC and Creations)",
-  "選んだ装備": "Selected equipment",
-  "どの装備データを変換するか": "Equipment source",
-  "本体・DLCの標準装備を変換": "Vanilla equipment from the base game and DLC",
-  "現在導入している装備を変換（体型MOD用の装備など）": "Installed equipment (including body replacer meshes)",
-  "装備をUNP/CBBE版へ置き換えた、またはBodySlideで出力した場合は「現在導入している装備」。元の鎧を使う場合は「標準装備」を選びます。体型MODを入れているだけでは、下を選ぶ必要はありません。どちらでも変換先はVRMの体型です。導入済みの身体と装備は同じBodySlideプリセットに揃えてください。": "Choose Installed equipment for UNP/CBBE armor replacers or BodySlide output. Choose Vanilla equipment for the original armor. Having a body mod alone does not require the installed option. Both fit equipment to the VRM body. Use matching BodySlide presets for your installed body and equipment.",
-  "変換する装備（複数選択）": "Equipment to fit (multiple selection)",
+  "対応させる装備": "Equipment to support",
+  "公式装備すべて（本体・導入済みDLC・公式追加コンテンツ）": "All official equipment (base game, installed DLC and Creations)",
+  "一覧から選んだ公式装備": "Official equipment selected from the list",
+  "元にする装備の見た目": "Source equipment appearance",
+  "標準の見た目（公式の元モデル）": "Vanilla appearance (original official models)",
+  "置き換えた見た目（UNP/CBBE版・BodySlide出力など）": "Replaced appearance (UNP/CBBE armor replacers, BodySlide output, etc.)",
+  "どちらを選んでも、装備をVRMの体型に合わせた専用モデルとして出力します。例えば鉄の鎧なら、公式の元モデルを使うか、導入したCBBE版などの置換モデルを使うかの違いです。置換ファイルがない装備は標準の見た目を使います。": "Both options create equipment models fitted to the VRM body. For Iron Armor, for example, choose the original official model or an installed replacement such as the CBBE version. Equipment without a replacement uses the vanilla appearance.",
+  "対応させる公式装備（複数選択）": "Official equipment to support (multiple selection)",
   "頭装備で顔・髪を隠す設定": "Face and hair visibility with headgear",
   "顔を隠す（全体デフォルト設定）": "Hide face (default for all headgear)",
   "髪の枠を使う装備では髪を隠す（全体デフォルト設定）": "Hide hair when headgear uses the hair slot (default)",

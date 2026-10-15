@@ -24,17 +24,15 @@
         <label class="dropzone" for="source"><svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 8v22m-8-14 8-8 8 8M10 29v11h28V29" stroke="currentColor" stroke-width="2"/></svg><strong>VRMファイルを選択</strong><span>クリック、またはここへドラッグ</span><input id="source" type="file" accept=".vrm" aria-label="VRMファイル"></label>
         <p id="source-status" class="source-status" aria-live="polite">まだ選択されていません</p>
         <label>衣服・防具の扱い<select id="armor_support"><option value="false">対応なし：元の衣服を着脱しない</option><option value="true">対応あり：身体・下着・衣服を分けて着脱</option></select></label>
-        <label class="checkbox"><input id="physics_enabled" type="checkbox">髪・布を揺らす（FSMP）</label>
-        <div id="physics-panel" hidden><p class="hint">使用時にFaster HDT-SMPと、ゲームに対応するSKSE64が必要です。元VRMの独立した骨がある髪・衣服を変換します。外すと従来どおり固定した外観になります。</p><label>揺れの硬さ<select id="physics_stiffness"><option value="0.3">柔らかめ（揺れが大きめ）</option><option value="1">穏やか（標準）</option><option value="3">硬め（揺れが小さめ）</option></select></label><p class="hint">標準は揺れが続きにくい設定です。髪・布の長さに合わせて減衰を自動調整し、ねじれを抑えます。風による揺れは加えません。衣服の付け根と腕に沿う部分は身体の動きに追従させ、その先の布を揺らします。</p><p class="hint">揺らすメッシュを選んでください。未選択の場合は、分類した髪・衣服を自動で対象にします。身体や硬いアクセサリーは対象から外してください。</p><p id="physics-warning" class="warning" role="status" hidden></p><div id="physics-meshes" class="choices"></div></div>
         <div id="wardrobe-editor" hidden>
-          <h3>身体と衣服を分類する</h3><p class="hint">名前から分類候補を出しています。身体、下着、顔・髪などの常時表示、着脱する衣服を確認してください。身体と服が一体のメッシュは、この画面では切断しません。</p>
-          <p class="hint">元VRMの服を着脱する装備にできます。身体が独立しているモデルでは、本体ゲームの鎧・手袋・靴を体型へ合わせることもできます。</p>
           <label class="checkbox"><input id="fit-enabled" type="checkbox">既存装備をこの身体に合わせる</label>
           <div id="fit-panel" hidden><p class="hint">体型合わせの利用にはSkyPatcherとSKSE64が必要です。登録設定はMOD ZIPに同梱します。</p>
-            <label>変換範囲<select id="fit_mode"><option value="all_official">公式の全装備（本体・導入済みDLC・公式追加コンテンツ）</option><option value="selected">選んだ装備</option></select></label>
-            <label>どの装備データを変換するか<select id="fit_source"><option value="official">本体・DLCの標準装備を変換</option><option value="installed">現在導入している装備を変換（体型MOD用の装備など）</option></select></label>
-            <p class="hint">装備をUNP/CBBE版へ置き換えた、またはBodySlideで出力した場合は「現在導入している装備」。元の鎧を使う場合は「標準装備」を選びます。体型MODを入れているだけでは、下を選ぶ必要はありません。どちらでも変換先はVRMの体型です。導入済みの身体と装備は同じBodySlideプリセットに揃えてください。</p>
-            <label id="fit-selection">変換する装備（複数選択）<select id="fit-armors" multiple size="8"></select></label>
+            <label>対応させる装備<select id="fit_mode"><option value="all_official">公式装備すべて（本体・導入済みDLC・公式追加コンテンツ）</option><option value="selected">一覧から選んだ公式装備</option></select></label>
+            <p class="hint">対象は本体・導入済みDLC・公式追加コンテンツの装備です。装備MODが新しく追加したアイテムは対象外です。</p>
+            <label>元にする装備の見た目<select id="fit_source"><option value="official">標準の見た目（公式の元モデル）</option><option value="installed">置き換えた見た目（UNP/CBBE版・BodySlide出力など）</option></select></label>
+            <p class="hint">どちらを選んでも、装備をVRMの体型に合わせた専用モデルとして出力します。例えば鉄の鎧なら、公式の元モデルを使うか、導入したCBBE版などの置換モデルを使うかの違いです。置換ファイルがない装備は標準の見た目を使います。</p>
+            <p class="hint">置換モデルを使う場合は、導入済みの身体と装備のBodySlideプリセットを揃えてください。</p>
+            <label id="fit-selection">対応させる公式装備（複数選択）<select id="fit-armors" multiple size="8"></select></label>
             <p id="fit-count" class="hint"></p>
             <details><summary>頭装備で顔・髪を隠す設定</summary>
               <label class="checkbox"><input id="head-hide-face" type="checkbox">顔を隠す（全体デフォルト設定）</label>
@@ -44,10 +42,19 @@
             </details>
             <p class="hint">同じ形の装備は共有して変換します。鎧・手袋・靴を装備すると、対応する元衣装が外れます。SkyPatcher用の登録設定はフォロワーのZIPに同梱します。変換後にはOutfit Studio用の身体・骨格と編集用装備も出力します。</p>
           </div>
+          <h3>身体と衣服を分類する</h3><p class="hint">名前から分類候補を出しています。身体、下着、顔・髪などの常時表示、着脱する衣服を確認してください。身体と服が一体のメッシュは、この画面では切断しません。</p>
+          <p class="hint">元VRMの服を着脱する装備にできます。身体が独立しているモデルでは、本体ゲームの鎧・手袋・靴を体型へ合わせることもできます。</p>
           <p id="wardrobe-warning" role="status"></p>
           <div id="wardrobe-parts" class="wardrobe-parts"></div>
           <details class="reset-help"><summary>メッシュの割り当てをやり直す</summary><p class="hint">身体・下着・顔・髪・衣服の手動割り当てと衣服グループを消し、読み込み時の名前から推定した割り当てに戻します。</p><button type="button" id="wardrobe-reset" class="secondary">読み込み時の自動割り当てに戻す</button></details>
           <h3>生成する衣服</h3><p class="hint">胴の衣装セット・手袋・靴に分けると、同じ部位の防具とゲーム本来の処理で入れ替わります。マントやアクセサリーは別枠で併用できます。</p><p id="wardrobe-migration" class="hint" hidden>以前の設定を読み込み、鎧と入れ替える衣服を部位ごとのセットへまとめました。衣服名・装備枠・初期装備を確認してください。</p><div class="wardrobe-actions"><button type="button" id="wardrobe-combine" class="secondary">衣服を一品にまとめる</button><button type="button" id="wardrobe-split" class="secondary">胴・手袋・靴に分ける</button></div><div id="wardrobe-garments"></div><button type="button" id="wardrobe-add" class="add-garment">＋ 衣服を追加</button><p class="hint">上のメッシュ一覧で「着脱する衣服」を選び、追加した衣服へ割り当てます。同じ枠の品は同時装備できません。重ね着を作る場合だけ追加枠を指定します。</p>
+        </div>
+        <div id="physics-settings">
+        <label class="checkbox"><input id="physics_enabled" type="checkbox">髪・布を揺らす（FSMP）</label>
+        <div id="physics-panel" hidden><p class="hint">使用時にFaster HDT-SMPと、ゲームに対応するSKSE64が必要です。元VRMの独立した骨がある髪・衣服を変換します。外すと従来どおり固定した外観になります。</p><label>揺れの硬さ<select id="physics_stiffness"><option value="0.3">柔らかめ（揺れが大きめ）</option><option value="1">穏やか（標準）</option><option value="3">硬め（揺れが小さめ）</option></select></label><p class="hint">標準は揺れが続きにくい設定です。髪・布の長さに合わせて減衰を自動調整し、ねじれを抑えます。風による揺れは加えません。衣服の付け根と腕に沿う部分は身体の動きに追従させ、その先の布を揺らします。</p><p class="hint">揺らすメッシュを選んでください。未選択の場合は、分類した髪・衣服を自動で対象にします。身体や硬いアクセサリーは対象から外してください。</p><p id="physics-warning" class="warning" role="status" hidden></p><div id="physics-meshes" class="choices"></div></div>
+        </div>
+        <div id="wardrobe-preview-panel" hidden>
+          <h3>プレビュー</h3>
           <label>全体の見た目をプレビュー<select id="wardrobe-preview-state"><option value="all">全ての服を着る</option><option value="underwear">服を外す（身体と下着）</option></select></label><button type="button" id="wardrobe-preview" class="secondary">プレビュー</button>
           <p id="wardrobe-preview-status" class="hint" aria-live="polite"></p><div id="wardrobe-preview-images" class="preview-grid"></div>
         </div>

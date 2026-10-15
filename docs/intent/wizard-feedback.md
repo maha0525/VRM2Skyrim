@@ -85,3 +85,19 @@ Preserve native headwear partitions 130/131/141/142/143 in the NIF. Their
 corresponding 30/31/41/42/43 values are used only for equipment masks and
 priority checks. Retain the native partition when splitting/exporting geometry,
 and compare it with the original game mesh during final readback.
+
+
+## 2026-10-16 STEP 01 order and equipment wording
+
+Keep the requested reading order: equipment support and fitting controls,
+body/clothing classification, generated-clothing settings, optional physics,
+then the overall preview. Physics remains available with fixed outfits; the
+classification and preview panels remain conditional on wardrobe support.
+Keep existing element IDs, saved values and preview operations intact.
+
+Describe fit_mode as which official items to support, and fit_source as which
+appearance to fit. Explain vanilla versus deployed armor-replacer/BodySlide
+models, fallback to vanilla, and that newly added third-party items are outside
+the official item catalog. Both produce private equipment for the VRM body.
+Update Japanese and English together and verify actual browser layout, support
+and physics toggles, selection/export, and overall preview interaction.
