@@ -252,7 +252,9 @@ function summarize(settings) {
   rows.push([tr("衣服"),settings.armor_support?tr("{0}品を着脱可能（初期装備{1}品）", settings.appearance_parts.garments.length, settings.appearance_parts.garments.filter(g=>g.equipped).length):tr("元の衣服を着脱しない")]);
   if(settings.combat_style_mode==='custom')rows.push([tr('専用戦闘スタイル'),tr('コピー元: {0}',settings.combat_style_custom.source)]);
   rows.push([tr("髪・布の物理演算"),settings.physics_enabled?tr("FSMPを使用 · 硬さ{0} · {1}", settings.physics_stiffness, settings.physics_nodes.length?settings.physics_nodes.length+tr("メッシュを選択"):tr("髪・衣服を自動選択")):tr("固定")]);
-  rows.push([tr("既存装備の体型合わせ"),settings.fit_armors.length?settings.fit_armors.join('、'):tr("なし")]);
+  const fitting=settings.armor_support&&(settings.fit_mode==='all_official'||settings.fit_armors.length>0);
+  rows.push([tr("既存装備の体型合わせ"),!fitting?tr("なし"):settings.fit_mode==='all_official'?tr("公式装備すべて"):tr("選択した公式装備（{0}品）",settings.fit_armors.length)]);
+  if(fitting)rows.push([tr("元にする装備の見た目"),settings.fit_source==='installed'?tr("置き換えた見た目"):tr("標準の見た目")]);
   const dl=document.createElement('dl');for(const [title,value]of rows){const dt=document.createElement('dt');dt.textContent=title;const dd=document.createElement('dd');dd.textContent=value;dl.append(dt,dd);}$('summary').replaceChildren(dl);
 }
 async function next() {

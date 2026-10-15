@@ -44,6 +44,7 @@ def deployed_path(data, kind, name):
 def source_assets(data, catalog, settings, armor=None):
     """Track official archives and deployed reference/replacer inputs."""
     paths = set(GameAssets(data, catalog.plugins, data).paths)
+    paths.update(data.glob('*.bsa'))  # An additional archive can shadow a reusable texture.
     paths.update(data/name for name in catalog.plugins)
     if settings.fit_source == 'installed':
         prefix = 'female' if settings.sex == 'female' else 'male'
@@ -87,8 +88,10 @@ def ready_output(root, key):
 
 def publish(output, key):
     files = [output/'settings.json', output/'appearance.json', *list((output/'mod').rglob('*'))]
-    files += [p for p in (output/'armor-fitting.json', output/'armor-source/body.nif') if p.is_file()]
+    files += [p for p in (output/'armor-fitting.json', output/'armor-source/body.nif',
+                          output/'equipment-textures.json') if p.is_file()]
     files += list((output/'dds-preview').glob('*.png'))
+    files += [p for p in (output/'preview-assets').rglob('*') if p.is_file()]
     marker = dict(key=key, schema=SCHEMA, files={p.relative_to(output).as_posix(): file_identity(p)[1:]
                                               for p in files if p.is_file()})
     path = output/'preview-ready.tmp'

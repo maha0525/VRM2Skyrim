@@ -82,6 +82,8 @@ def package(output, settings=None):
     if settings.fitting_enabled:
         from skypatcher import validate_registration
         validate_registration(output)
+        from equipment_textures import validate_shared
+        validate_shared(output)
     metadata = mod / settings.asset_dir
     metadata.mkdir(parents=True, exist_ok=True)
     appearance_description = "Original outfit stays together; clothing is not removable."

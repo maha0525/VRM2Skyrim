@@ -86,6 +86,11 @@ def main():
             if policy['hide_' + name]:
                 parts = [p for p in parts if p['id'] != name]
     slot_priority = {}
+    from equipment_textures import prepare_preview_assets
+    preview_assets = prepare_preview_assets(output, [output/'mod/meshes'/settings.asset_dir/p['file'] for p in parts])
+    if preview_assets:
+        bpy.context.preferences.filepaths.texture_directory = str(preview_assets)
+        bpy.context.preferences.addons['io_scene_nifly'].preferences.sky_texture_path_1 = str(output/'mod')
     for part in parts:
         for slot in part.get("slots", [part["slot"]]):
             slot_priority[slot] = max(slot_priority.get(slot, 0), part.get("priority", 0))
@@ -174,7 +179,8 @@ def main():
     # These PNGs were decoded from the delivered DDS, not copied from the VRM.
     for image in bpy.data.images:
         if image.filepath:
-            image.filepath = str(output / "dds-preview" / (Path(image.filepath).stem + ".png"))
+            from equipment_textures import preview_image
+            image.filepath = str(preview_image(output, image.filepath))
             image.reload()
     frames = [1]
     if args.animation == "original":
@@ -189,7 +195,8 @@ def main():
         collection.hide_viewport = False
         for image in bpy.data.images:
             if image.filepath:
-                path = output / "dds-preview" / (Path(image.filepath).stem + ".png")
+                from equipment_textures import preview_image
+                path = preview_image(output, image.filepath)
                 if path.exists():
                     image.filepath = str(path)
                     image.reload()

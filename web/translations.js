@@ -1,6 +1,10 @@
 "use strict";
 // UI copy only. Game record names/descriptions come from the game's English tables.
 const englishUI = {
+  "公式装備すべて": "All official equipment",
+  "選択した公式装備（{0}品）": "Selected official equipment: {0}",
+  "置き換えた見た目": "Installed replacers",
+  "標準の見た目": "Original appearance",
   "{0}品": "{0} items",
   "テクスチャを準備しています…": "Preparing textures…",
 

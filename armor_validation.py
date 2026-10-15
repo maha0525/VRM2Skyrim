@@ -17,6 +17,8 @@ from armor_catalog import partition_slot, native_partition
 def validate_fitting(output):
     output = Path(output).resolve()
     settings = load_settings(output)
+    from equipment_textures import validate_shared
+    shared_textures = validate_shared(output)
     root = output / "mod/meshes" / settings.asset_dir
     profile = json.loads((output / "armor-fitting.json").read_text())
     plan = json.loads((output/'armor-fit-plan.json').read_text(encoding='utf8'))
@@ -124,7 +126,8 @@ def validate_fitting(output):
                     if not texture:
                         continue
                     file = (output / "mod" / texture.replace("\\", "/")).resolve()
-                    if not file.is_relative_to(output / "mod") or not file.is_file():
+                    shared = texture.lower().replace('\\', '/') in shared_textures
+                    if not file.is_relative_to(output / "mod") or (not file.is_file() and not shared):
                         raise ValueError(f"Fitted equipment texture is missing: {texture}")
                 if shape.name.startswith("OriginalSkin_"):
                     normal_cosines.append(skin_normals(shape))

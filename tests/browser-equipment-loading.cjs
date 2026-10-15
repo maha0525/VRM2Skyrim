@@ -71,6 +71,26 @@ const source={source_id:'fixture',sha256:'a'.repeat(64),filename:'fixture.vrm',m
   assert.equal(await page.locator('#next').isDisabled(),false);
   fail=false;await page.locator('#fit-enabled').check();await page.waitForFunction(()=>!document.querySelector('#next').disabled&&document.querySelector('#fit-enabled').checked);
   assert.equal(await page.locator('#error').isVisible(),false);assert.equal(calls,3);
+  // Review the actual all/selected/off settings rather than treating an empty
+  // explicit list (the all-official representation) as disabled fitting.
+  for(const mode of ['all_official','selected','off']){
+   await start();
+   const imported={...defaults,armor_support:true,fit_source:'installed',fit_mode:mode==='off'?'selected':mode,fit_armors:mode==='selected'?[helmet.id]:[]};
+   await page.locator('#import-settings').setInputFiles({name:mode+'.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(imported))});
+   await page.waitForFunction(expected=>document.querySelector('#fit-enabled').checked===expected,mode!=='off');
+   for(let i=1;i<5;i++){await page.locator('#next').click();await page.locator(`[data-step="${i}"]`).waitFor({state:'visible'});}
+   const en=await page.locator('#summary').textContent();
+   assert.ok(en.includes(mode==='all_official'?'All official equipment':mode==='selected'?'Selected official equipment: 1':'None'));
+   assert.equal(en.includes('Installed replacers'),mode!=='off');
+   const dl=page.waitForEvent('download');await page.locator('#export-settings').click();
+   const saved=JSON.parse(fs.readFileSync(await(await dl).path(),'utf8'));
+   assert.equal(saved.fit_mode,imported.fit_mode);assert.deepEqual(saved.fit_armors,imported.fit_armors);
+   await page.locator('#language').selectOption('ja');
+   const ja=await page.locator('#summary').textContent();assert.ok(ja.includes(mode==='all_official'?'公式装備すべて':mode==='selected'?'選択した公式装備（1品）':'なし'));
+   assert.equal(ja.includes('置き換えた見た目'),mode!=='off');
+   await page.screenshot({path:path.join(fixture,'fitting-review-'+mode+'-ja.png'),fullPage:true});
+   await page.locator('#language').selectOption('en');
+  }
   assert.deepEqual(errors,[]);console.log('PASS slow catalog feedback, blocked Next, default all, imported selection, request reuse/retry and head preview guidance');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

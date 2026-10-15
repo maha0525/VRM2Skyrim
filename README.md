@@ -159,7 +159,7 @@ Besides torso, hand, and foot equipment, fitting covers headgear, circlets, shie
 
 Source body/equipment data can come from the original official archives or currently installed files. **For UNP/CBBE equipment replacements, build both the body and equipment using the same BodySlide preset before choosing installed data.** Source and destination vertex counts may differ. Additional physics bones are consolidated into body-following weights.
 
-The result page's **Outfit Studio editing kit** contains a reference NIF preserving the original VRM body, the dedicated skeleton, fitted equipment, and textures. Refine shapes with brushes, export a NIF without including the reference body, and load it through **Import finished equipment** (`仕上げた装備を戻す`) to update the MOD ZIP. It imports vertices and normals while preserving weights, UVs, materials, and equipment slots. Added/deleted vertices or faces, renamed shapes, and edits to the reference body are rejected. Saved finishing edits are reused when reconverting the same VRM and equipment.
+The result page's **Outfit Studio editing kit** contains a reference NIF preserving the original VRM body, the dedicated skeleton, fitted equipment, and private textures. Refine shapes with brushes, export a NIF without including the reference body, and load it through **Import finished equipment** (`仕上げた装備を戻す`) to update the MOD ZIP. It imports vertices and normals while preserving weights, UVs, materials, and equipment slots. Added/deleted vertices or faces, renamed shapes, and edits to the reference body are rejected. Saved finishing edits are reused when reconverting the same VRM and equipment.
 
 After restarting the wizard, open **Previously created followers** (`前に作ったフォロワー`) to access results and equipment editing. If importing an edit fails, the pre-edit meshes, saved edits, and ZIP are restored. You can also update the current ZIP from the CLI:
 
@@ -183,7 +183,7 @@ Lip sync, blinking, and hair/clothing physics are not supported. MToon shading a
 
 The temple CELL record is included as a copy preserving the base-game contents so the follower can be placed there. MODs changing lighting or other properties of the same CELL may require normal load-order or compatibility-patch adjustments.
 
-Follower ZIPs do not contain the input VRM, working reference meshes, or dependency tools. They do contain converted skeletons, appearance/equipment meshes, and the textures those meshes use. Follow the model author's terms when using a model or distributing a generated MOD; see [License](#license) and [third-party notices](THIRD_PARTY_NOTICES.md).
+Follower ZIPs do not contain the input VRM, working reference meshes, or dependency tools. They do contain converted skeletons, appearance/equipment meshes, and private textures. Equipment images at native game paths are read from the game. With installed replacers selected, these images follow the current game setup. Images at mod-only paths remain bundled. Follow the model author's terms when using a model or distributing a generated MOD; see [License](#license) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 ## CLI and reconversion
 

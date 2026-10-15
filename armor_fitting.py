@@ -297,3 +297,6 @@ def fit(output, game_data, blender, skin_only=False, reuse_body=False):
     from converter import run_blender
     run_blender(blender, "fit_armor_blender.py", ["--output", output, *(['--skin-only'] if skin_only else []),
                                                *(['--reuse-body'] if reuse_body else [])], output, "Fit armor")
+    if not skin_only:
+        from equipment_textures import compact
+        compact(output, game_data)

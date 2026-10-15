@@ -134,6 +134,11 @@ pass after extracting shared appearance and DDS preview preparation.
 
 ## 2026-10-16 user-facing copy audit
 
+Review fitting from its effective mode, not the length of fit_armors: all_official
+intentionally saves an empty explicit list. Show all, selected count, or none and
+the chosen appearance profile, preserving JSON values. Cover all/selected/off in
+Japanese and English through actual STEP 05 navigation and JSON export.
+
 Audit all five steps, result/edit screens, and generated helper/status messages in
 Japanese and English. Keep text only when it helps a user choose, act, understand
 a current state, or anticipate a meaningful limit/wait. Do not present internal
