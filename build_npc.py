@@ -220,6 +220,11 @@ def build_npc(game_data, output, settings=None, catalog=None):
     npc.form_id, npc.flags = NPC_ID, 0
     base_stats = struct.unpack_from("<fff", race.values(b"DATA")[0], 36)
     factions = configure_actor(npc, settings, catalog, base_stats)
+    if settings.combat_style_mode == 'custom':
+        from combat_style import private_style
+        style = private_style(settings, catalog)
+        appearance.append(style)
+        npc.replace(b'ZNAM', uint(style.form_id))
     configure_native_head(npc, race)
     appearance += head_records(settings, RACE_ID)
     script_data = None

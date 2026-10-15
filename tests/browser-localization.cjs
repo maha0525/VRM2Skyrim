@@ -5,7 +5,7 @@ const root=path.resolve(__dirname,'..'),fixture=path.join(root,'build/ui-roles')
 const defaults=JSON.parse(fs.readFileSync(path.join(fixture,'defaults.json')));
 const choices=JSON.parse(fs.readFileSync(path.join(fixture,'roles.json')));
 const translations=vm.runInNewContext(fs.readFileSync(path.join(root,'web/translations.js'),'utf8')+';englishUI');
-for(const file of ['wizard.js','wardrobe.js'])for(const match of fs.readFileSync(path.join(root,'web',file),'utf8').matchAll(/\btr\(("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g)){
+for(const file of ['wizard.js','wardrobe.js','combat-style.js'])for(const match of fs.readFileSync(path.join(root,'web',file),'utf8').matchAll(/\btr\(("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g)){
  const key=vm.runInNewContext(match[1]);assert.ok(Object.hasOwn(translations,key),`Missing English UI message: ${key}`);
 }
 const source={source_id:'fixture',sha256:'a'.repeat(64),filename:'テスト.vrm',mesh_count:5,triangles:50,suggested_name:'スミレ',parts:[

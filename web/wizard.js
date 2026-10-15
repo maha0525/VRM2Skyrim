@@ -16,6 +16,7 @@ function applySettings(settings) {
   $('preset').value=settings.combat_preset??'custom';
   if(settings.physics_stiffness!==undefined&&!Array.from($('physics_stiffness').options).some(o=>o.value===String(settings.physics_stiffness)))$('physics_stiffness').add(new Option(tr("指定値 ")+settings.physics_stiffness,String(settings.physics_stiffness)));
   for(const [key,value] of Object.entries(settings)) {const input=$(key); if(!input)continue; if(input.type==='checkbox') input.checked=value; else input.value=String(value);}
+  state.styleDirty=false;loadCombatStyle(settings);
   state.perks=new Map((settings.perks||[]).map(item=>[item.editor_id,item.rank])); state.spells=new Set(settings.spells||[]);
   state.fitArmors=new Set(settings.fit_armors||[]); $('fit-enabled').checked=state.fitArmors.size>0||settings.fit_mode==='all_official';
   state.headOverrides=structuredClone(settings.head_overrides||{});
@@ -34,6 +35,7 @@ function collect() {
   }
   settings.perks=[...state.perks].map(([editor_id,rank])=>({editor_id,rank})); settings.spells=[...state.spells];
   settings.combat_preset=$('preset').value;
+  settings.combat_style_custom=structuredClone(state.styleCustom||{});
   settings.skills=settings.auto_calculate?{}:Object.fromEntries(skills.map(key=>[key,Number($('skill-'+key).value)])); Object.assign(settings,wardrobeCollect());
   settings.fit_armors=settings.armor_support&&$('fit-enabled').checked?[...$('fit-armors').selectedOptions].map(o=>o.value):[];
   settings.fit_mode=settings.armor_support&&$('fit-enabled').checked?$('fit_mode').value:'selected';
@@ -75,7 +77,7 @@ function renderPhysics(){
 }
 $('physics_enabled').addEventListener('change',renderPhysics);
 function fillSelect(id, choices, allowNone=false) {
-  const selected=$(id).value||String(state.defaults[id]??''); $(id).replaceChildren();
+  const selected=$(id).options.length?$(id).value:String(state.defaults[id]??''); $(id).replaceChildren();
   if(allowNone)$(id).add(new Option(tr("なし"),''));
   for(const item of choices)$(id).add(new Option(recordLabel(item)===item.id?item.id:`${recordLabel(item)} (${item.id})`,item.id));
   $(id).value=selected;
@@ -94,6 +96,7 @@ function setupChoices(choices, localizing=false) {
   updateMarriage();
   renderChoices();
   setupFitting(!localizing);
+  renderCombatStyle();
 }
 function setupFitting(autoDefaults=true) {
   const selected=state.fitArmors||new Set(); $('fit-armors').replaceChildren();
@@ -201,6 +204,7 @@ function summarize(settings) {
   const voice=state.choices.voices.find(item=>item.id===settings.voice);
   const rows=[[tr("アバター"),state.source.filename],[tr("NPC名"),settings.npc_name],['MOD',settings.mod_name+' / '+settings.mod_id+'.esp'],[tr("ボイス"),recordLabel(voice)||settings.voice],[tr("戦闘"),settings.combat_class+' / '+settings.combat_style],[tr("レベル"),settings.level_mode==='player'?tr("プレイヤー×{0}（{1}〜{2}）", settings.level_multiplier, settings.min_level, settings.max_level):String(settings.level)],[tr("生存"),{'protected':tr("保護"),'essential':tr("不死"),'mortal':tr("通常")}[settings.protection]],[tr("体力 / マジカ / スタミナ"),`${settings.health} / ${settings.magicka} / ${settings.stamina}${settings.auto_calculate?tr("（自動成長の補正に使用）"):''}`],[tr("Perk / 魔法"),`${settings.perks.length} / ${settings.spells.length}`],[tr("初期配置"),tr("ホワイトラン · キナレス聖堂")]];
   rows.push([tr("衣服"),settings.armor_support?tr("{0}品を着脱可能（初期装備{1}品）", settings.appearance_parts.garments.length, settings.appearance_parts.garments.filter(g=>g.equipped).length):tr("元の衣服を着脱しない")]);
+  if(settings.combat_style_mode==='custom')rows.push([tr('専用戦闘スタイル'),tr('コピー元: {0}',settings.combat_style_custom.source)]);
   rows.push([tr("髪・布の物理演算"),settings.physics_enabled?tr("FSMPを使用 · 硬さ{0} · {1}", settings.physics_stiffness, settings.physics_nodes.length?settings.physics_nodes.length+tr("メッシュを選択"):tr("髪・衣服を自動選択")):tr("固定")]);
   rows.push([tr("既存装備の体型合わせ"),settings.fit_armors.length?settings.fit_armors.join('、'):tr("なし")]);
   const dl=document.createElement('dl');for(const [title,value]of rows){const dt=document.createElement('dt');dt.textContent=title;const dd=document.createElement('dd');dd.textContent=value;dl.append(dt,dd);}$('summary').replaceChildren(dl);
@@ -254,6 +258,7 @@ async function refreshSavedResults(preferred=$('saved-job').value) {
   $('saved-results').hidden=saved.jobs.length===0;
 }
 async function init() {
+  initCombatStyle();
   for(let i=0;i<skills.length;i++){const label=document.createElement('label');label.textContent=tr(skillLabels[i]);const input=document.createElement('input');input.id='skill-'+skills[i];input.type='number';input.min='0';input.max='100';input.value='20';label.append(input);$('skills').append(label);}
   const env=await api('/api/environment');
   const expected=document.querySelector('meta[name="converter-version"]').content;

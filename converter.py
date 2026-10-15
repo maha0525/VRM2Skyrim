@@ -190,6 +190,7 @@ The original VRM appearance uses a private race/skeleton.
 Lip sync and blinking are not included. {('Optional FSMP hair/cloth physics is enabled.' if settings.physics_enabled else 'Hair/cloth physics is disabled.')} Equipment supported by
 this build is listed above; the all-official option includes installed DLC and Creations.
 Ragdoll collision shapes/constraints still require fitting to the avatar.
+Combat style: {('private copy of ' + settings.combat_style_custom['source'] if settings.combat_style_mode == 'custom' else settings.combat_style)}.
 
 Settings are included as {settings.asset_dir}/settings.json for reproducible conversion.
 The original VRM is not included. Respect its author's permissions when sharing.

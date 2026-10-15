@@ -64,6 +64,18 @@
         <label>戦闘プリセット<select id="preset"><option value="warrior">片手武器の戦士</option><option value="twohand">両手武器の戦士</option><option value="archer">弓使い</option><option value="mage">破壊魔法の使い手</option><option value="conjurer">召喚魔法の使い手</option><option value="custom">個別に設定</option></select></label>
         <div class="grid"><label>能力の成長タイプ（クラス）<select id="combat_class"></select></label><label>戦闘スタイル<select id="combat_style"></select></label><label>開始武器<select id="weapon"></select></label><label>矢・弾（100本）<select id="ammunition"></select></label><label>レベル<select id="level_mode"><option value="player">プレイヤーのレベルに追従</option><option value="fixed">固定レベル</option></select></label><label id="fixed-level">固定レベル<input id="level" type="number" min="1" max="1000"></label><label id="mult-level">追従倍率<input id="level_multiplier" type="number" min=".1" max="10" step=".1"></label><label>最低レベル<input id="min_level" type="number" min="1" max="1000"></label><label>能力の計算<select id="auto_calculate"><option value="true">クラスとレベルから自動成長</option><option value="false">個別スキルを手動指定</option></select></label><label>最高レベル<input id="max_level" type="number" min="1" max="1000"></label></div>
         <div id="class-details" class="note" aria-live="polite"></div><label class="checkbox"><input id="all-styles" type="checkbox">動物・怪物向けを含む、すべての戦闘スタイルを表示</label><p id="style-details" class="hint" aria-live="polite"></p><p class="hint">通常は、人間用の骨格を持つNPCで使用例があるスタイルを表示します。スタイル自体に種族の使用制限はありませんが、動物・怪物用の設定は人型の攻撃動作に適さない場合があります。</p>
+        <section class="combat-style-panel">
+          <label>戦闘スタイルの使い方<select id="combat_style_mode"><option value="existing">既存スタイルをそのまま使う</option><option value="custom">このフォロワー専用に調整する</option></select></label>
+          <p class="hint">上の戦闘スタイルを選び、コピーして調整できます。選び直しただけでは現在の調整は変わりません。</p>
+          <button id="copy-combat-style" type="button" class="secondary">選択中のスタイルからコピーして調整</button>
+          <div id="combat-style-editor" hidden>
+            <h3 id="combat-style-source"></h3>
+            <p class="hint">装備優先度は行動の選択に使う重みです。攻撃力の倍率や、固定の使用確率ではありません。</p>
+            <div id="combat-style-basic"></div><div id="combat-style-advanced"></div>
+            <button id="reset-combat-style" type="button" class="secondary">すべてコピー元へ戻す</button>
+            <p class="hint">元データで省略された項目は「ゲーム既定」です。数値を入れた項目だけ明示設定します。元のスタイルや他のNPCは変更しません。</p>
+          </div>
+        </section>
         <div class="grid three"><label>基礎体力<input id="health" type="number" min="1" max="32000"></label><label>基礎マジカ<input id="magicka" type="number" min="0" max="32000"></label><label>基礎スタミナ<input id="stamina" type="number" min="0" max="32000"></label></div><p class="hint" id="stat-hint">成長前の基礎値を指定します。レベル追従または自動計算を有効にすると、クラスとレベルに応じた成長分が加わります。</p>
         <details><summary>生存・性格・サイズ・配置を調整</summary><div class="grid"><label>死亡ルール<select id="protection"><option value="protected">保護：プレイヤー以外には倒されない</option><option value="essential" selected>不死：誰にも倒されない</option><option value="mortal">通常：死亡する</option></select></label><label>勇敢さ<select id="confidence"><option value="4">恐れ知らず</option><option value="3">勇敢</option><option value="2">普通</option><option value="1">慎重</option><option value="0">臆病</option></select></label><label>攻撃性<select id="aggression"><option value="0">自分や仲間を守る</option><option value="1">敵対者を攻撃する</option><option value="2">中立の相手にも攻撃する</option></select></label><label>犯罪への対応<select id="morality"><option value="3">犯罪をしない</option><option value="2">盗みを許容する</option><option value="1">敵への暴力を許容する</option><option value="0" selected>制限しない</option></select></label><label>全体の大きさ<input id="height_scale" type="number" min=".25" max="3" step=".05"><small>体型の比率を保つ一様な倍率。</small></label><label class="checkbox"><input id="marriage" type="checkbox">結婚候補にする</label><label>聖堂内の左右オフセット<input id="spawn_offset_x" type="number" min="-200" max="200" step="8"></label><label>聖堂内の前後オフセット<input id="spawn_offset_y" type="number" min="-200" max="200" step="8"></label></div></details>
         <details id="sitting-settings"><summary>椅子に座ったときの高さ補正</summary><label class="checkbox"><input id="sitting_enabled" type="checkbox" checked>着座中の高さを補正する（SKSE64が必要）</label><label class="checkbox"><input id="sitting_auto" type="checkbox" checked>元の体型と公式の着座姿勢から自動計算する</label><label>高さの微調整<input id="sitting_offset" type="number" min="-100" max="100" step="0.5"><small>Skyrim単位。＋で上へ、−で下へ。自動計算を使う場合は、その結果に加算します。</small></label><p class="hint">小柄なモデルが座面へ沈むのを補正します。立ち姿の身長・体型は変えません。本体ゲームの椅子・ベンチが対象です。別MODの家具高さ補正を使う場合は、この補正をオフにしてください。</p></details>
@@ -96,5 +108,5 @@
     </section>
   </main>
 </div>
-<script src="translations.js"></script><script src="i18n.js"></script><script src="wardrobe.js"></script><script src="wizard.js"></script>
+<script src="translations.js"></script><script src="i18n.js"></script><script src="wardrobe.js"></script><script src="combat-style.js"></script><script src="wizard.js"></script>
 </body></html>

@@ -349,3 +349,35 @@ const englishUI = {
   "装備に含めるメッシュを選んでください": "Select meshes to include in the equipment",
   "1件": "1 result"
 };
+
+Object.assign(englishUI,{
+  "戦闘スタイルの使い方": "Combat style mode",
+  "既存スタイルをそのまま使う": "Use an existing style",
+  "このフォロワー専用に調整する": "Customize for this follower",
+  "上の戦闘スタイルを選び、コピーして調整できます。選び直しただけでは現在の調整は変わりません。": "Select a combat style above, then copy it to customize. Selecting another source does not replace your edits.",
+  "選択中のスタイルからコピーして調整": "Copy selected style and customize",
+  "装備優先度は行動の選択に使う重みです。攻撃力の倍率や、固定の使用確率ではありません。": "Equipment scores weight the AI's choices. They are not damage multipliers or fixed usage percentages.",
+  "すべてコピー元へ戻す": "Reset all to source values",
+  "元データで省略された項目は「ゲーム既定」です。数値を入れた項目だけ明示設定します。元のスタイルや他のNPCは変更しません。": "Omitted source fields use game defaults. Enter a value to set them explicitly. The original style and other NPCs are unchanged.",
+  "このスタイルには編集できる設定がありません。別のスタイルを選んでください。": "This style has no editable data. Choose another style.",
+  "現在の調整を、選択したスタイルの値で置き換えますか？": "Replace your current edits with the selected style values?",
+  "コピー元: {0}": "Source: {0}",
+  "未選択": "Not selected",
+  "二刀流を許可する (Allow Dual Wielding)": "Allow Dual Wielding",
+  "二刀流には使用できる片手武器が2本必要です。Perk・武器・魔法の設定は別途行います。": "Dual wielding also needs two usable one-handed weapons. Configure Perks, weapons and spells separately.",
+  "許可・接近戦の方針を元に戻す": "Reset permission and close-range strategy",
+  "全般": "General",
+  "近接攻撃・バッシュ": "Melee attacks and bashing",
+  "接近戦の移動": "Close-range movement",
+  "遠距離戦の移動": "Long-range movement",
+  "飛行用（通常は変更不要）": "Flight (usually leave unchanged)",
+  "接近戦の方針": "Close-range strategy",
+  "指定なし": "Not specified",
+  "正面で戦う (Dueling)": "Dueling",
+  "側面へ回り込む (Flanking)": "Flanking",
+  "元データの組合せ": "Source flag combination",
+  "ゲーム既定": "Game default",
+  "元に戻す": "Reset",
+  "すべての調整をコピー元の値に戻しますか？": "Reset all adjustments to the source style values?",
+  "専用戦闘スタイル": "Private combat style"
+});

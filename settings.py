@@ -27,6 +27,8 @@ class FollowerSettings:
     combat_class: str = "CombatWarrior1H"
     combat_style: str = "csHumanMeleeLvl1"
     combat_preset: str = "warrior"  # Wizard selection only; never reapplies game settings on import.
+    combat_style_mode: str = 'existing'
+    combat_style_custom: dict = field(default_factory=dict)
     level_mode: str = "player"
     auto_calculate: bool = True
     level: int = 10
@@ -84,6 +86,12 @@ class FollowerSettings:
         for name, options in choices.items():
             if getattr(self, name) not in options:
                 raise ValueError(f"Invalid {name}")
+        from combat_style import validate_custom
+        validate_custom(self.combat_style_custom)
+        if self.combat_style_mode not in ('existing', 'custom'):
+            raise ValueError('Invalid combat style mode')
+        if self.combat_style_mode == 'custom' and not self.combat_style_custom:
+            raise ValueError('Copy a combat style before using custom mode')
         for name, low, high in (("level", 1, 1000), ("min_level", 1, 1000), ("max_level", 1, 1000),
                                  ("health", 1, 32000), ("magicka", 0, 32000), ("stamina", 0, 32000),
                                  ("confidence", 0, 4), ("aggression", 0, 2), ("morality", 0, 3)):

@@ -145,6 +145,10 @@ class GameCatalog:
             raise ValueError("Selected voice has no standard marriage dialogue")
         self.require(settings.combat_class, b"CLAS")
         self.require(settings.combat_style, b"CSTY")
+        if settings.combat_style_custom:
+            from combat_style import read_style
+            if read_style(self.require(settings.combat_style_custom['source'], b'CSTY')) is None:
+                raise ValueError('Selected combat style has no editable data')
         if settings.weapon:
             self.require(settings.weapon, b"WEAP")
         if settings.ammunition:
@@ -238,6 +242,8 @@ class GameCatalog:
         usage = self.style_usage()
         english_usage = self.style_usage(language='en')
         for item in result['styles']:
+            from combat_style import read_style
+            item['config'] = read_style(self.require(item['id']))
             row = usage.get(self.require(item['id']).form_id, {'humanoid': set(), 'other': set()})
             item['humanoid'] = bool(row['humanoid'])
             item['used_by'] = sorted(row['humanoid'] | row['other'])
@@ -247,6 +253,8 @@ class GameCatalog:
                       len(result['classes']), len(result['styles']), sum(s['humanoid'] for s in result['styles']))
         result["marriage_voices"] = [r.editor_id for r in self.choices(b"VTYP") if r.form_id in self.marriage_voice_ids]
         result['english_strings_available'] = bool(self.english_strings)
+        from combat_style import FIELDS
+        result['combat_style_fields'] = FIELDS
         from armor_catalog import official_choices, slot_mask
         from official_catalog import OfficialCatalog
         catalog = OfficialCatalog(self.path.parent)
