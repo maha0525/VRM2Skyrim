@@ -46,10 +46,12 @@ def main():
     for part in parts:
         original = next((p for p in manifest if p['id'] == part['id']), None)
         if original:
-            part['shapes'] = original['shapes']
+            # Fitting regenerates split skin components without per-source
+            # shape metadata. Their materials are imported from the NIF itself.
+            part['shapes'] = original.get('shapes', []) if original.get('partial_source') else original['shapes']
     wardrobe = args.wardrobe
     if wardrobe.startswith("armor:"):
-        fitting = json.loads((output / "armor-fitting.json").read_text())
+        fitting = json.loads((output / "armor-fitting.json").read_text(encoding='utf8'))
         chosen = wardrobe[6:]
         unknown = set(chosen.split(',')) - {p['editor_id'] for p in fitting['equipment']}
         if chosen != 'all' and unknown:

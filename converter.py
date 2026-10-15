@@ -1,7 +1,6 @@
 """VRM2Skyrim: shared local follower pipeline for the CLI and wizard."""
 import argparse
 import hashlib
-import importlib.util
 import json
 import logging
 from pathlib import Path
@@ -16,6 +15,7 @@ from build_npc import build_npc
 from environment import find_blender, find_game
 from game_catalog import GameCatalog
 from inspect_vrm import inspect
+from runtime_dependencies import dependency_checks
 from settings import FollowerSettings, VERSION, load_settings
 from textures import convert_textures
 
@@ -29,7 +29,7 @@ def doctor(game, blender):
             "game_animations": (data / "Skyrim - Animations.bsa").is_file(),
             "pynifly": (ROOT / "dependencies/io_scene_nifly/NiflyDLL.dll").is_file(),
             "texconv": (ROOT / "dependencies/texconv.exe").is_file(),
-            **{name: importlib.util.find_spec(name) is not None for name in ("numpy", "scipy", "PIL", "lz4")}}
+            **dependency_checks()}
 
 
 def references(game_data, sex="female"):

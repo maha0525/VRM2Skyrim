@@ -33,7 +33,7 @@ Requirements:
 
 1. Clone this repository, or use Code → Download ZIP and extract it.
 2. Run **`Setup.cmd`** once. It installs Python dependencies into a dedicated `.venv` and downloads pinned versions of PyNifly and texconv into `dependencies/`.
-3. Run **`Launch.cmd`** to open the wizard in your browser.
+3. Run **`Launch.cmd`** to open the wizard in your browser. It uses the project `.venv`; run Setup first if that environment is missing. Setup checks native dependency loading and LZ4 decompression before completing.
 4. Select the VRM and check the Skyrim folder and Blender executable. Detected locations are filled in automatically.
 5. Configure the follower and select **Create follower MOD** (`フォロワーMODを作る`). Download the ZIP and previews from the result page.
 

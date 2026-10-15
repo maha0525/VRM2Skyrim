@@ -10,6 +10,7 @@ import hashlib
 import logging
 import mimetypes
 import socket
+import sys
 from pathlib import Path
 import threading
 from urllib.parse import parse_qs, unquote, urlparse
@@ -250,7 +251,7 @@ class WizardApplication:
         job['status'] = 'running'
         try:
             complete = output/'run.json'
-            if not complete.is_file() or json.loads(complete.read_text()).get('state') != 'offline_verified':
+            if not complete.is_file() or json.loads(complete.read_text(encoding='utf8')).get('state') != 'offline_verified':
                 if output.exists():
                     output = output.with_name(output.name+'_'+job['id'][:8])
                     job['output'] = str(output)
@@ -312,7 +313,7 @@ class WizardApplication:
                            game_verified=False)
                 if settings.fitting_enabled:
                     job["armor_registration"] = "skypatcher"
-                    fitting = json.loads((output/'armor-fitting.json').read_text())
+                    fitting = json.loads((output/'armor-fitting.json').read_text(encoding='utf8'))
                     job['fit_armors'] = list(dict.fromkeys(i['editor_id'] for i in fitting['equipment']))
                     job['edit_kit'] = 'OutfitStudio-EditKit.zip'
                     job['edit_meshes'] = list({i['source_key']: {'key': i['source_key'], 'name': i['editor_id']}
@@ -464,6 +465,7 @@ def main():
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    logging.info('Python runtime: %s (%s)', sys.executable, sys.version.split()[0])
     app = WizardApplication()
     server = None
     try:
