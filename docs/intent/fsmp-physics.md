@@ -160,3 +160,27 @@ Check the removable and fixed-outfit paths and repeat generation.
 Use these as specifications; do not copy GPL implementation code into the
 original MIT modules merely to generate XML. Upstream engine or validator
 tools, if used for testing, retain their own licenses.
+
+### 2026-10-16 wizard selection persistence
+
+Importing settings before the game catalog is available must not replay the
+whole imported snapshot after STEP 01 edits. Restore only catalog-dependent
+select values when their options arrive. Keep physics mesh edits through Next,
+Back, locale changes, and repeated uploads of the same VRM.
+
+Persist the physics selection with its own source fingerprint, independently
+of optional wardrobe classification. Read older JSON using its appearance
+fingerprint. If the source differs or a selected mesh no longer exists, show a
+localized warning rather than silently appearing to have forgotten the choice;
+never reuse numeric node IDs on a different VRM. Clear pending state when
+starting another follower. Verify actual checkbox -> Next -> JSON download ->
+new page/import/upload checkbox restoration, including both file input orders.
+
+Verified: the new browser regression fails on the original code because the
+first validation request submits [] after selecting [1,2]. The corrected UI
+preserves both selections through all five steps and a downloaded-JSON import
+on a fresh page, in both input orders. It also covers Back, locale switching,
+same-source re-upload, disabled/enabled physics, missing/different sources,
+legacy fingerprints and starting another follower. The downloaded JSON passes
+actual FollowerSettings load/save; 43 related Python tests, existing combat-style
+and localization browser checks, and repository Ruff checks pass.

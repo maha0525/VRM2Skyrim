@@ -15,6 +15,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SettingsTests(unittest.TestCase):
+    def test_physics_selection_roundtrip_without_wardrobe(self):
+        values = dict(armor_support=False, physics_enabled=True,
+                      physics_nodes=[756, 761, 932], physics_source_sha256='a'*64)
+        (ROOT/'build/test-tmp').mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ROOT/'build/test-tmp') as directory:
+            path = Path(directory)/'settings.json'
+            FollowerSettings.from_dict(values).save(path)
+            restored = FollowerSettings.load(path)
+            for key, value in values.items():
+                self.assertEqual(getattr(restored, key), value)
+        legacy = FollowerSettings.from_dict({'physics_nodes': [756],
+                                            'appearance_source_sha256': 'b'*64})
+        self.assertEqual(legacy.physics_nodes, [756])
+        self.assertEqual(legacy.physics_source_sha256, '')
+        for invalid in (None, [], 1, 'not-a-hash', 'A'*64):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                FollowerSettings(physics_source_sha256=invalid)
+
     def test_preset_roundtrip_preserves_customized_values_and_legacy_is_custom(self):
         self.assertEqual(FollowerSettings().combat_preset, 'warrior')
         values = dict(combat_preset='mage', combat_class='CombatWarrior1H',

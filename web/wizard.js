@@ -1,6 +1,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const state = {step:0, source:null, choices:null, defaults:null, job:null, imported:null, importPending:false, perks:new Map(), spells:new Set(), nameDirty:false, idDirty:false};
+const state = {step:0, source:null, choices:null, defaults:null, job:null, imported:null, pendingSelects:null, perks:new Map(), spells:new Set(), nameDirty:false, idDirty:false};
+const catalogSelects=['voice','combat_class','combat_style','weapon','ammunition'];
 const skills = ["OneHanded","TwoHanded","Marksman","Block","Smithing","HeavyArmor","LightArmor","Pickpocket","Lockpicking","Sneak","Alchemy","Speechcraft","Alteration","Conjuration","Destruction","Illusion","Restoration","Enchanting"];
 const skillLabels = ["片手武器","両手武器","弓術","防御","鍛冶","重装","軽装","スリ","開錠","隠密","錬金術","話術","変性","召喚","破壊","幻惑","回復","付呪"];
 const integers = new Set(["level","min_level","max_level","health","magicka","stamina","confidence","aggression","morality"]);
@@ -13,6 +14,9 @@ async function api(path, data) {
 }
 function download(name, value) {const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"})); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function applySettings(settings) {
+  // Only option-dependent values need to wait for the catalog. Reapplying the
+  // full imported snapshot later would overwrite edits already made in STEP 01.
+  state.pendingSelects=state.choices?null:Object.fromEntries(catalogSelects.map(key=>[key,settings[key]??state.defaults[key]??'']));
   $('preset').value=settings.combat_preset??'custom';
   if(settings.physics_stiffness!==undefined&&!Array.from($('physics_stiffness').options).some(o=>o.value===String(settings.physics_stiffness)))$('physics_stiffness').add(new Option(tr("指定値 ")+settings.physics_stiffness,String(settings.physics_stiffness)));
   for(const [key,value] of Object.entries(settings)) {const input=$(key); if(!input)continue; if(input.type==='checkbox') input.checked=value; else input.value=String(value);}
@@ -23,7 +27,7 @@ function applySettings(settings) {
   $('head-hide-face').checked=settings.head_defaults?.hide_face??false; $('head-hide-hair').checked=settings.head_defaults?.hide_hair??true; setupFitting();
   for(const key of skills) $('skill-'+key).value=settings.skills?.[key]??20;
   if(state.source)wardrobeLoad(state.source,settings);
-  state.physicsNodes=new Set(!state.source||settings.appearance_source_sha256===state.source.sha256?settings.physics_nodes||[]:[]); renderPhysics();
+  loadPhysics(settings);
   if(state.choices)updateStyles(settings.combat_style);
   updateLevel(); updateMarriage(); renderChoices();
 }
@@ -43,6 +47,7 @@ function collect() {
   settings.head_overrides=state.headOverrides||{};
   if(settings.fit_mode==='all_official')settings.fit_armors=[];
   settings.physics_nodes=[...(state.physicsNodes||[])];
+  settings.physics_source_sha256=state.physicsHash||'';
   if(settings.armor_support&&$('fit-enabled').checked&&settings.fit_mode==='selected'&&!settings.fit_armors.length)throw new Error(tr("体型合わせする装備を選んでください")); return settings;
 }
 async function updateId() {
@@ -56,16 +61,31 @@ async function upload(file) {
   if(!file)return; error(); $('next').disabled=true; $('source-status').textContent=tr("VRMを読み込んでいます…");
   try {
     const response=await fetch('/api/source',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Filename':encodeURIComponent(file.name)},body:file});
-    const result=await response.json(); if(!response.ok)throw new Error(result.error); state.source=result;
-    wardrobeLoad(result,state.imported);
-    state.physicsNodes=new Set(state.imported?.appearance_source_sha256===result.sha256?state.imported.physics_nodes||[]:[]); renderPhysics();
+    const result=await response.json(); if(!response.ok)throw new Error(result.error);
+    const previous=state.source?{armor_support:$('armor_support').value==='true',...wardrobeCollect(),physics_nodes:[...(state.physicsNodes||[])],physics_source_sha256:state.physicsHash}:state.imported;
+    state.source=result;
+    wardrobeLoad(result,previous);
+    loadPhysics(previous||{});
     $('source-status').textContent=tr("{0} · {1}メッシュ · {2}三角形", result.filename, result.mesh_count, result.triangles.toLocaleString());
     if(!state.nameDirty&&!state.imported){$('npc_name').value=result.suggested_name; $('mod_name').value=result.suggested_name+'Follower'; await updateId();}
   }catch(e){state.source=null; error(e.message); $('source-status').textContent=tr("読み込めませんでした");}
   finally{$('next').disabled=false;}
 }
+function loadPhysics(settings){
+  const selected=settings.physics_nodes||[];
+  const hash=settings.physics_source_sha256||settings.appearance_source_sha256||'';
+  const mismatch=state.source&&selected.length&&hash!==state.source.sha256;
+  const nodes=new Set(state.source?.parts.map(part=>part.node)||selected);
+  state.physicsNodes=new Set(mismatch?[]:selected.filter(node=>nodes.has(node)));
+  state.physicsHash=state.source?.sha256||hash;
+  state.physicsWarning=mismatch?'保存した揺れの選択は別VRM用のため適用していません。このVRMで揺らすメッシュを選び直してください。':selected.some(node=>!nodes.has(node))?'保存した揺れの選択に、このVRMに存在しないメッシュがあります。選択を確認してください。':'';
+  if(state.physicsWarning)console.warn('Physics selection restore:',{savedSource:hash,loadedSource:state.source?.sha256,selected,restored:[...state.physicsNodes]});
+  renderPhysics();
+}
 function renderPhysics(){
   $('physics-panel').hidden=!$('physics_enabled').checked;
+  $('physics-warning').hidden=!state.physicsWarning;
+  $('physics-warning').textContent=state.physicsWarning?tr(state.physicsWarning):'';
   const target=$('physics-meshes');target.replaceChildren();
   for(const part of state.source?.parts||[]){
     const row=document.createElement('label');row.className='checkbox';
@@ -91,7 +111,7 @@ function setupChoices(choices, localizing=false) {
     selector.value=[...selector.options].some(item=>item.value===previous)?previous:'all';
   }
   for(const [id,key] of [['voice','voices'],['combat_class','classes'],['combat_style','styles'],['weapon','weapons'],['ammunition','ammunition']])fillSelect(id,choices[key],['weapon','ammunition'].includes(id));
-  if(state.imported&&state.importPending){applySettings(state.imported);state.importPending=false;}
+  if(state.pendingSelects){for(const [id,value] of Object.entries(state.pendingSelects))$(id).value=value;state.pendingSelects=null;}
   updateStyles();updateRoleDetails();
   updateMarriage();
   renderChoices();
@@ -290,8 +310,8 @@ async function init() {
   $('perk-search').oninput=renderChoices;$('spell-search').oninput=renderChoices;
   $('perk-category').onchange=renderChoices;$('spell-category').onchange=renderChoices;
   $('export-settings').onclick=()=>download($('mod_id').value+'-settings.json',collect());
-  $('import-settings').onchange=async()=>{try{state.imported=JSON.parse(await $('import-settings').files[0].text());state.importPending=!state.choices;applySettings(state.imported);state.nameDirty=true;state.idDirty=true;$('import-status').textContent=tr("設定を読み込みました");}catch(e){error(e.message);}};
-  $('again').onclick=async()=>{state.completedJob=null;$('result').hidden=true;$('equipment-edit').hidden=true;$('wizard').hidden=false;state.source=null;state.imported=null;state.nameDirty=false;state.idDirty=false;$('source').value='';$('source-status').textContent=tr("次のVRMを選択してください");wardrobeLoad(null);showStep(0);try{await refreshSavedResults(state.resultJob);}catch(e){error(tr("前に作ったフォロワーの一覧を更新できませんでした：")+e.message);}};
+  $('import-settings').onchange=async()=>{try{state.imported=JSON.parse(await $('import-settings').files[0].text());applySettings(state.imported);state.nameDirty=true;state.idDirty=true;$('import-status').textContent=tr("設定を読み込みました");}catch(e){error(e.message);}};
+  $('again').onclick=async()=>{state.completedJob=null;$('result').hidden=true;$('equipment-edit').hidden=true;$('wizard').hidden=false;state.source=null;state.imported=null;state.pendingSelects=null;loadPhysics({});state.nameDirty=false;state.idDirty=false;$('source').value='';$('source-status').textContent=tr("次のVRMを選択してください");wardrobeLoad(null);showStep(0);try{await refreshSavedResults(state.resultJob);}catch(e){error(tr("前に作ったフォロワーの一覧を更新できませんでした：")+e.message);}};
 }
 document.addEventListener('languagechange',()=>{
   for(const option of $('physics_stiffness').options)if(!['0.3','1','3'].includes(option.value))option.textContent=tr('指定値 ')+option.value;

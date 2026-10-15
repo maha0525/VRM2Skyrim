@@ -67,6 +67,7 @@ class FollowerSettings:
     appearance_heads: dict = field(default_factory=dict)
     physics_enabled: bool = False
     physics_nodes: list = field(default_factory=list)  # [] selects assigned hair/clothing automatically
+    physics_source_sha256: str = ""
     physics_stiffness: float = 1.0
     toon_enabled: bool = False
 
@@ -126,6 +127,9 @@ class FollowerSettings:
                 any(type(n) is not int or n < 0 for n in self.physics_nodes) or
                 len(set(self.physics_nodes)) != len(self.physics_nodes)):
             raise ValueError('Physics mesh nodes must be distinct nonnegative integers')
+        if (not isinstance(self.physics_source_sha256, str) or
+                self.physics_source_sha256 and not re.fullmatch(r'[0-9a-f]{64}', self.physics_source_sha256)):
+            raise ValueError('Physics source fingerprint must be an SHA256 hash')
         if (type(self.physics_stiffness) not in (int, float) or
                 not math.isfinite(self.physics_stiffness) or not .1 <= self.physics_stiffness <= 5):
             raise ValueError('Physics stiffness must be between 0.1 and 5')

@@ -1,6 +1,9 @@
 "use strict";
 // UI copy only. Game record names/descriptions come from the game's English tables.
 const englishUI = {
+  "保存した揺れの選択は別VRM用のため適用していません。このVRMで揺らすメッシュを選び直してください。": "The saved physics selection belongs to a different VRM and was not applied. Select the meshes to simulate for this VRM.",
+  "保存した揺れの選択に、このVRMに存在しないメッシュがあります。選択を確認してください。": "Some meshes in the saved physics selection are missing from this VRM. Review the selection.",
+
   "VRM2Skyrim — フォロワー制作": "VRM2Skyrim — Follower Creator",
   "● このPC内で変換": "● Converted locally on your PC",
   "あなたのアバターを、": "Your avatar,",
