@@ -16,6 +16,31 @@ from settings import FollowerSettings, VERSION
 
 
 class WizardServerTests(unittest.TestCase):
+    def test_served_page_and_api_share_version_after_a_release_bump(self):
+        opener = build_opener(ProxyHandler({}))
+        with tempfile.TemporaryDirectory() as directory:
+            app = WizardApplication(directory)
+            server = ThreadingHTTPServer(('127.0.0.1', 0), handler_for(app))
+            worker = threading.Thread(target=server.serve_forever)
+            worker.start()
+            base = 'http://127.0.0.1:'+str(server.server_address[1])
+            try:
+                for version in (VERSION, '99.88.77'):
+                    with self.subTest(version=version), patch('wizard.VERSION', version):
+                        for route in ('/', '/index.html'):
+                            response = opener.open(base+route, timeout=5)
+                            page = response.read()
+                            self.assertIn(f'name="converter-version" content="{version}"'.encode(), page)
+                            self.assertNotIn(b'__CONVERTER_VERSION__', page)
+                            self.assertEqual(int(response.headers['Content-Length']), len(page))
+                            self.assertEqual(response.headers['Cache-Control'], 'no-store')
+                        self.assertEqual(json.load(opener.open(base+'/api/environment', timeout=5))['version'], version)
+            finally:
+                server.shutdown()
+                worker.join()
+                server.server_close()
+                app.close()
+
     def test_slow_connection_refusal_does_not_report_a_busy_port(self):
         with patch('wizard.socket.create_connection', side_effect=TimeoutError):
             self.assertFalse(port_is_listening(12345))

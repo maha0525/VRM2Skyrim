@@ -388,6 +388,11 @@ def handler_for(app):
 
         def file(self, path, attachment=False):
             blob = path.read_bytes()
+            if path.resolve() == (ROOT / 'web/index.html').resolve():
+                # One version source for the startup banner, API and page.
+                # Source fingerprints still reject a server left alive during
+                # an update; the HTML must not need a second manual version bump.
+                blob = blob.replace(b'__CONVERTER_VERSION__', VERSION.encode('utf8'))
             self.send_response(200)
             self.send_header("Content-Type", mimetypes.guess_type(path.name)[0] or "application/octet-stream")
             self.send_header("Content-Length", str(len(blob)))

@@ -19,3 +19,11 @@ Verify real HTTP responses with an older reusable listener on both loopback
 and wildcard addresses, a current exclusive listener, and repeated startup.
 Check that the browser receives the actual bound URL and unrelated startup
 errors are not swallowed. Use isolated temporary workspaces and ports.
+
+The served page's version must come from the same `settings.VERSION` as the
+API and startup banner, injected into an HTML placeholder by the server.
+A release must not require a second manual version bump in static HTML:
+0.11.2 initially retained 0.11.1 there and falsely blocked a current server.
+Test real HTTP page/API responses at both `/` and `/index.html`, including
+a simulated future version. Preserve the source-fingerprint restart guard
+for a process left running while files change.
