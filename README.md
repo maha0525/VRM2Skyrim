@@ -2,6 +2,8 @@
 
 **English** | [日本語](README.ja.md)
 
+**0.11.2 fixes severe FSMP stalls in fixed-appearance followers.** Earlier output could attach the same avatar physics ten times. Update the tool, restart the wizard, rebuild affected followers with the same settings and ESP name, replace/deploy their ZIPs, and fully restart Skyrim. Updating the tool alone does not repair previously generated MODs. This fix preserves record IDs and does not require a follower reset.
+
 **Turn your VRM avatar into a companion for your Skyrim adventures.**
 
 VRM2Skyrim is a local tool that creates Skyrim Special Edition follower MODs from humanoid VRM 0/1 models. It generates a dedicated race and skeleton to preserve the avatar's proportions, face, hair, and original outfit. Configure the follower in a five-step wizard and export a ZIP for Vortex or Mod Organizer 2.
@@ -10,7 +12,7 @@ Materials retain the original VRM's single/double-sided rendering and transparen
 
 Followers start **inside the Temple of Kynareth in Whiterun**. The tool sets up the vanilla follower factions, a friendly relationship with the player, a recruitment-compatible voice, and a persistent placed reference, so the NPC can be recruited through dialogue.
 
-The stable version on `main` is **0.11.1**. It includes a Japanese/English wizard, optional hair/cloth physics, removable original VRM headwear, seated height correction, material fidelity fixes, and class growth details with categorized Perks/spells. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
+The stable version on `main` is **0.11.2**. It includes a Japanese/English wizard, optional hair/cloth physics, removable original VRM headwear, seated height correction, material fidelity fixes, and class growth details with categorized Perks/spells. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
 
 An **experimental, off-by-default** option adds MToon-like lighting for converted avatars using a separate Community Shaders adapter. The adapter is pinned to a verified shader source and is not a general replacement for other CS versions. See [adapter creation, installation, removal and verification](docs/TOON.md).
 

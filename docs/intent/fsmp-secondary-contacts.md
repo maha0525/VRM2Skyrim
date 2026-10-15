@@ -1,5 +1,23 @@
 # Stable hair and non-sleeve cloth contacts
 
+## Fixed-avatar attachment duplication (2026-10-15)
+
+Aifi's fixed-appearance ARMA advertised ten model slots while every visible
+NIF partition used slot 32. With FSMP 4.1.1 the runtime log showed ten complete
+251-bone systems, and profiling counted 200 contact shape pairs per substep.
+Changing only that ARMA mask to slot 32 reduced construction to one system
+(251 bones); the user confirmed the game became substantially lighter.
+The original secondary contacts, joints, meshes and shaders remained enabled.
+
+Generate fixed-avatar ARMA coverage on slot 32, matching the exported NIF.
+Keep the ARMO occupancy mask on all original ten slots: equipment exclusion
+and model attachment are separate responsibilities. Preserve all FormIDs,
+outfits, physics and wardrobe-specific coverage. Apply this to fixed output
+with physics both enabled and disabled, and verify the serialized plugin.
+Evidence and controlled overrides are in `build/fsmp-freeze-20261015/`.
+
+## Secondary contact geometry
+
 Aifi keeps moving at rest with stiffness=1; generated and installed XML match.
 Only 60 of its 152 movers use rigid contact patches. The remaining hair,
 skirt and cape contacts use blended visual vertices, allowing a single

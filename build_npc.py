@@ -46,9 +46,13 @@ def appearance_records(settings, catalog):
     """Build either the original fixed appearance or independent skin/clothes."""
     path = settings.asset_dir.replace("/", "\\")
     if not settings.armor_support:
+        # The fixed NIF uses only partition 32. Advertising every occupied
+        # inventory slot here attaches the same model/FSMP system ten times.
+        # Keep the wider exclusion mask on ARMO, not on its model's ARMA.
+        model_mask = 1 << (32 - 30)
         addon = Record(b"ARMA", ADDON_ID, 0, [
             (b"EDID", text(settings.prefix + "AppearanceAA")),
-            (b"BOD2", struct.pack("<II", SLOT_MASK, 2)), (b"RNAM", uint(RACE_ID)),
+            (b"BOD2", struct.pack("<II", model_mask, 2)), (b"RNAM", uint(RACE_ID)),
             (b"DNAM", bytes((10, 10, 0, 0, 2, 0, 0, 0)) + struct.pack("<f", 0.)),
             (b"MOD2", text(path + "\\avatar.nif")), (b"MOD3", text(path + "\\avatar.nif"))])
         armor = Record(b"ARMO", ARMOR_ID, 4, [
@@ -57,6 +61,7 @@ def appearance_records(settings, catalog):
             (b"BOD2", struct.pack("<II", SLOT_MASK, 2)), (b"RNAM", uint(RACE_ID)),
             (b"MODL", uint(ADDON_ID)), (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<i", 0))])
         outfit = Record(b"OTFT", OUTFIT_ID, 0, [(b"EDID", text(settings.prefix + "Outfit")), (b"INAM", uint(ARMOR_ID))])
+        logging.info('Fixed appearance: one model attachment at slot 32; inventory exclusion slots %s', SLOTS)
         return [addon, armor, outfit], []
     skin_ids = {"body": ADDON_ID, "underwear": 0x01000807, "fixed": 0x01000808,
                 "hands": 0x01000809, "feet": 0x0100080A, 'face': 0x01000850, 'hair': 0x01000851}

@@ -5,7 +5,7 @@ import struct
 import tempfile
 import unittest
 
-from build_npc import build_npc, NPC_ID, RACE_ID, REFERENCE_ID
+from build_npc import build_npc, NPC_ID, RACE_ID, REFERENCE_ID, ADDON_ID, ARMOR_ID, SLOT_MASK
 from environment import find_game
 from game_catalog import GameCatalog, class_growth
 from plugin import records, Record
@@ -73,6 +73,24 @@ class FollowerIntegrationTests(unittest.TestCase):
         path = build_npc(self.game / "Data", Path(temp.name), settings, self.catalog)
         parsed = list(records(path))
         return parsed, {record.kind: record for record in parsed}
+
+    def test_fixed_avatar_attaches_once_without_losing_equipment_exclusion(self):
+        for physics in (False, True):
+            with self.subTest(physics=physics):
+                settings = FollowerSettings(physics_enabled=physics, physics_nodes=[1] if physics else [])
+                parsed, by_kind = self.build(settings)
+                addon = next(r for r in parsed if r.form_id == ADDON_ID)
+                armor = next(r for r in parsed if r.form_id == ARMOR_ID)
+                # One render attachment, matching convert_blender's fixed NIF
+                # partition; ten exclusion slots must never become ten rigs.
+                self.assertEqual(addon.kind, b'ARMA')
+                self.assertEqual(struct.unpack('<II', addon.values(b'BOD2')[0]), (4, 2))
+                self.assertEqual(struct.unpack('<II', armor.values(b'BOD2')[0]), (SLOT_MASK, 2))
+                self.assertEqual(armor.values(b'MODL'), [struct.pack('<I', ADDON_ID)])
+                self.assertEqual(by_kind[b'OTFT'].values(b'INAM'), [struct.pack('<I', ARMOR_ID)])
+                self.assertEqual(by_kind[b'RACE'].values(b'WNAM'), [struct.pack('<I', ARMOR_ID)])
+                for tag in (b'MOD2', b'MOD3'):
+                    self.assertEqual(addon.values(tag), [(settings.asset_dir.replace('/', '\\')+'\\avatar.nif\0').encode()])
 
     def test_wizard_spells_are_castable_and_blade_is_the_faction_class(self):
         choices = self.catalog.json_choices('female')
