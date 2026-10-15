@@ -16,12 +16,13 @@ from plugin import records
 from settings import load_settings
 from build_npc import NPC_ID, RACE_ID
 from wardrobe import components, equip_slots, keyword_names, skin_components, nif_partition
-from gear_head_runtime import head_variants, validate_head_models
+from gear_head_runtime import validate_head_models
 from head_visibility import validate_head_visibility
-from equipment_runtime import runtime_records, vmad, script_name, pex_strings, PROPERTIES
+from equipment_runtime import runtime_records, vmad, script_name, pex_strings
 from nif_materials import DOUBLE_SIDED, validate_alpha_order
 from dds import validate_dds
 from clothing_validation import validate_clothing_skin
+from plugin_validation import validate_private_records
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "dependencies/io_scene_nifly"))
@@ -149,42 +150,7 @@ def validate(output, skeleton=None):
         with NifFile(str(path)) as native_head:
             if native_head.game != 'SKYRIMSE' or native_head.root.blockname != 'BSFadeNode' or native_head.shapes:
                 raise ValueError('Native head/FaceGen contains renderable geometry or the wrong root')
-    local_ids = {
-        record.form_id for record in generated if record.kind not in (b"TES4", b"CELL")
-    }
-    expected_records = (
-        9
-        if not settings.armor_support
-        else 9 + len(PROPERTIES)
-        + len(skin_components(settings))
-        + 2 * len(settings.appearance_parts["garments"])
-        + (len({i['addon_local_id'] for i in json.loads((output/'armor-fitting.json').read_text())['equipment']})
-           if settings.fitting_enabled else 0)
-        + ((5 + sum(bool(p['nodes']) for p in head_variants(settings))) if settings.head_switch_enabled else 0)
-    )
-    expected_records += int(settings.sitting_enabled)
-    if len(local_ids) != expected_records:
-        raise ValueError(f"Expected {expected_records} private follower records")
-    if any(form_id >> 24 != 1 for form_id in local_ids):
-        raise ValueError("Plugin overrides an existing record")
-    for record in generated:
-        for tag, payload in record.fields:
-            reference_tags = {b"ARMO": {b"MODL", b"RNAM"}, b"ARMA": {b"RNAM", b"MODL"},
-                              b"NPC_": {b"DOFT", b"RNAM", b"WNAM", b"CNTO"},
-                                b"RACE": {b"WNAM", b"HEAD"}, b"OTFT": {b"INAM"},
-                                b"HDPT": {b"RNAM"}, b"FLST": {b"LNAM"}}
-            if tag in reference_tags.get(record.kind, set()):
-                if (tag == b"CNTO" and len(payload) != 8) or (tag != b"CNTO" and len(payload) % 4):
-                    raise ValueError("Malformed plugin reference field")
-                refs = (
-                    [payload[:4]]
-                    if tag == b"CNTO"
-                    else [payload[i : i + 4] for i in range(0, len(payload), 4)]
-                )
-                for ref in refs:
-                    value = struct.unpack("<I", ref)[0]
-                    if value >> 24 == 1 and value not in local_ids:
-                        raise ValueError("Dangling local record reference")
+    local_ids = validate_private_records(generated, settings, output)
     by_name = {record.editor_id: record for record in generated}
     npc = by_name[settings.prefix + 'NPC']
     race = by_name[settings.prefix + "Race"]

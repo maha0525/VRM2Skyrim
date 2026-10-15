@@ -11,6 +11,7 @@ from environment import find_game
 from game_catalog import GameCatalog
 from plugin import Record, records
 from settings import FollowerSettings
+from plugin_validation import validate_private_records
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -82,6 +83,51 @@ class CombatStyleTests(unittest.TestCase):
         self.assertEqual(len(FIELDS), 31)
 
 
+    def test_final_plugin_gate_counts_optional_style_and_rejects_corruption(self):
+        # No installed game or native NIF dependency: exercise the actual output
+        # gate with fixed/wardrobe and seated/unseated record layouts in CI.
+        config = {'source': 'Base', 'values': {'magic_score': 5.1}, 'flags': 5}
+        source = Record(b'CSTY', 12, 0, [(b'EDID', b'Base\0'), (b'CSGD', struct.pack('<10f', *[1.]*10))])
+        for wardrobe in (False, True):
+            for seated in (False, True):
+                for mode in ('existing', 'custom'):
+                    settings = FollowerSettings(
+                        armor_support=wardrobe, sitting_enabled=seated, combat_style_mode=mode,
+                        combat_style_custom=config, appearance_source_sha256='a'*64,
+                        appearance_parts={'body': [1], 'underwear': [2], 'fixed': [3], 'garments': [
+                            {'id': 'coat', 'name': 'Coat', 'nodes': [4], 'slot': 44,
+                             'armor_type': 'clothing', 'armor_rating': 0, 'weight': .5, 'value': 7, 'equipped': True}]})
+                    expected = (21 if wardrobe else 9) + int(seated) + int(mode == 'custom')
+                    npc = Record(b'NPC_', NPC_ID, 0, [(b'EDID', (settings.prefix+'NPC\0').encode()),
+                                 (b'ZNAM', struct.pack('<I', CUSTOM_STYLE_ID if mode == 'custom' else 12))])
+                    generated = [npc]
+                    if mode == 'custom':
+                        generated.append(private_style(settings, Catalog(source)))
+                    generated += [Record(b'FLST', 0x01001000+i, 0, [])
+                                  for i in range(expected-len(generated))]
+                    with self.subTest(wardrobe=wardrobe, seated=seated, mode=mode):
+                        self.assertEqual(len(validate_private_records(generated, settings, '.')), expected)
+                        with self.assertRaisesRegex(ValueError, 'private follower records'):
+                            validate_private_records(generated[:-1], settings, '.')
+                        corrupt = copy.deepcopy(generated)
+                        corrupt[0].replace(b'ZNAM', struct.pack('<I', 0x0100FFFF))
+                        with self.assertRaisesRegex(ValueError, 'Dangling local record reference'):
+                            validate_private_records(corrupt, settings, '.')
+                        if mode == 'custom':
+                            for tag, payload, message in (
+                                    (b'CSGD', struct.pack('<10f', *[1.]*10), 'value differs'),
+                                    (b'DATA', struct.pack('<I', 1), 'flags differ'),
+                                    (b'EDID', b'WrongPrivateName\0', 'identity/count')):
+                                corrupt = copy.deepcopy(generated)
+                                corrupt[1].replace(tag, payload)
+                                with self.assertRaisesRegex(ValueError, message):
+                                    validate_private_records(corrupt, settings, '.')
+                            corrupt = copy.deepcopy(generated)
+                            corrupt[0].replace(b'ZNAM', struct.pack('<I', 12))
+                            with self.assertRaisesRegex(ValueError, 'does not reference'):
+                                validate_private_records(corrupt, settings, '.')
+
+
 @unittest.skipUnless(find_game(), 'Local Skyrim.esm required')
 class CombatStyleIntegrationTests(unittest.TestCase):
     @classmethod
@@ -112,9 +158,10 @@ class CombatStyleIntegrationTests(unittest.TestCase):
         config['values']['magic_score'] = 5.5
         for mode in ('existing', 'custom'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory(dir=ROOT/'build/test-tmp') as directory:
-                settings = FollowerSettings(combat_style_mode=mode, combat_style_custom=config)
+                settings = FollowerSettings(combat_style_mode=mode, combat_style_custom=config, sitting_enabled=False)
                 path = build_npc(self.data, directory, settings, self.catalog)
                 parsed = list(records(path))
+                validate_private_records(parsed, settings, directory)
                 styles = [r for r in parsed if r.kind == b'CSTY']
                 npc = next(r for r in parsed if r.form_id == NPC_ID)
                 self.assertEqual(len({r.form_id for r in parsed}), len(parsed))

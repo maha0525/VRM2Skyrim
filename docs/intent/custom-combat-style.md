@@ -32,3 +32,11 @@ unknown-data preservation, reserved-ID isolation and original-record immutabilit
 Browser evidence is in `build/ui-roles/combat-style-*.png` and test logs.
 Run `python tests/browser-roles-fixture.py`, then
 `node tests/browser-combat-style.cjs` with Playwright available.
+
+The final output validator must account for the optional private CSTY in both
+fixed and wardrobe builds, with or without seated correction. Inspect the NPC
+ZNAM target, CSTY identity, flags and float32 values in the delivered plugin;
+reject missing/extra records, broken links and altered settings. These checks
+are shared with portable CI tests, not limited to the generation function.
+Before handing over a conversion feature, run a real conversion through the
+final validator, animation checks, enabled previews and installable ZIP.

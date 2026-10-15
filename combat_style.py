@@ -118,3 +118,27 @@ def private_style(settings, catalog):
     logging.info('Private combat style %s (%08X) copied from %s (%08X); changed=%s flags=%s',
                  result.editor_id, result.form_id, source.editor_id, source.form_id, changed, config['flags'])
     return result
+
+
+def validate_generated_style(generated, settings):
+    """Read the delivered CSTY and NPC link, including float32 serialization."""
+    styles = [r for r in generated if r.kind == b'CSTY']
+    npc = next(r for r in generated if r.kind == b'NPC_' and r.editor_id == settings.prefix+'NPC')
+    if settings.combat_style_mode != 'custom':
+        if styles or any(struct.unpack('<I', value)[0] >> 24 == 1 for value in npc.values(b'ZNAM')):
+            raise ValueError('Existing combat style unexpectedly references a private style')
+        return
+    if len(styles) != 1 or styles[0].form_id != CUSTOM_STYLE_ID or styles[0].editor_id != settings.prefix+'CombatStyle':
+        raise ValueError('Private combat style identity/count mismatch')
+    if npc.values(b'ZNAM') != [struct.pack('<I', CUSTOM_STYLE_ID)]:
+        raise ValueError('Follower does not reference its private combat style')
+    style = styles[0]
+    config = settings.combat_style_custom
+    actual = read_style(style)
+    flags = style.values(b'DATA')
+    if (actual is None or not flags or struct.unpack('<I', flags[0])[0] & 7 != config['flags']
+            or bool(style.flags & 0x80000) != bool(config['flags'] & 4)):
+        raise ValueError('Private combat style flags differ from settings')
+    for key, value in config['values'].items():
+        if key not in actual['values'] or struct.pack('<f', actual['values'][key]) != struct.pack('<f', value):
+            raise ValueError('Private combat style value differs from settings: '+key)
