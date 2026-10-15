@@ -32,6 +32,9 @@ def validate(output, skeleton=None):
     output = Path(output).resolve()
     mod = output / "mod"
     settings = load_settings(output)
+    if settings.toon_enabled:
+        from toon import validate_toon
+        validate_toon(output)
     if settings.physics_enabled:
         from fsmp import validate_physics, PROXY, ARM_PROXY
         validate_physics(output)

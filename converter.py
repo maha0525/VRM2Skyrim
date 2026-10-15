@@ -186,6 +186,7 @@ The original VRM appearance uses a private race/skeleton.
 {wardrobe_help}
 {fitting_help}
 {seating_help}
+{('Experimental VRM-only toon shading is enabled. Install the separate VRM2Skyrim Toon shader prototype for the verified Community Shaders build. This is MToon-like shading, not a full MToon implementation. Ordinary Blender previews do not use the runtime toon shader.' if settings.toon_enabled else '')}
 Lip sync and blinking are not included. {('Optional FSMP hair/cloth physics is enabled.' if settings.physics_enabled else 'Hair/cloth physics is disabled.')} Equipment supported by
 this build is listed above; the all-official option includes installed DLC and Creations.
 Ragdoll collision shapes/constraints still require fitting to the avatar.
@@ -296,6 +297,10 @@ def convert(source, game, blender, output, settings, progress=None):
         build_npc(Path(game) / "Data", output, settings, catalog)
         from head_visibility import write_head_assets
         write_head_assets(output, settings)
+        if settings.toon_enabled:
+            stage('実験的なVRM専用トゥーン材質')
+            from toon import prepare_materials
+            prepare_materials(output)
         stage("出力の読み戻し検査")
         from validate import validate
         from verify_animation import verify_animation

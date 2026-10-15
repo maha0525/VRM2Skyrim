@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="converter-version" content="0.10.2-dev">
+  <meta name="converter-version" content="0.11.0-toon.1">
   <title>VRM2Skyrim — フォロワー制作</title><link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -57,6 +57,7 @@
         <p class="eyebrow">STEP 02</p><h2>名前と声を決める</h2><p class="lead">ゲーム内の名前と、フォロワーとして話す声を設定します。</p>
         <div class="grid"><label>NPC名<input id="npc_name" required maxlength="128"></label><label>MOD名<input id="mod_name" required maxlength="128"></label><label>MOD ID<input id="mod_id" required pattern="[A-Za-z][A-Za-z0-9_]{0,63}"><small>英数字と_。ほかのMODと異なるIDにしてください。</small></label><label>作者名<input id="author" maxlength="128" placeholder="任意"></label><label>性別<select id="sex"><option value="female">女性</option><option value="male">男性</option></select></label><label>ボイス<select id="voice"></select><small>標準のフォロワー会話を持つボイスから選択。</small></label></div>
         <div class="note">ボイスはゲームに入っている音声を使います。NPC名・MOD名は日本語も使えます。</div>
+        <details><summary>実験的なトゥーン描画</summary><label class="checkbox"><input id="toon_enabled" type="checkbox">VRMキャラだけにトゥーン風の陰影を付ける</label><p class="hint">別配布のVRM2Skyrim Toonシェーダー試作版と対応するCommunity Shadersが必要です。MToonの影色・明暗の境界を参考にします。標準のBlenderプレビューにはトゥーン描画は反映されません。</p></details>
       </section>
       <section data-step="2" hidden>
         <p class="eyebrow">STEP 03</p><h2>冒険での役割を決める</h2><p class="lead">プリセットから始めて、好みに合わせて調整できます。</p>

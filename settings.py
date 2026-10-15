@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import re
 
-VERSION = "0.10.2-dev"
+VERSION = "0.11.0-toon.1"
 
 
 def identifier(name):
@@ -65,6 +65,7 @@ class FollowerSettings:
     physics_enabled: bool = False
     physics_nodes: list = field(default_factory=list)  # [] selects assigned hair/clothing automatically
     physics_stiffness: float = 1.0
+    toon_enabled: bool = False
 
     def __post_init__(self):
         if not isinstance(self.mod_id, str) or not isinstance(self.author, str):
@@ -108,7 +109,7 @@ class FollowerSettings:
         if any(not isinstance(spell, str) for spell in self.spells):
             raise ValueError("Spell IDs must be strings")
         for name in ("auto_calculate", "marriage", "render_previews", "armor_support", "physics_enabled",
-                     "sitting_enabled", "sitting_auto"):
+                     "sitting_enabled", "sitting_auto", "toon_enabled"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be true or false")
         if (not isinstance(self.physics_nodes, list) or

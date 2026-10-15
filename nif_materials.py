@@ -67,8 +67,13 @@ def normalize_material_colors(document):
         props = properties.get('floatProperties', {})
         material.setdefault('extras', {})['V2S_render_queue'] = properties.get('renderQueue', 3000
                                                       if material.get('alphaMode') == 'BLEND' else 2000)
-        material.setdefault('extensions', {}).setdefault('VRMC_materials_mtoon', {})[
-            'transparentWithZWrite'] = props.get('_BlendMode') == 3
+        mtoon = material.setdefault('extensions', {}).setdefault('VRMC_materials_mtoon', {})
+        mtoon['transparentWithZWrite'] = props.get('_BlendMode') == 3
+        shade = properties.get('vectorProperties', {}).get('_ShadeColor')
+        if shade is not None:
+            mtoon['shadeColorFactor'] = [v/12.92 if v <= .04045 else ((v+.055)/1.055)**2.4 for v in shade[:3]]
+        mtoon['shadingToonyFactor'] = props.get('_ShadeToony', .9)
+        mtoon['shadingShiftFactor'] = props.get('_ShadeShift', 0.)
 
 
 def lighting_flags_2(material):
