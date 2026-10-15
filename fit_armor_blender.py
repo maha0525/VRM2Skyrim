@@ -134,24 +134,30 @@ def main():
         logging.info("Fitted NIF: %s (%s shapes)", path.name, len(objects))
 
     manifest = json.loads((output / "appearance.json").read_text(encoding='utf8'))
+    from appearance_materials import exported_shapes
+    body_materials = {s['name']: s for part in manifest['components'] if part['role'] == 'body'
+                      for s in part.get('shapes', [])}
     if not args.reuse_body:
         manifest["components"] = [part for part in manifest["components"] if part["role"] != "body"]
     region_sets = (("body", (32, 34, 38)), ("hands", (33,)), ("feet", (37,)))
     for region, slots in region_sets:
         if args.mesh_key or args.reuse_body:
             continue
-        objects = []
+        objects, bindings = [], {}
         for part in plan["body"]:
             source = body[part["name"]]
             for slot in slots:
                 faces = [i for i, value in enumerate(part["face_slots"]) if value == slot]
                 if faces:
-                    objects.append(submesh(source, faces, f"{source.name}_{region}_{slot}", slot, rig))
+                    obj = submesh(source, faces, f"{source.name}_{region}_{slot}", slot, rig)
+                    objects.append(obj)
+                    bindings[obj.name] = body_materials[part['name']]
         path = skel.parent / (region + ".nif")
         export(path, objects)
         manifest["components"].insert(0, {"id": region, "file": path.name, "role": "body",
                                            "nodes": settings.appearance_parts["body"], "slot": slots[0],
                                            "slots": list(slots), "partial_source": True,
+                                           "shapes": exported_shapes(path, bindings),
                                            "nif": path.relative_to(output / "mod").as_posix()})
         for obj in objects:
             bpy.data.objects.remove(obj, do_unlink=True)

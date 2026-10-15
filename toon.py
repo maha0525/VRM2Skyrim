@@ -112,6 +112,11 @@ def shader_package(shader_root, output):
     return archive
 
 
+def avatar_paths(output, settings, manifest):
+    mesh_dir = output/'mod/meshes'/settings.asset_dir
+    return {mesh_dir/c['file'] for c in manifest['components']} | set(mesh_dir.glob('fixed_*.nif'))
+
+
 def prepare_materials(output, strength=.15):
     """Mark only source avatar shapes, leaving collisions and existing gear alone."""
     from custom_skeleton import NifFile
@@ -129,17 +134,16 @@ def prepare_materials(output, strength=.15):
         originals = {m['name']: m for m in document.get('materials', [])}
     mod = output/'mod'
     prepared = []
-    mesh_dir = mod/'meshes'/settings.asset_dir
     shapes = {s['name']: s for c in manifest['components'] for s in c.get('shapes', [])}
-    by_diffuse = {s['diffuse'].replace('\\', '/').lower(): s for s in shapes.values() if s.get('diffuse')}
-    paths = {mesh_dir/c['file'] for c in manifest['components']} | set(mesh_dir.glob('fixed_*.nif'))
+    by_file = {c['file']: {s['name']: s for s in c.get('shapes', [])} for c in manifest['components']}
+    paths = avatar_paths(output, settings, manifest)
     for path in sorted(paths):
         with NifFile(str(path.resolve())) as nif:
             infos = []
             for shape in nif.shapes:
                 if shape.name.startswith('V2SCollision_'):
                     continue
-                info = shapes.get(shape.name) or by_diffuse.get(shape.shader.textures.get('Diffuse', '').replace('\\', '/').lower())
+                info = by_file.get(path.name, shapes).get(shape.name)
                 if info is None:
                     raise ValueError('Unregistered source material in toon appearance: '+shape.name)
                 infos.append({**info, 'name': shape.name})
@@ -186,6 +190,7 @@ def validate_toon(output):
     from custom_skeleton import NifFile
     output = Path(output)
     settings = load_settings(output)
+    manifest = json.loads((output/'appearance.json').read_text(encoding='utf8'))
     report = json.loads((output/'toon.json').read_text(encoding='utf8'))
     if not settings.toon_enabled or not report['enabled'] or not report['materials']:
         raise ValueError('Toon material report disagrees with settings')
@@ -211,6 +216,13 @@ def validate_toon(output):
                     or any(p.Emissive_Color[i] != 0 for i in range(3))
                     or shape.shader.textures.get('Glow', '').replace('\\', '/') != relative):
                 raise ValueError('Invalid native toon material marker: '+entry['shape'])
+    expected = set()
+    for path in avatar_paths(output, settings, manifest):
+        with NifFile(str(path.resolve())) as nif:
+            expected.update((path.name, s.name) for s in nif.shapes if not s.name.startswith('V2SCollision_'))
+    if seen != expected:
+        raise ValueError(f'Toon material coverage differs from avatar: missing={sorted(expected-seen)}, '
+                         f'unexpected={sorted(seen-expected)}')
     logging.info('Validated %d zero-emission native toon materials and private DDS controls', len(seen))
     return len(seen)
 

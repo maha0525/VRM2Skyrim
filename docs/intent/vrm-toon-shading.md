@@ -27,6 +27,18 @@ unmarked geometry, changing light and shadow conditions. Inspect the actual
 avatar output. Log shader package source version, compatibility checks and
 generated material identities.
 
+## Split-body and retained-skin material ownership
+
+Splitting the body into torso/hands/feet must retain a material policy for every
+exported shape. Copies retained inside standard-slot clothing inherit that exact
+source policy as well. Record the original source shape and actual exported name
+at the producing stage, and verify the binding survives export. Resolve toon
+materials by those explicit bindings, never by a shared diffuse texture: different
+source materials may share a texture while using different MToon or alpha settings.
+Unknown shapes must still fail rather than acquiring an arbitrary material.
+Verify a real wardrobe + fitting + physics + toon conversion through final
+validation and packaging, including repeated export and shared-texture policies.
+
 Do not modify the installed game, its active graphics setup or saves during
 development. Deliver the optional archives with exact install/removal steps
 for the user to verify in game. An offline render or compile is not proof of

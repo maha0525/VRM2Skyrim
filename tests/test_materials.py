@@ -9,6 +9,22 @@ from nif_materials import normalize_material_colors
 
 
 class MaterialTests(unittest.TestCase):
+    def test_split_and_retained_skin_keep_exact_source_policy(self):
+        from appearance_materials import derived_shape
+        original = {'name': 'VRMNode_00494', 'source_node': 494, 'diffuse': 'textures/shared.dds',
+                    'material_policy': {'name': 'Skin', 'alphaMode': 'MASK', 'alphaCutoff': .2,
+                                        'extensions': {'VRMC_materials_mtoon': {'shadingToonyFactor': .6}}}}
+        torso = derived_shape(original, 'VRMNode_00494_body_32')
+        retained = derived_shape(torso, 'V2SClothingSkin_VRMNode_00494_body_32_32')
+        self.assertEqual(retained['source_shape'], original['name'])
+        self.assertEqual(retained['material_policy'], original['material_policy'])
+        self.assertEqual(retained['source_node'], 494)
+        retained['material_policy']['alphaCutoff'] = .8
+        self.assertEqual(original['material_policy']['alphaCutoff'], .2)
+        self.assertEqual(torso['material_policy']['alphaCutoff'], .2)
+        with self.assertRaisesRegex(ValueError, 'Missing source material metadata'):
+            derived_shape({'name': 'Missing'}, 'Split')
+
     def test_vrm0_mtoon_uses_authoritative_srgb_color_once_and_preserves_opacity(self):
         material = {'pbrMetallicRoughness': {'baseColorFactor': [.5, .25, 1, .375]}, 'alphaMode': 'BLEND'}
         document = {'materials': [material], 'extensions': {'VRM': {'materialProperties': [

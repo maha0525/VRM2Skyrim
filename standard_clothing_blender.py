@@ -22,6 +22,9 @@ def main():
     settings = load_settings(output)
     root = output/'mod/meshes'/settings.asset_dir
     manifest = json.loads((output/'appearance.json').read_text(encoding='utf8'))
+    from appearance_materials import exported_shapes
+    skin_materials = {s['name']: s for part in manifest['components'] if part['role'] == 'body'
+                      for s in part.get('shapes', [])}
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.preferences.addon_enable(module='io_scene_nifly')
     rig = None
@@ -85,6 +88,7 @@ def main():
             continue
         clothing = load(root/part['file'], clothing=True)
         copies = []
+        bindings = {s['name']: s for s in part['shapes']}
         slots = part.get('slots', [part['slot']])
         sources = (['body.nif', 'hands.nif', 'feet.nif'] if part.get('item_kind') == 'full' and part['slot'] == 32
                    else ['hands.nif' if part['slot'] == 33 else 'feet.nif' if part['slot'] == 37 else 'body.nif'])
@@ -97,7 +101,9 @@ def main():
                 faces = [p.index for p in obj.data.polygons if all(any(g.group == group.index and g.weight > .5
                          for g in obj.data.vertices[v].groups) for v in p.vertices)]
                 if faces:
-                    copies.append(submesh(obj, faces, 'V2SClothingSkin_'+obj.name+'_'+str(slot), slot, rig))
+                    copy = submesh(obj, faces, 'V2SClothingSkin_'+obj.name+'_'+str(slot), slot, rig)
+                    copies.append(copy)
+                    bindings[copy.name] = skin_materials[obj.name]
         # PyNifly exports a selected rig's parented meshes too. Retire the
         # imported originals before exporting the explicitly retained copies.
         for obj in skin:
@@ -108,6 +114,7 @@ def main():
                                    blender_xf=False, preserve_hierarchy=True, export_modifiers=False,
                                    export_animations=False, export_colors=True, intuit_defaults=False)
         part['retained_skin'] = True
+        part['shapes'] = exported_shapes(root/part['file'], bindings)
         logging.info('Standard garment retained original skin: %s, slots=%s, shapes=%s', part['id'], slots, len(copies))
         for obj in clothing+copies:
             bpy.data.objects.remove(obj, do_unlink=True)
