@@ -1,5 +1,6 @@
 """A local browser wizard; VRM data and game assets remain on this computer."""
 import argparse
+import errno
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime
@@ -8,6 +9,7 @@ import json
 import hashlib
 import logging
 import mimetypes
+import socket
 from pathlib import Path
 import threading
 from urllib.parse import parse_qs, unquote, urlparse
@@ -33,6 +35,51 @@ def source_fingerprint():
 
 
 BOOT_FINGERPRINT = source_fingerprint()
+
+
+class WizardHTTPServer(ThreadingHTTPServer):
+    # Windows SO_REUSEADDR can report success while requests reach an old
+    # listener. SO_EXCLUSIVEADDRUSE excludes reusable same-address listeners.
+    allow_reuse_address = False
+    allow_reuse_port = False
+
+    def server_bind(self):
+        if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+def make_server(app, port):
+    handler = handler_for(app)
+    try:
+        # Windows permits a specific-address bind beside some legacy wildcard
+        # SO_REUSEADDR listeners even with SO_EXCLUSIVEADDRUSE. Detect those
+        # before binding; do not issue an HTTP request to the other app.
+        if port and port_is_listening(port):
+            raise OSError(errno.EADDRINUSE, 'A listener already responds on this port')
+        return WizardHTTPServer(('127.0.0.1', port), handler)
+    except OSError as error:
+        # Windows reports an exclusive-address collision as either of these.
+        if port == 0 or (error.errno not in (errno.EADDRINUSE, errno.EACCES)
+                         and getattr(error, 'winerror', None) not in (10048, 10013)):
+            raise
+        server = WizardHTTPServer(('127.0.0.1', 0), handler)
+        logging.warning('Port %s is occupied or unavailable (%s). '
+                        'Opening this wizard at http://127.0.0.1:%s; existing processes are unchanged.',
+                        port, error, server.server_address[1])
+        return server
+
+
+def port_is_listening(port):
+    try:
+        with socket.create_connection(('127.0.0.1', port), timeout=.25):
+            return True
+    except ConnectionRefusedError:
+        return False
+    except TimeoutError:
+        # Windows can delay connection-refused notifications past this probe.
+        # A timeout is not evidence of a listener; exclusive bind decides next.
+        return False
 
 
 class WizardApplication:
@@ -446,17 +493,19 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     app = WizardApplication()
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(app))
-    url = f"http://127.0.0.1:{server.server_address[1]}"
-    print(f"VRM2Skyrim {VERSION}: {url}\nCtrl+C to stop", flush=True)
-    if not args.no_browser:
-        webbrowser.open(url)
+    server = None
     try:
+        server = make_server(app, args.port)
+        url = f"http://127.0.0.1:{server.server_address[1]}"
+        print(f"VRM2Skyrim {VERSION}: {url}\nCtrl+C to stop", flush=True)
+        if not args.no_browser:
+            webbrowser.open(url)
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        server.server_close()
+        if server is not None:
+            server.server_close()
         app.close()
 
 

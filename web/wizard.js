@@ -252,7 +252,7 @@ async function init() {
   const expected=document.querySelector('meta[name="converter-version"]').content;
   if(env.restart_required||(/^\d+\.\d+\./.test(env.version)&&env.version!==expected)){
     $('next').disabled=true;$('create').disabled=true;$('source').disabled=true;
-    throw new Error(`ウィザードの再起動が必要です（起動中 ${env.version}／画面 ${expected}）。ウィザードを起動したターミナルで Ctrl+C を押し、Launch.cmd を開き直してから、このページを再読み込みしてください。設定JSONを保存済みなら再起動後に読み込めます。`);
+    throw new Error(`ウィザードの再起動が必要です（起動中 ${env.version}／画面 ${expected}）。古いウィザードのターミナルで Ctrl+C を押し、Launch.cmd を開き直してください。新しく開いたページを使ってください（ポート番号が変わることがあります）。設定JSONを保存済みなら再起動後に読み込めます。`);
   }
   state.defaults=env.defaults;$('version').textContent='VRM2Skyrim '+env.version;$('game').value=env.game;$('blender').value=env.blender;applySettings(env.defaults);
   initWardrobe();

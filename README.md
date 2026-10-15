@@ -37,6 +37,8 @@ Requirements:
 
 Processing runs on your PC. Models are not uploaded to external services. The tool does not modify the input VRM, game Data folder, or saves, and it does not change your Blender user preferences. To stop the wizard, press Ctrl+C in the terminal that launched it.
 
+If the wizard's port is already in use, the launcher selects a free port and opens that instance's URL. Use the newly opened page or the URL printed in its terminal; an older tab can still point to an older process. Existing processes are not stopped automatically.
+
 Install Blender separately from its [official website](https://www.blender.org/download/lts/). Generated MODs with headgear face/hair switching or seated height correction require [SKSE64](https://skse.silverlock.org/). With both options and physics disabled, fixed appearance and original-outfit separation do not require SKSE64. Creation Kit, RaceMenu, and XPMSSE are not mandatory.
 
 Version 0.9.6 adds **seated height correction** in STEP 03. Automatic calculation uses the official sitting pose and the original avatar proportions, with an optional manual adjustment. It preserves standing proportions and corrects sinking into base-game chairs and benches. Generated MODs with this option enabled require SKSE64. See [settings and supported furniture](docs/SEATING.md).
