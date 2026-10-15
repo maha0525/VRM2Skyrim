@@ -10,7 +10,7 @@ Materials retain the original VRM's single/double-sided rendering and transparen
 
 Followers start **inside the Temple of Kynareth in Whiterun**. The tool sets up the vanilla follower factions, a friendly relationship with the player, a recruitment-compatible voice, and a persistent placed reference, so the NPC can be recruited through dialogue.
 
-The stable version on `main` is **0.11.0**. It includes optional hair/cloth physics, removable original VRM headwear, seated height correction, material fidelity fixes, and a wizard with class growth details and categorized Perks/spells. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
+The stable version on `main` is **0.11.1**. It includes a Japanese/English wizard, optional hair/cloth physics, removable original VRM headwear, seated height correction, material fidelity fixes, and class growth details with categorized Perks/spells. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
 
 An **experimental, off-by-default** option adds MToon-like lighting for converted avatars using a separate Community Shaders adapter. The adapter is pinned to a verified shader source and is not a general replacement for other CS versions. See [adapter creation, installation, removal and verification](docs/TOON.md).
 
@@ -18,7 +18,7 @@ For optional physics, enable **髪・布を揺らす** in the wizard, select the
 
 Version 0.8.1 fixes Engine Fixes texture-load warnings caused by compressing small or unaligned images as BC7. These images now use uncompressed RGBA8 DDS, keeping their original dimensions and pixels. DDS format, dimensions, and mip storage are checked during conversion and output validation. This is a texture-only correction; existing followers do not need a save reset for this update.
 
-The wizard interface is currently Japanese. English descriptions of its controls below are translations; some original Japanese labels are included to help locate them.
+Use the **日本語 / English** selector at the upper right to change the wizard language without resetting your work. It initially follows your browser language and remembers your choice. Game names and descriptions come directly from Skyrim's localized data: for example, the skill **Sneak** and the Perk **Stealth** retain their distinct original names. If English strings are missing, Editor IDs are shown. Japanese overrides stored under English filenames fall back to native English archive entries. NPC names, clothing names, IDs and exported settings are preserved when switching languages.
 
 ## Getting started
 

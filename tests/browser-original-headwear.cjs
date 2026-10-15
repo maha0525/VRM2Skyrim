@@ -13,7 +13,7 @@ const source=fs.existsSync(actualSource)?JSON.parse(fs.readFileSync(actualSource
 (async()=>{
  const browser=await chromium.launch({headless:true,channel:'chrome',downloadsPath:out});
  try {
-  const page=await browser.newPage({acceptDownloads:true,viewport:{width:1440,height:1100}}),errors=[];let preview;
+  const page=await browser.newPage({locale:'ja-JP',acceptDownloads:true,viewport:{width:1440,height:1100}}),errors=[];let preview;
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',async route=>{
    const req=route.request(),url=new URL(req.url());let data;

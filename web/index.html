@@ -2,11 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="converter-version" content="0.11.0">
+  <meta name="converter-version" content="0.11.1">
   <title>VRM2Skyrim — フォロワー制作</title><link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header><a class="brand" href="/">VRM<span>2</span>Skyrim</a><span class="local">● このPC内で変換</span></header>
+<header><a class="brand" href="/">VRM<span>2</span>Skyrim</a><div class="header-tools"><span class="local">● このPC内で変換</span><select id="language" aria-label="Language / 言語" data-no-i18n><option value="ja">日本語</option><option value="en">English</option></select></div></header>
 <div class="layout">
   <aside><p class="eyebrow">FOLLOWER CREATOR</p><h1>あなたのアバターを、<br>旅の仲間に。</h1>
     <p class="intro">元の姿を保ったまま、<br>スカイリムの世界へ。</p>
@@ -73,6 +73,7 @@
         <p class="eyebrow">STEP 04</p><h2>得意技を加える</h2><p class="lead">Perkと魔法は任意。ゲーム内のレコードから検索して選べます。</p><p class="note">スキルレベルはSTEP 03で設定します。スキル値を上げてもPerkは自動追加されません。ここで選んだPerkをNPCへ直接付与します。プレイヤー用のPerkツリーの習得条件とは別の設定で、各Perkの効果条件はそのレコードに従います。</p>
         <p class="hint">同名Perkの「段階」は別々の効果です。説明を見て必要な段階を選びます。「効果ランク」は、一つのPerk内に複数の効果ランクがある場合だけ表示します。</p>
         <p class="hint">隠術は欲しい段階を一つ選べば十分です。最大効果なら「隠術（5/5）」だけで構いません。1〜5をすべて選んでも効果は加算されません。</p>
+        <p class="hint">英語のゲーム文字列が見つからない場合はEditor IDを表示します。</p>
         <div class="grid"><div><h3>Perk <span id="perk-count" class="count">0</span></h3><label>スキル・カテゴリ<select id="perk-category"><option value="all">すべて</option></select></label><input id="perk-search" type="search" placeholder="名前・IDで検索" aria-label="Perkを検索"><p id="perk-visible" class="hint"></p><div id="perks" class="choice-list"></div><div id="selected-perks" class="selected"></div></div><div><h3>唱える魔法 <span id="spell-count" class="count">0</span></h3><label>魔法系統<select id="spell-category"><option value="all">すべて</option></select></label><input id="spell-search" type="search" placeholder="名前・IDで検索" aria-label="魔法を検索"><p id="spell-visible" class="hint"></p><div id="spells" class="choice-list"></div><div id="selected-spells" class="selected"></div></div></div>
       </section>
       <section data-step="4" hidden>
@@ -95,5 +96,5 @@
     </section>
   </main>
 </div>
-<script src="wardrobe.js"></script><script src="wizard.js"></script>
+<script src="translations.js"></script><script src="i18n.js"></script><script src="wardrobe.js"></script><script src="wizard.js"></script>
 </body></html>

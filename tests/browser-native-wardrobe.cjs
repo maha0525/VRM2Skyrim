@@ -7,7 +7,7 @@ const assert=require('node:assert/strict');
  const root=path.resolve(__dirname,'../build/ui-native-wardrobe');fs.mkdirSync(root,{recursive:true});
  const browser=await chromium.launch({headless:true,channel:'chrome'});
  try{
-  const page=await browser.newPage({acceptDownloads:true,viewport:{width:1440,height:1100}});
+  const page=await browser.newPage({locale:'ja-JP',acceptDownloads:true,viewport:{width:1440,height:1100}});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(process.env.VRM2SKYRIM_TEST_URL||'http://127.0.0.1:8791');
   await page.waitForFunction(()=>document.querySelector('#game').value.length>0);

@@ -6,7 +6,7 @@ const assert=require('node:assert/strict');
 (async()=>{
  const browser=await chromium.launch({headless:true,channel:'chrome'});
  try{
-  const page=await browser.newPage({viewport:{width:1440,height:1100}});
+  const page=await browser.newPage({locale:'ja-JP',viewport:{width:1440,height:1100}});
   await page.goto(process.env.VRM2SKYRIM_TEST_URL||'http://127.0.0.1:8791');
   await page.waitForFunction(()=>document.querySelector('#game').value.length>0);
   await page.locator('#source').setInputFiles(process.env.VRM2SKYRIM_TEST_VRM);

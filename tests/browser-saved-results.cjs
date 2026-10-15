@@ -10,7 +10,7 @@ const completed=id=>({id,npc_name:'New Follower',plugin_name:'SameFollower.esp',
  const browser=await chromium.launch({headless:true,channel:'chrome'});
  try{
   for(const initiallyEmpty of [true,false]){
-   const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+   const page=await browser.newPage({locale:'ja-JP'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
    let jobs=initiallyEmpty?[]:[{...completed('old'),npc_name:'Old Follower'}],failList=false,listReads=0;
    await page.route('**/*',async route=>{
     const request=route.request(),url=new URL(request.url());let data;

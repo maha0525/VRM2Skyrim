@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 import struct
 
-from bsa import BSA
+from localized_strings import JAPANESE, load_table
 from plugin import records
 
 LOG = logging.getLogger(__name__)
@@ -172,62 +172,26 @@ class OfficialCatalog:
                 return tag
         return None
 
-    def label(self, record, tag=b'FULL'):
+    def label(self, record, tag=b'FULL', language=None):
         values = record.values(tag)
         fallback = record.editor_id if tag == b'FULL' else ''
         if not values:
             return fallback
         if not self.localized[record.form_id]:
-            return values[0].rstrip(b'\0').decode('utf8', 'replace')
+            text = values[0].rstrip(b'\0').decode('utf8', 'replace')
+            return fallback if language == 'en' and JAPANESE.search(text) else text
         if len(values[0]) != 4:
             raise ValueError('Invalid localized equipment string')
         name = self.source[record.form_id]
         extension = 'dlstrings' if tag == b'DESC' else 'strings'
-        key = name, extension
+        key = name, extension, language
         if key not in self.tables:
-            self.tables[key] = self._strings(name, extension)
+            self.tables[key] = self._strings(name, extension, language)
         return self.tables[key].get(struct.unpack('<I', values[0])[0], fallback)
 
-    def _strings(self, plugin, extension):
-        blob = None
-        for language in ('japanese', 'english'):
-            relative = f'strings/{Path(plugin).stem.lower()}_{language}.{extension}'
-            loose = self.data / relative
-            if loose.is_file():
-                blob = loose.read_bytes()
-                break
-            names = ['Skyrim - Interface.bsa'] if plugin.lower() in ('skyrim.esm', 'update.esm') else [Path(plugin).stem + '.bsa']
-            for name in names:
-                path = self.data / name
-                if not path.is_file():
-                    continue
-                if name not in self.archives:
-                    self.archives[name] = BSA(path)
-                archive = self.archives[name]
-                if relative in archive.entries:
-                    blob = archive.read(relative)
-                    break
-            if blob is not None:
-                break
-        if blob is None:
-            return {}
-        count, size = struct.unpack_from('<II', blob)
-        start = 8 + count * 8
-        if start + size > len(blob):
-            raise ValueError('Invalid localized equipment table')
-        result = {}
-        for i in range(count):
-            key, offset = struct.unpack_from('<II', blob, 8 + i * 8)
-            position = start + offset
-            if offset >= size:
-                raise ValueError('Invalid equipment string offset')
-            if extension == 'dlstrings':
-                length = struct.unpack_from('<I', blob, position)[0]
-                value = blob[position + 4:position + 4 + length].rstrip(b'\0')
-            else:
-                value = blob[position:blob.index(b'\0', position)]
-            result[key] = value.decode('utf8', 'replace')
-        return result
+    def _strings(self, plugin, extension, language=None):
+        return load_table(self.data, plugin, extension,
+                          ('english',) if language == 'en' else ('japanese', 'english'), self.archives)
 
     def in_masters(self, record, masters):
         indices = {n.casefold(): i for i, n in enumerate(masters)}

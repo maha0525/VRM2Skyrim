@@ -6,7 +6,7 @@ const assert=require('node:assert/strict');
  assert.notEqual(oldUrl,newUrl);
  const browser=await chromium.launch({headless:true,channel:'chrome'});
  try{
-  const page=await browser.newPage();
+  const page=await browser.newPage({locale:'ja-JP'});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(oldUrl);
   await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('0.9.5-dev'));

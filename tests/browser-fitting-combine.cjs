@@ -10,7 +10,7 @@ const assert=require('node:assert/strict');
   const out=path.resolve(__dirname,'..','build','ui-fitting');fs.mkdirSync(out,{recursive:true});
   const browser=await chromium.launch({headless:true,channel:process.env.VRM2SKYRIM_TEST_BROWSER||'chrome'});
   try{
-    const page=await browser.newPage({acceptDownloads:true,viewport:{width:1440,height:1120}});
+    const page=await browser.newPage({locale:'ja-JP',acceptDownloads:true,viewport:{width:1440,height:1120}});
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     await page.goto(process.env.VRM2SKYRIM_TEST_URL||'http://127.0.0.1:8768');
     await page.waitForFunction(()=>document.querySelector('#game').value.length>0);

@@ -7,7 +7,7 @@ const choices=JSON.parse(fs.readFileSync(path.join(fixture,'roles.json')));
 (async()=>{
  const browser=await chromium.launch({headless:true,channel:'chrome'});
  try{
-  const page=await browser.newPage({acceptDownloads:true,viewport:{width:1440,height:1100}});
+  const page=await browser.newPage({locale:'ja-JP',acceptDownloads:true,viewport:{width:1440,height:1100}});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url());let data;

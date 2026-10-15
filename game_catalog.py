@@ -4,7 +4,7 @@ import struct
 from pathlib import Path
 
 from plugin import records
-from bsa import BSA
+from localized_strings import JAPANESE, load_table
 from settings import SKILLS
 
 KINDS = {b"NPC_", b"ARMO", b"ARMA", b"RACE", b"FACT", b"VTYP", b"WEAP", b"PACK",
@@ -25,6 +25,10 @@ CLASS_LABELS = {'Blade': 'ブレイズの戦士（デルフィンのクラス）
 SKILL_LABELS = dict(zip(SKILLS, ('片手武器', '両手武器', '弓術', '防御', '鍛冶', '重装', '軽装',
                                 'スリ', '開錠', '隠密', '錬金術', '話術', '変性', '召喚', '破壊',
                                 '幻惑', '回復', '付呪')))
+SKILL_LABELS_EN = dict(zip(SKILLS, ('One-Handed', 'Two-Handed', 'Archery', 'Block', 'Smithing',
+                                   'Heavy Armor', 'Light Armor', 'Pickpocket', 'Lockpicking',
+                                   'Sneak', 'Alchemy', 'Speech', 'Alteration', 'Conjuration',
+                                   'Destruction', 'Illusion', 'Restoration', 'Enchanting')))
 
 
 def effect_ranks(record):
@@ -58,52 +62,31 @@ class GameCatalog:
         self.marriage_voice_ids = {struct.unpack("<I", value)[0] for value in marriage_list.values(b"LNAM")}
         self.strings = self.load_strings(Path(data))
         self.descriptions = self.load_strings(Path(data), "dlstrings")
+        self.english_strings = self.load_strings(Path(data), language='english')
+        self.english_descriptions = self.load_strings(Path(data), 'dlstrings', language='english')
 
     @staticmethod
-    def load_strings(data, extension="strings"):
-        blob = None
-        for language in ("japanese", "english"):
-            path = data / "Strings" / f"skyrim_{language}.{extension}"
-            if path.exists():
-                blob = path.read_bytes()
-                break
-        if blob is None and (data / "Skyrim - Interface.bsa").exists():
-            archive = BSA(data / "Skyrim - Interface.bsa")
-            for language in ("japanese", "english"):
-                name = f"strings/skyrim_{language}.{extension}"
-                if name in archive.entries:
-                    blob = archive.read(name)
-                    break
-        if blob is None:
-            return {}
-        count, size = struct.unpack_from("<II", blob)
-        start = 8 + count * 8
-        if start + size > len(blob):
-            raise ValueError("Invalid Skyrim localized string table")
-        result = {}
-        for index in range(count):
-            key, offset = struct.unpack_from("<II", blob, 8 + index * 8)
-            if offset >= size:
-                raise ValueError("Invalid Skyrim string offset")
-            position = start + offset
-            if extension == "dlstrings":
-                length = struct.unpack_from("<I", blob, position)[0]
-                value = blob[position + 4:position + 4 + length].rstrip(b"\0")
-            else:
-                end = blob.index(b"\0", position)
-                value = blob[position:end]
-            result[key] = value.decode("utf8", "replace")
-        return result
+    def load_strings(data, extension="strings", language=None):
+        return load_table(data, 'Skyrim.esm', extension, (language,) if language else ('japanese', 'english'))
 
-    def label(self, record, tag=b"FULL"):
+    def label(self, record, tag=b"FULL", language=None):
         values = record.values(tag)
         if not values:
             return record.editor_id if tag == b"FULL" else ""
         value = values[0]
         if len(value) == 4:
-            table = self.descriptions if tag == b"DESC" else self.strings
+            if language == 'en':
+                table = self.english_descriptions if tag == b'DESC' else self.english_strings
+            else:
+                table = self.descriptions if tag == b"DESC" else self.strings
             return table.get(struct.unpack("<I", value)[0], record.editor_id if tag == b"FULL" else "")
-        return value.rstrip(b"\0").decode("utf8", "replace")
+        text = value.rstrip(b"\0").decode("utf8", "replace")
+        if language == 'en' and JAPANESE.search(text):
+            return record.editor_id if tag == b'FULL' else ''
+        return text
+
+    def localized(self, record, tag=b'FULL'):
+        return {'ja': self.label(record, tag), 'en': self.label(record, tag, language='en')}
 
     def require(self, editor_id, kind=None):
         record = self.by_editor_id.get(editor_id)
@@ -130,7 +113,7 @@ class GameCatalog:
         result = self.by_form_id.get(struct.unpack('<I', race[0])[0]) if race else None
         return result if result and result.kind == b'RACE' else None
 
-    def style_usage(self):
+    def style_usage(self, language=None):
         """Positive usage evidence, not a claim that CSTY is race-restricted."""
         usage = {}
         for actor in self.choices(b'NPC_'):
@@ -151,7 +134,7 @@ class GameCatalog:
                 continue
             kind = 'humanoid' if all(p.startswith('actors/character/') for p in paths) else 'other'
             row = usage.setdefault(style, {'humanoid': set(), 'other': set()})
-            row[kind].add(self.label(race))
+            row[kind].add(self.label(race, language=language))
         return usage
 
     def validate_settings(self, settings):
@@ -230,12 +213,15 @@ class GameCatalog:
         for key, kind in (("voices", b"VTYP"), ("classes", b"CLAS"), ("styles", b"CSTY"),
                           ("weapons", b"WEAP"), ("ammunition", b"AMMO"), ("perks", b"PERK"), ("spells", b"SPEL")):
             result[key] = [{"id": r.editor_id, "label": self.label(r), "description": self.label(r, b"DESC"),
+                            'labels': self.localized(r), 'descriptions': self.localized(r, b'DESC'),
                             "ranks": r.values(b"DATA")[0][2] if kind == b"PERK" else None}
                            for r in self.choices(kind)
                            if (kind != b"VTYP" or r.form_id in self.follower_voice_ids)
                            and (kind != b'SPEL' or (castable_spell(r) and r.form_id in self.learnable_spells))]
         for item in result['classes']:
             item['label'] = CLASS_LABELS.get(item['id'], item['label'])
+            if item['id'] == 'Blade':
+                item['labels'] = {'ja': CLASS_LABELS['Blade'], 'en': "Blades Warrior (Delphine's class)"}
             item['growth'] = class_growth(self.require(item['id']))
         perk_categories, stages = self.perk_categories()
         for item in result['perks']:
@@ -245,21 +231,28 @@ class GameCatalog:
             item['effect_ranks'] = effect_ranks(record)
         for item in result['spells']:
             item['categories'] = self.spell_categories(self.require(item['id']), perk_categories)
-        result['categories'] = [{'id': key, 'label': label} for key, label in SKILL_LABELS.items()]
-        result['categories'].append({'id': 'other', 'label': 'その他・特殊効果'})
+        result['categories'] = [{'id': key, 'label': label, 'labels': {'ja': label, 'en': SKILL_LABELS_EN[key]}}
+                                for key, label in SKILL_LABELS.items()]
+        result['categories'].append({'id': 'other', 'label': 'その他・特殊効果',
+                                     'labels': {'ja': 'その他・特殊効果', 'en': 'Other / special effects'}})
         usage = self.style_usage()
+        english_usage = self.style_usage(language='en')
         for item in result['styles']:
             row = usage.get(self.require(item['id']).form_id, {'humanoid': set(), 'other': set()})
             item['humanoid'] = bool(row['humanoid'])
             item['used_by'] = sorted(row['humanoid'] | row['other'])
+            en_row = english_usage.get(self.require(item['id']).form_id, {'humanoid': set(), 'other': set()})
+            item['used_by_localized'] = {'ja': item['used_by'], 'en': sorted(en_row['humanoid'] | en_row['other'])}
         logging.debug('Wizard catalog: %d classes, %d combat styles (%d with character-skeleton NPC usage)',
                       len(result['classes']), len(result['styles']), sum(s['humanoid'] for s in result['styles']))
         result["marriage_voices"] = [r.editor_id for r in self.choices(b"VTYP") if r.form_id in self.marriage_voice_ids]
+        result['english_strings_available'] = bool(self.english_strings)
         from armor_catalog import official_choices, slot_mask
         from official_catalog import OfficialCatalog
         catalog = OfficialCatalog(self.path.parent)
         result['equipment_plugins'] = catalog.plugins
         result['armors'] = [{'id': catalog.key(r), 'editor_id': r.editor_id, 'key': catalog.key(r), 'label': catalog.label(r),
+                             'labels': {'ja': catalog.label(r), 'en': catalog.label(r, language='en')},
                              'plugin': catalog.identity(r)[0], 'mask': slot_mask(r),
                              'addons': [{'key': catalog.key(a), 'name': a.editor_id, 'mask': slot_mask(a)}
                                         for a in catalog.addon_records(r, sex)]}

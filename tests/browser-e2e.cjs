@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
   fs.mkdirSync(root, { recursive: true });
   const browser = await chromium.launch({headless:true,...(process.env.VRM2SKYRIM_TEST_BROWSER ? {channel:process.env.VRM2SKYRIM_TEST_BROWSER} : {})});
   try {
-    const page = await browser.newPage({viewport:{width:1440,height:1120},acceptDownloads:true});
+    const page = await browser.newPage({locale:'ja-JP',viewport:{width:1440,height:1120},acceptDownloads:true});
     const errors=[]; page.on('pageerror', error=>errors.push(error.message));
     await page.goto(process.env.VRM2SKYRIM_TEST_URL || 'http://127.0.0.1:8768');
     await page.locator('#game').waitFor();

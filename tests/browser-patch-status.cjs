@@ -7,7 +7,7 @@ const assert=require('node:assert/strict');
  const out=path.resolve(__dirname,'../build/ui-patch-status');fs.mkdirSync(out,{recursive:true});
  const browser=await chromium.launch({headless:true,channel:'chrome'});
  try{
-  const page=await browser.newPage({acceptDownloads:true,viewport:{width:1440,height:1100}});
+  const page=await browser.newPage({locale:'ja-JP',acceptDownloads:true,viewport:{width:1440,height:1100}});
   await page.goto(process.env.VRM2SKYRIM_TEST_URL||'http://127.0.0.1:8791');
   await page.waitForFunction(()=>[...document.querySelectorAll('#saved-job option')].some(o=>o.textContent.includes('ErysWardrobe.esp')));
   const erys=await page.locator('#saved-job option').evaluateAll(xs=>xs.find(x=>x.textContent.includes('ErysWardrobe.esp')).value);

@@ -5,7 +5,7 @@ const fs=require('node:fs');const path=require('node:path');const assert=require
  const root=path.resolve(__dirname,'../build/physics/ui');fs.mkdirSync(root,{recursive:true});
  const browser=await chromium.launch({headless:true,channel:'chrome'});
  try{
-  const page=await browser.newPage({acceptDownloads:true,viewport:{width:1400,height:1100}});
+  const page=await browser.newPage({locale:'ja-JP',acceptDownloads:true,viewport:{width:1400,height:1100}});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(process.env.VRM2SKYRIM_TEST_URL||'http://127.0.0.1:8795');
   await page.waitForFunction(()=>document.querySelector('#game').value.length>0);
