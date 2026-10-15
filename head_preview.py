@@ -122,15 +122,15 @@ def preview(workspace, source, game, blender, settings, armor_id, policy, progre
               'physics_enabled': False, 'sitting_enabled': False, 'toon_enabled': False, 'render_previews': False}
     prepared = FollowerSettings.from_dict(values)
     if base is None:
-        progress('アバターを初回準備しています（約1分かかる場合があります）')
+        progress('プレビューを準備しています…')
         base = new_output(root/'avatars', base_key)
         prepare_source(source, base, prepared)
         convert_appearance(source, game, blender, base, prepared, progress)
-        progress('プレビュー用の身体と衣服を準備しています')
+        progress('身体と衣服を準備しています…')
         fit(base, game/'Data', blender, skin_only=True)
         if any(g['slot'] in (32, 33, 34, 37, 38) for g in prepared.appearance_parts['garments']):
             run_blender(blender, 'standard_clothing_blender.py', ['--output', base], base, 'Preview clothing')
-        progress('アバターのテクスチャをプレビュー用に準備しています')
+        progress('テクスチャを準備しています…')
         for texture in (base/'mod/textures').rglob('*.dds'):
             decode_dds(texture, base/'dds-preview')
         publish(base, base_key)
@@ -141,7 +141,7 @@ def preview(workspace, source, game, blender, settings, armor_id, policy, progre
     output = ready_output(root/'equipment', gear_key)
     equipment_reused = output is not None
     if output is None:
-        progress('アバターを再利用し、選んだ頭装備だけを体型に合わせています')
+        progress('頭装備を合わせています…')
         output = new_output(root/'equipment', gear_key)
         shutil.copytree(base, output, dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns('*.blend', '*.blend1', '*.log', '*.glb', '*.npz',
@@ -164,7 +164,7 @@ def preview(workspace, source, game, blender, settings, armor_id, policy, progre
         except (OSError, ValueError):
             render_reused = False
     if not render_reused:
-        progress('準備済みのモデルで頭装備の見た目を描画しています')
+        progress('プレビューを描画しています…')
         arguments = ['--output', output, '--wardrobe', 'armor:'+armor.editor_id, '--keep-clothes', '--head-closeup',
                      '--hide-face' if policy['hide_face'] else '--no-hide-face',
                      '--hide-hair' if policy['hide_hair'] else '--no-hide-hair']

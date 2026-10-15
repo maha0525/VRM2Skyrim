@@ -118,7 +118,7 @@ completed caches across restarts, and invalidate for changed avatar geometry,
 classification, sex/height, source profile, source assets or converter code.
 Only publish a ready cache after success; incomplete/corrupt caches rebuild.
 Show first-use preparation guidance (about a minute, depending on the model),
-current phase and reuse feedback. Verify two different real headgear requests
+current phase. Keep cache reuse details in logs, not UI copy. Verify two different real headgear requests
 plus a policy-only rerender, with one avatar preparation and no MOD packaging.
 
 
@@ -131,3 +131,17 @@ There were no ESP/ZIP files anywhere in the preview cache. The Falmer close-up
 is pixel-identical to the previous full-conversion preview; Iron Helmet images
 were visually inspected. A normal full MOD conversion and final validator also
 pass after extracting shared appearance and DDS preview preparation.
+
+## 2026-10-16 user-facing copy audit
+
+Audit all five steps, result/edit screens, and generated helper/status messages in
+Japanese and English. Keep text only when it helps a user choose, act, understand
+a current state, or anticipate a meaningful limit/wait. Do not present internal
+architecture, cache reuse, output implementation, QA requests, assurances about
+completed requirements, or information already conveyed by a label. The preview
+notice is one sentence: the first preview may take about a minute. Preserve
+prerequisites, recovery instructions, native Skyrim terminology, stage selection
+advice, saved settings, and all controls. Show shared clothing-slot guidance once
+instead of repeating it for each garment. Logs and developer docs retain internal
+details. Verify localized screens, loading/navigation and JSON round trips through
+the existing browser flows; keep the first-preview warning separate from progress.

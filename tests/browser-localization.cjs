@@ -58,7 +58,7 @@ const source={source_id:'fixture',sha256:'a'.repeat(64),filename:'テスト.vrm'
   const positions=await page.evaluate(()=>['armor_support','fit-enabled','wardrobe-parts','wardrobe-garments','physics-settings','wardrobe-preview-panel'].map(id=>document.getElementById(id).getBoundingClientRect().top));
   assert.ok(positions.every((y,i)=>i===0||y>positions[i-1]),'Equipment, classification, clothes, physics and preview follow the requested visual order');
   assert.match(await page.locator('#fit_source').locator('..').textContent(),/Source equipment appearance/);
-  assert.match(await page.locator('#fit-panel').textContent(),/New items added by third-party equipment mods are outside this scope/);
+  assert.match(await page.locator('#fit-panel').textContent(),/Equipment added by mods is not supported/);
   await page.locator('#armor_support').selectOption('false');
   assert.equal(await page.locator('#wardrobe-editor').isVisible(),false);assert.equal(await page.locator('#wardrobe-preview-panel').isVisible(),false);
   assert.equal(await page.locator('#physics-panel').isVisible(),true);assert.equal(await page.locator('#physics-meshes input[data-node="2"]').isChecked(),true);
@@ -68,7 +68,7 @@ const source={source_id:'fixture',sha256:'a'.repeat(64),filename:'テスト.vrm'
   await page.locator('#wardrobe-preview').click();
   const preview=(await previewRequest).postDataJSON();assert.equal(preview.wardrobe,'underwear');assert.deepEqual(preview.settings.physics_nodes,[2]);
   await page.waitForFunction(()=>!document.querySelector('#wardrobe-preview').disabled);
-  assert.equal(await page.locator('#wardrobe-preview-status').textContent(),'Preview the avatar with or without clothing.');
+  assert.equal(await page.locator('#wardrobe-preview-status').textContent(),'');
   await page.locator('#language').selectOption('ja');
   assert.match(await page.locator('#fit_mode').locator('..').textContent(),/対応させる装備/);
   assert.match(await page.locator('#fit_source').locator('..').textContent(),/元にする装備の見た目/);
@@ -131,7 +131,9 @@ const source={source_id:'fixture',sha256:'a'.repeat(64),filename:'テスト.vrm'
   // Retry through the actual button, then complete a synthetic job.
   jobStatus='complete';await page.locator('#create').click();await page.locator('#result').waitFor({state:'visible'});
   assert.equal(await page.locator('#result-title').textContent(),'スミレ in Skyrim!');
+  await page.screenshot({path:path.join(fixture,'copy-audit-result-en.png'),fullPage:true});
   await page.locator('#language').selectOption('ja');assert.equal(await page.locator('#result-title').textContent(),'スミレを、スカイリムへ。');
+  await page.screenshot({path:path.join(fixture,'copy-audit-result-ja.png'),fullPage:true});
   await page.locator('#language').selectOption('en');assert.match(await page.locator('#output-folder').textContent(),/C:\/fixture\/スミレ/);
   await page.reload();await page.waitForFunction(()=>document.querySelector('#game').value.length>0);assert.equal(await page.locator('html').getAttribute('lang'),'en');
   await page.locator('#language').selectOption('ja');await page.reload();await page.waitForFunction(()=>document.querySelector('#game').value.length>0);assert.equal(await page.locator('html').getAttribute('lang'),'ja');

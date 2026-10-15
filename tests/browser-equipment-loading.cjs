@@ -26,7 +26,7 @@ const source={source_id:'fixture',sha256:'a'.repeat(64),filename:'fixture.vrm',m
    }
    else if(url.pathname==='/api/validate')data={settings:req.postDataJSON().settings};
    else if(url.pathname==='/api/head-preview')data={job_id:'head'};
-   else if(url.pathname==='/api/jobs/head')data={id:'head',status:headDone?'complete':'running',stage:headDone?'頭装備のプレビューを更新しました':'アバターを初回準備しています（約1分かかる場合があります）',previews:[]};
+   else if(url.pathname==='/api/jobs/head')data={id:'head',status:headDone?'complete':'running',stage:headDone?'頭装備のプレビューを更新しました':'プレビューを準備しています…',previews:[]};
    if(data!==undefined)return route.fulfill({json:data});
    const name=url.pathname==='/'?'index.html':url.pathname.slice(1),file=path.join(root,'web',name);
    return route.fulfill({body:fs.readFileSync(file),contentType:name.endsWith('.js')?'application/javascript':name.endsWith('.css')?'text/css':'text/html'});
@@ -61,9 +61,9 @@ const source={source_id:'fixture',sha256:'a'.repeat(64),filename:'fixture.vrm',m
   assert.equal(await page.locator('#fit_mode').inputValue(),'selected');assert.equal(await page.locator('#fit-armors').inputValue(),helmet.id);
   await page.locator('#fit-panel details summary').click();
   assert.match(await page.locator('#fit-panel').textContent(),/初回プレビュー.*約1分/);
-  await page.locator('#head-preview').click();await page.waitForFunction(()=>document.querySelector('#head-preview-status').textContent.includes('初回準備'));
+  await page.locator('#head-preview').click();await page.waitForFunction(()=>document.querySelector('#head-preview-status').textContent.includes('プレビューを準備'));
   assert.equal(await page.locator('#head-preview').isDisabled(),true);
-  await page.locator('#language').selectOption('en');assert.match(await page.locator('#head-preview-status').textContent(),/about a minute/);
+  await page.locator('#language').selectOption('en');assert.match(await page.locator('#head-preview-status').textContent(),/Preparing preview/);
   assert.equal(await page.locator('#head-preview').isDisabled(),true);headDone=true;
   await page.waitForFunction(()=>!document.querySelector('#head-preview').disabled);
   fail=true;await start();await page.locator('#fit-enabled').check();

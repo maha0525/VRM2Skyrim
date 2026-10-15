@@ -27,33 +27,33 @@
         <div id="wardrobe-editor" hidden>
           <label class="checkbox"><input id="fit-enabled" type="checkbox" aria-describedby="catalog-status">既存装備をこの身体に合わせる</label>
           <p id="catalog-status" class="hint" role="status" aria-live="polite" hidden></p>
-          <div id="fit-panel" hidden><p class="hint">体型合わせの利用にはSkyPatcherとSKSE64が必要です。登録設定はMOD ZIPに同梱します。</p>
+          <div id="fit-panel" hidden><p class="hint">SkyPatcherとSKSE64が必要です。</p>
             <label>対応させる装備<select id="fit_mode"><option value="all_official">公式装備すべて（本体・導入済みDLC・公式追加コンテンツ）</option><option value="selected">一覧から選んだ公式装備</option></select></label>
-            <p class="hint">対象は本体・導入済みDLC・公式追加コンテンツの装備です。装備MODが新しく追加したアイテムは対象外です。</p>
+            <p class="hint">MODで追加された装備は対象外です。</p>
             <label>元にする装備の見た目<select id="fit_source"><option value="official">標準の見た目（公式の元モデル）</option><option value="installed">置き換えた見た目（UNP/CBBE版・BodySlide出力など）</option></select></label>
-            <p class="hint">どちらを選んでも、装備をVRMの体型に合わせた専用モデルとして出力します。例えば鉄の鎧なら、公式の元モデルを使うか、導入したCBBE版などの置換モデルを使うかの違いです。置換ファイルがない装備は標準の見た目を使います。</p>
-            <p class="hint">置換モデルを使う場合は、導入済みの身体と装備のBodySlideプリセットを揃えてください。</p>
+            <p class="hint">置き換えていない装備は、標準の見た目を使います。</p>
+            <p class="hint">置換モデルを使う場合は、身体と装備のBodySlideプリセットを揃えてください。</p>
             <label id="fit-selection">対応させる公式装備（複数選択）<select id="fit-armors" multiple size="8"></select></label>
             <p id="fit-count" class="hint"></p>
             <details><summary>頭装備で顔・髪を隠す設定</summary>
-              <label class="checkbox"><input id="head-hide-face" type="checkbox">顔を隠す（全体デフォルト設定）</label>
-              <label class="checkbox"><input id="head-hide-hair" type="checkbox" checked>髪の枠を使う装備では髪を隠す（全体デフォルト設定）</label>
-              <p class="hint">頭装備の初回プレビューは、アバターの準備に約1分かかる場合があります。次の装備からは準備済みのモデルを再利用します。プレビューではMODのESPやZIPは作りません。</p>
+              <label class="checkbox"><input id="head-hide-face" type="checkbox">顔を隠す（既定）</label>
+              <label class="checkbox"><input id="head-hide-hair" type="checkbox" checked>髪を覆う装備では髪を隠す（既定）</label>
+              <p class="hint">初回プレビューは約1分かかる場合があります。</p>
               <label>装備を検索<input id="head-search" type="search" placeholder="兜・フードの名前"></label>
-              <label>見た目を確認する頭装備<select id="head-model"></select></label><p id="head-count" class="hint"></p><div id="head-policies"></div><p id="head-preview-status" class="hint" role="status"></p><div id="head-preview-images" class="preview-grid"></div><p class="hint">同じ装備モデルの付呪違いにも反映します。サークレットは既定で髪を残します。顔・髪の切替にはSKSE64が必要です。</p>
+              <label>見た目を確認する頭装備<select id="head-model"></select></label><p id="head-count" class="hint"></p><div id="head-policies"></div><p id="head-preview-status" class="hint" role="status"></p><div id="head-preview-images" class="preview-grid"></div><p class="hint">付呪違いにも適用されます。サークレットは既定で髪を隠しません。</p>
             </details>
-            <p class="hint">同じ形の装備は共有して変換します。鎧・手袋・靴を装備すると、対応する元衣装が外れます。SkyPatcher用の登録設定はフォロワーのZIPに同梱します。変換後にはOutfit Studio用の身体・骨格と編集用装備も出力します。</p>
+            <p class="hint">鎧・手袋・靴を装備すると、同じ部位の元衣装が外れます。</p>
           </div>
-          <h3>身体と衣服を分類する</h3><p class="hint">名前から分類候補を出しています。身体、下着、顔・髪などの常時表示、着脱する衣服を確認してください。身体と服が一体のメッシュは、この画面では切断しません。</p>
-          <p class="hint">元VRMの服を着脱する装備にできます。身体が独立しているモデルでは、本体ゲームの鎧・手袋・靴を体型へ合わせることもできます。</p>
+          <h3>身体と衣服を分類する</h3><p class="hint">各メッシュの用途を確認してください。身体と服が一体の場合は分けられません。</p>
+
           <p id="wardrobe-warning" role="status"></p>
           <div id="wardrobe-parts" class="wardrobe-parts"></div>
-          <details class="reset-help"><summary>メッシュの割り当てをやり直す</summary><p class="hint">身体・下着・顔・髪・衣服の手動割り当てと衣服グループを消し、読み込み時の名前から推定した割り当てに戻します。</p><button type="button" id="wardrobe-reset" class="secondary">読み込み時の自動割り当てに戻す</button></details>
-          <h3>生成する衣服</h3><p class="hint">胴の衣装セット・手袋・靴に分けると、同じ部位の防具とゲーム本来の処理で入れ替わります。マントやアクセサリーは別枠で併用できます。</p><p id="wardrobe-migration" class="hint" hidden>以前の設定を読み込み、鎧と入れ替える衣服を部位ごとのセットへまとめました。衣服名・装備枠・初期装備を確認してください。</p><div class="wardrobe-actions"><button type="button" id="wardrobe-combine" class="secondary">衣服を一品にまとめる</button><button type="button" id="wardrobe-split" class="secondary">胴・手袋・靴に分ける</button></div><div id="wardrobe-garments"></div><button type="button" id="wardrobe-add" class="add-garment">＋ 衣服を追加</button><p class="hint">上のメッシュ一覧で「着脱する衣服」を選び、追加した衣服へ割り当てます。同じ枠の品は同時装備できません。重ね着を作る場合だけ追加枠を指定します。</p>
+          <details class="reset-help"><summary>メッシュの割り当てをやり直す</summary><p class="hint">手動の割り当てと衣服グループを破棄します。</p><button type="button" id="wardrobe-reset" class="secondary">読み込み時の自動割り当てに戻す</button></details>
+          <h3>生成する衣服</h3><p class="hint">同じ部位の防具と入れ替わります。マントやアクセサリーは併用できます。</p><p id="wardrobe-migration" class="hint" hidden>以前の設定を読み込み、鎧と入れ替える衣服を部位ごとのセットへまとめました。衣服名・装備枠・初期装備を確認してください。</p><div class="wardrobe-actions"><button type="button" id="wardrobe-combine" class="secondary">衣服を一品にまとめる</button><button type="button" id="wardrobe-split" class="secondary">胴・手袋・靴に分ける</button></div><div id="wardrobe-garments"></div><button type="button" id="wardrobe-add" class="add-garment">＋ 衣服を追加</button><p class="hint">追加した衣服に、上の一覧からメッシュを割り当ててください。</p><p class="hint">同じ枠の衣服は同時に着られません。重ね着は一品にまとめるか、追加枠を使ってください。</p>
         </div>
         <div id="physics-settings">
         <label class="checkbox"><input id="physics_enabled" type="checkbox">髪・布を揺らす（FSMP）</label>
-        <div id="physics-panel" hidden><p class="hint">使用時にFaster HDT-SMPと、ゲームに対応するSKSE64が必要です。元VRMの独立した骨がある髪・衣服を変換します。外すと従来どおり固定した外観になります。</p><label>揺れの硬さ<select id="physics_stiffness"><option value="0.3">柔らかめ（揺れが大きめ）</option><option value="1">穏やか（標準）</option><option value="3">硬め（揺れが小さめ）</option></select></label><p class="hint">標準は揺れが続きにくい設定です。髪・布の長さに合わせて減衰を自動調整し、ねじれを抑えます。風による揺れは加えません。衣服の付け根と腕に沿う部分は身体の動きに追従させ、その先の布を揺らします。</p><p class="hint">揺らすメッシュを選んでください。未選択の場合は、分類した髪・衣服を自動で対象にします。身体や硬いアクセサリーは対象から外してください。</p><p id="physics-warning" class="warning" role="status" hidden></p><div id="physics-meshes" class="choices"></div></div>
+        <div id="physics-panel" hidden><p class="hint">Faster HDT-SMPとSKSE64が必要です。独立したボーンのある髪・衣服に対応します。</p><label>揺れの硬さ<select id="physics_stiffness"><option value="0.3">柔らかめ（揺れが大きめ）</option><option value="1">穏やか（標準）</option><option value="3">硬め（揺れが小さめ）</option></select></label><p class="hint">未選択なら髪・衣服を自動選択します。身体や硬い小物は選ばないでください。</p><p id="physics-warning" class="warning" role="status" hidden></p><div id="physics-meshes" class="choices"></div></div>
         </div>
         <div id="wardrobe-preview-panel" hidden>
           <h3>プレビュー</h3>
@@ -64,38 +64,38 @@
         <div class="import-row"><label class="link-button">保存した設定を読み込む<input type="file" id="import-settings" accept=".json" hidden></label><span id="import-status"></span></div>
       </section>
       <section data-step="1" hidden>
-        <p class="eyebrow">STEP 02</p><h2>名前と声を決める</h2><p class="lead">ゲーム内の名前と、フォロワーとして話す声を設定します。</p>
+        <p class="eyebrow">STEP 02</p><h2>名前と声を決める</h2>
         <div class="grid"><label>NPC名<input id="npc_name" required maxlength="128"></label><label>MOD名<input id="mod_name" required maxlength="128"></label><label>MOD ID<input id="mod_id" required pattern="[A-Za-z][A-Za-z0-9_]{0,63}"><small>英数字と_。ほかのMODと異なるIDにしてください。</small></label><label>作者名<input id="author" maxlength="128" placeholder="任意"></label><label>性別<select id="sex"><option value="female">女性</option><option value="male">男性</option></select></label><label>ボイス<select id="voice"></select><small>標準のフォロワー会話を持つボイスから選択。</small></label></div>
-        <div class="note">ボイスはゲームに入っている音声を使います。NPC名・MOD名は日本語も使えます。</div>
-        <details><summary>実験的なトゥーン描画</summary><label class="checkbox"><input id="toon_enabled" type="checkbox">VRMキャラだけにトゥーン風の陰影を付ける</label><p class="hint">別配布のVRM2Skyrim Toonシェーダー試作版と対応するCommunity Shadersが必要です。MToonの影色・明暗の境界を参考にします。標準のBlenderプレビューにはトゥーン描画は反映されません。</p></details>
+        <div class="note">NPC名・MOD名は日本語も使えます。</div>
+        <details><summary>実験的なトゥーン描画</summary><label class="checkbox"><input id="toon_enabled" type="checkbox">VRMキャラだけにトゥーン風の陰影を付ける</label><p class="hint">VRM2Skyrim Toonと対応するCommunity Shadersが必要です。プレビューには反映されません。</p></details>
       </section>
       <section data-step="2" hidden>
         <p class="eyebrow">STEP 03</p><h2>冒険での役割を決める</h2><p class="lead">プリセットから始めて、好みに合わせて調整できます。</p>
         <label>戦闘プリセット<select id="preset"><option value="warrior">片手武器の戦士</option><option value="twohand">両手武器の戦士</option><option value="archer">弓使い</option><option value="mage">破壊魔法の使い手</option><option value="conjurer">召喚魔法の使い手</option><option value="custom">個別に設定</option></select></label>
         <div class="grid"><label>能力の成長タイプ（クラス）<select id="combat_class"></select></label><label>戦闘スタイル<select id="combat_style"></select></label><label>開始武器<select id="weapon"></select></label><label>矢・弾（100本）<select id="ammunition"></select></label><label>レベル<select id="level_mode"><option value="player">プレイヤーのレベルに追従</option><option value="fixed">固定レベル</option></select></label><label id="fixed-level">固定レベル<input id="level" type="number" min="1" max="1000"></label><label id="mult-level">追従倍率<input id="level_multiplier" type="number" min=".1" max="10" step=".1"></label><label>最低レベル<input id="min_level" type="number" min="1" max="1000"></label><label>能力の計算<select id="auto_calculate"><option value="true">クラスとレベルから自動成長</option><option value="false">個別スキルを手動指定</option></select></label><label>最高レベル<input id="max_level" type="number" min="1" max="1000"></label></div>
-        <div id="class-details" class="note" aria-live="polite"></div><label class="checkbox"><input id="all-styles" type="checkbox">動物・怪物向けを含む、すべての戦闘スタイルを表示</label><p id="style-details" class="hint" aria-live="polite"></p><p class="hint">通常は、人間用の骨格を持つNPCで使用例があるスタイルを表示します。スタイル自体に種族の使用制限はありませんが、動物・怪物用の設定は人型の攻撃動作に適さない場合があります。</p>
+        <div id="class-details" class="note" aria-live="polite"></div><label class="checkbox"><input id="all-styles" type="checkbox">動物・怪物向けを含む、すべての戦闘スタイルを表示</label><p id="style-details" class="hint" aria-live="polite"></p><p class="hint">動物・怪物用のスタイルは、人型で正常に動かない場合があります。</p>
         <section class="combat-style-panel">
           <label>戦闘スタイルの使い方<select id="combat_style_mode"><option value="existing">既存スタイルをそのまま使う</option><option value="custom">このフォロワー専用に調整する</option></select></label>
-          <p class="hint">上の戦闘スタイルを選び、コピーして調整できます。選び直しただけでは現在の調整は変わりません。</p>
+          <p class="hint">コピー元を選び直すだけでは、調整中の値は変わりません。</p>
           <button id="copy-combat-style" type="button" class="secondary">選択中のスタイルからコピーして調整</button>
           <div id="combat-style-editor" hidden>
             <h3 id="combat-style-source"></h3>
             <p class="hint">装備優先度は行動の選択に使う重みです。攻撃力の倍率や、固定の使用確率ではありません。</p>
             <div id="combat-style-basic"></div><div id="combat-style-advanced"></div>
             <button id="reset-combat-style" type="button" class="secondary">すべてコピー元へ戻す</button>
-            <p class="hint">元データで省略された項目は「ゲーム既定」です。数値を入れた項目だけ明示設定します。元のスタイルや他のNPCは変更しません。</p>
+            <p class="hint">空欄の項目はゲーム既定の値を使います。</p>
           </div>
         </section>
         <div class="grid three"><label>基礎体力<input id="health" type="number" min="1" max="32000"></label><label>基礎マジカ<input id="magicka" type="number" min="0" max="32000"></label><label>基礎スタミナ<input id="stamina" type="number" min="0" max="32000"></label></div><p class="hint" id="stat-hint">成長前の基礎値を指定します。レベル追従または自動計算を有効にすると、クラスとレベルに応じた成長分が加わります。</p>
         <details><summary>生存・性格・サイズ・配置を調整</summary><div class="grid"><label>死亡ルール<select id="protection"><option value="protected">保護：プレイヤー以外には倒されない</option><option value="essential" selected>不死：誰にも倒されない</option><option value="mortal">通常：死亡する</option></select></label><label>勇敢さ<select id="confidence"><option value="4">恐れ知らず</option><option value="3">勇敢</option><option value="2">普通</option><option value="1">慎重</option><option value="0">臆病</option></select></label><label>攻撃性<select id="aggression"><option value="0">自分や仲間を守る</option><option value="1">敵対者を攻撃する</option><option value="2">中立の相手にも攻撃する</option></select></label><label>犯罪への対応<select id="morality"><option value="3">犯罪をしない</option><option value="2">盗みを許容する</option><option value="1">敵への暴力を許容する</option><option value="0" selected>制限しない</option></select></label><label>全体の大きさ<input id="height_scale" type="number" min=".25" max="3" step=".05"><small>体型の比率を保つ一様な倍率。</small></label><label class="checkbox"><input id="marriage" type="checkbox">結婚候補にする</label><label>聖堂内の左右オフセット<input id="spawn_offset_x" type="number" min="-200" max="200" step="8"></label><label>聖堂内の前後オフセット<input id="spawn_offset_y" type="number" min="-200" max="200" step="8"></label></div></details>
-        <details id="sitting-settings"><summary>椅子に座ったときの高さ補正</summary><label class="checkbox"><input id="sitting_enabled" type="checkbox" checked>着座中の高さを補正する（SKSE64が必要）</label><label class="checkbox"><input id="sitting_auto" type="checkbox" checked>元の体型と公式の着座姿勢から自動計算する</label><label>高さの微調整<input id="sitting_offset" type="number" min="-100" max="100" step="0.5"><small>Skyrim単位。＋で上へ、−で下へ。自動計算を使う場合は、その結果に加算します。</small></label><p class="hint">小柄なモデルが座面へ沈むのを補正します。立ち姿の身長・体型は変えません。本体ゲームの椅子・ベンチが対象です。別MODの家具高さ補正を使う場合は、この補正をオフにしてください。</p></details>
+        <details id="sitting-settings"><summary>椅子に座ったときの高さ補正</summary><label class="checkbox"><input id="sitting_enabled" type="checkbox" checked>着座中の高さを補正する（SKSE64が必要）</label><label class="checkbox"><input id="sitting_auto" type="checkbox" checked>元の体型と公式の着座姿勢から自動計算する</label><label>高さの微調整<input id="sitting_offset" type="number" min="-100" max="100" step="0.5"><small>Skyrim単位。＋で上へ、−で下へ。自動計算を使う場合は、その結果に加算します。</small></label><p class="hint">公式の椅子・ベンチに対応します。他のMODで着座の高さを補正する場合はオフにしてください。</p></details>
         <details id="manual-skills"><summary>18種類のスキルレベルを設定</summary><p id="skills-hint" class="hint"></p><button type="button" id="use-manual-skills" class="secondary">スキルレベルを手動で設定する</button><div id="skill-inputs" hidden><div id="skills" class="grid three"></div></div></details>
       </section>
       <section data-step="3" hidden>
-        <p class="eyebrow">STEP 04</p><h2>得意技を加える</h2><p class="lead">Perkと魔法は任意。ゲーム内のレコードから検索して選べます。</p><p class="note">スキルレベルはSTEP 03で設定します。スキル値を上げてもPerkは自動追加されません。ここで選んだPerkをNPCへ直接付与します。プレイヤー用のPerkツリーの習得条件とは別の設定で、各Perkの効果条件はそのレコードに従います。</p>
-        <p class="hint">同名Perkの「段階」は別々の効果です。説明を見て必要な段階を選びます。「効果ランク」は、一つのPerk内に複数の効果ランクがある場合だけ表示します。</p>
-        <p class="hint">隠術は欲しい段階を一つ選べば十分です。最大効果なら「隠術（5/5）」だけで構いません。1〜5をすべて選んでも効果は加算されません。</p>
-        <p class="hint">英語のゲーム文字列が見つからない場合はEditor IDを表示します。</p>
+        <p class="eyebrow">STEP 04</p><h2>得意技を加える</h2><p class="lead">Perkと魔法を追加できます（任意）。</p><p class="note">スキルレベルはSTEP 03で設定します。スキルを上げてもPerkは自動習得しません。</p>
+        <p class="hint">同名Perkは説明を見て必要な段階を選んでください。</p>
+        <p class="hint">隠術は欲しい段階を一つ選びます。最大効果なら5/5だけで十分です。複数選んでも加算されません。</p>
+
         <div class="grid"><div><h3>Perk <span id="perk-count" class="count">0</span></h3><label>スキル・カテゴリ<select id="perk-category"><option value="all">すべて</option></select></label><input id="perk-search" type="search" placeholder="名前・IDで検索" aria-label="Perkを検索"><p id="perk-visible" class="hint"></p><div id="perks" class="choice-list"></div><div id="selected-perks" class="selected"></div></div><div><h3>唱える魔法 <span id="spell-count" class="count">0</span></h3><label>魔法系統<select id="spell-category"><option value="all">すべて</option></select></label><input id="spell-search" type="search" placeholder="名前・IDで検索" aria-label="魔法を検索"><p id="spell-visible" class="hint"></p><div id="spells" class="choice-list"></div><div id="selected-spells" class="selected"></div></div></div>
       </section>
       <section data-step="4" hidden>
@@ -103,18 +103,18 @@
         <div id="summary" class="review"></div>
         <label class="checkbox"><input id="render_previews" type="checkbox" checked>出力モデルの静止・歩行・剣動作のプレビューを作る</label>
         <button type="button" id="export-settings" class="secondary">設定JSONを保存</button>
-        <div class="note">元VRMとゲームのDataは変更しません。衣服対応を有効にすると、分類した元衣装を着脱する装備として出力します。</div>
+
       </section>
       <nav id="navigation"><button id="back" type="button" class="secondary" hidden>戻る</button><span></span><button id="next" type="button" class="primary">次へ →</button><button id="create" type="button" class="primary" hidden>フォロワーMODを作る</button></nav>
     </form>
     <section id="progress" hidden><p class="eyebrow">CONVERTING</p><h2>世界への入口を作っています</h2><p id="stage" aria-live="polite"></p><div class="progress-bar"><div></div></div><ol id="events"></ol><pre id="failure" hidden></pre></section>
-    <section id="result" hidden><p class="eyebrow">READY TO INSTALL</p><h2 id="result-title"></h2><p class="lead">フォロワーMODのZIPを作成しました。</p><a id="download" class="primary" download>MOD ZIPを保存</a><div id="armor-patch-result" hidden><h3>防具の体型合わせ</h3><div id="skypatcher-install-help"><p class="hint">登録設定はこのフォロワーのMOD ZIPに含まれています。SkyPatcherを一度導入すれば、フォロワーの追加・削除ごとの統合パッチ作成は不要です。変更後はゲームを再起動してください。</p><p class="hint">SkyPatcher.iniのiEnableArmorPatchingとiEnableFormlistPatchingを1にしてください。別のフォロワーの設定やSkyPatcher.iniは、このZIPで上書きしません。</p></div><p id="deployed-patch-status" role="status"></p><button id="check-deployed-patch" type="button" class="secondary">Deploy後に確認</button></div><div class="install"><h3>ゲームへ迎える</h3><ol><li>ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行。</li><li><code id="plugin-name"></code>を有効にして、Skyrimを起動し直す。</li><li>ホワイトランのキナレス聖堂で話しかけて仲間にする。</li></ol><p>待機・解散などは標準のフォロワー会話を使います。元衣装の着脱確認コマンドはZIP内のvrm2skyrim/&lt;MOD ID&gt;/README.txtにあります。</p></div><div id="previews" class="preview-grid"></div><p class="hint">画像は出力ファイルを読み戻したプレビューです。勧誘・衣服の着脱・装備交換・再起動後の状態は導入後に確認してください。転倒時の物理は未対応です。</p><button id="again" type="button" class="secondary">もう一体作る</button><p id="output-folder" class="hint"></p></section>
+    <section id="result" hidden><p class="eyebrow">READY TO INSTALL</p><h2 id="result-title"></h2><a id="download" class="primary" download>MOD ZIPを保存</a><div id="armor-patch-result" hidden><h3>防具の体型合わせ</h3><div id="skypatcher-install-help"><p class="hint">SkyPatcherを導入してください。変更後はゲームの再起動が必要です。</p><p class="hint">SkyPatcher.iniのiEnableArmorPatchingとiEnableFormlistPatchingを1にしてください。</p></div><p id="deployed-patch-status" role="status"></p><button id="check-deployed-patch" type="button" class="secondary">Deploy後に確認</button></div><div class="install"><h3>ゲームへ迎える</h3><ol><li>ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行。</li><li><code id="plugin-name"></code>を有効にして、Skyrimを起動し直す。</li><li>ホワイトランのキナレス聖堂で話しかけて仲間にする。</li></ol></div><div id="previews" class="preview-grid"></div><p class="hint">転倒時の物理は未対応です。</p><button id="again" type="button" class="secondary">もう一体作る</button><p id="output-folder" class="hint"></p></section>
     <section id="equipment-edit" hidden>
       <h3>Outfit Studioで形を仕上げる</h3><a id="edit-kit-download" class="secondary" download>身体・骨格・編集用装備を保存</a>
       <label>仕上げた装備を戻す<select id="edit-mesh"></select></label>
       <label>編集済みNIF<input id="edit-nif" type="file" accept=".nif"></label>
       <button id="import-edit" type="button" class="secondary">形を取り込み、MOD ZIPを更新</button>
-      <p class="hint">頂点と法線を取り込み、元のウェイト・素材・装備枠を保ちます。同じVRMで再変換すると保存した仕上げを再利用します。手順は編集用ZIPのREADME.txtにあります。</p><p id="edit-status" role="status"></p>
+      <p class="hint">形の変更に対応します。編集手順はZIP内のREADME.txtを参照してください。</p><p id="edit-status" role="status"></p>
     </section>
   </main>
 </div>

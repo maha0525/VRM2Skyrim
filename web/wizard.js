@@ -122,7 +122,7 @@ function catalogIdentity(){return JSON.stringify([$('game').value,$('blender').v
 function renderCatalogStatus(){
   const busy=!!state.catalogLoading;
   $('catalog-status').hidden=!busy&&!state.catalogError;
-  $('catalog-status').textContent=busy?tr('装備の一覧を読み込んでいます… 完了するまでお待ちください。'):state.catalogError?tr(state.catalogError):'';
+  $('catalog-status').textContent=busy?tr('装備の一覧を読み込んでいます…'):state.catalogError?tr(state.catalogError):'';
   $('fit-panel').setAttribute('aria-busy',String(busy));
   $('fit-enabled').disabled=busy;
   $('fit-count').hidden=busy;
@@ -147,7 +147,7 @@ function setupFitting(autoDefaults=true) {
   for(const item of state.choices?.armors||[]){const option=new Option(`${recordLabel(item)} (${item.editor_id}) · ${item.plugin}`,item.id);option.dataset.editorId=item.editor_id;option.selected=selected.has(item.id)||selected.has(item.editor_id);$('fit-armors').add(option);}
   $('fit-panel').hidden=!$('fit-enabled').checked;
   $('fit-selection').hidden=$('fit_mode').value==='all_official';
-  $('fit-count').textContent=tr("{0}品 · {1}", (state.choices?.armors||[]).length.toLocaleString(), (state.choices?.equipment_plugins||[]).join(' / '));
+  $('fit-count').textContent=tr("{0}品", (state.choices?.armors||[]).length.toLocaleString());
   if(autoDefaults&&$('fit-enabled').checked&&!$('fit-armors').selectedOptions.length){for(const option of $('fit-armors').options)option.selected=['ArmorIronBandedCuirass','ArmorIronBoots'].includes(option.dataset.editorId);}
   renderHeadPolicies();
 }
@@ -160,7 +160,7 @@ function renderHeadPolicies(){
   const visible=[...rows.values()].filter(a=>!filter||`${a.label} ${a.name}`.toLowerCase().includes(filter));
   selector.replaceChildren(...visible.map(a=>new Option(`${a.label} (${a.name})`,a.key)));
   if(visible.some(a=>a.key===previous))selector.value=previous;
-  $('head-count').textContent=tr("{0}モデル。装備を一つ選んで表示設定と見た目を確認できます。", visible.length);
+  $('head-count').textContent=tr("{0}モデル", visible.length);
   if(selector.value!==previous){$('head-preview-images').replaceChildren();$('head-preview-status').textContent='';}
   const addon=rows.get(selector.value);if(!addon)return;
   const row=document.createElement('div');row.dataset.addon=addon.key;row.className='head-policy-card';
@@ -224,7 +224,7 @@ function updateRoleDetails() {
   if(growth){
     const entries=Object.entries(growth.skills).filter(([,weight])=>weight>0).sort((a,b)=>b[1]-a[1]);
     const skillText=entries.map(([key,weight])=>`${tr(skillLabels[skills.indexOf(key)])} ${weight}`).join(' ／ ');
-    for(const text of [tr("得意スキルの成長配分：{0}", skillText||tr("配分なし")),tr("体力 {0}：マジカ {1}：スタミナ {2}", growth.attributes.health, growth.attributes.magicka, growth.attributes.stamina), tr("数字は成長配分の比率です。自動計算で使われ、個別スキルの手動指定ではスキル値をこの配分から計算しません。")]){const p=document.createElement('p');p.textContent=text;target.append(p);}
+    for(const text of [tr("得意スキルの成長配分：{0}", skillText||tr("配分なし")),tr("体力 {0}：マジカ {1}：スタミナ {2}", growth.attributes.health, growth.attributes.magicka, growth.attributes.stamina), tr("数字は自動成長の配分比率です。")]){const p=document.createElement('p');p.textContent=text;target.append(p);}
   }else target.textContent=tr("このクラスの成長配分を読み取れませんでした。");
   const style=state.choices?.styles.find(item=>item.id===$('combat_style').value);
   $('style-details').textContent=style?tr("{0}。使用種族：{1}。", style.humanoid?tr("人型NPCでの使用例あり"):tr("人型NPCでの使用例を確認できないスタイル"), (style.used_by_localized?.[i18n.language]||style.used_by)?.join(i18n.language==='en'?', ':'、')||tr("確認できず")):'';
