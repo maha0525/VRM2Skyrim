@@ -1,5 +1,55 @@
 # VRM-only toon shading prototype
 
+## Prototype 4: authored face shade through the proven texture binding
+
+Restore face materials' own shade RGB and add equalized GI through their lit
+surface, following the official MToon lighting definition and the installed
+UniVRM MToon0/10 sources. Keep the legacy 8x4 path unchanged for other materials.
+Face ownership comes from component/source-node provenance. Do not flatten the
+face mesh or normals and do not infer face identity from shared textures.
+
+Reuse the proven native Glowmap t6 binding. A BC7 RGB shade image has a separate
+four-row metadata strip at the bottom, using constant 4x4 blocks, after repeat gutters. The shader
+checks the signature/version with Load at mip 0, samples only the image domain,
+with repeat gutters preventing strip bleeding. Zero native emission keeps shader-free
+fallback intact. One mip avoids feeding marker RGB into shade minification;
+image resolution is retained and BC7 bounds its memory cost. Validate compressed
+metadata and reject unsupported UV/addressing rather than silently sampling a
+different image. Completed compression caches are content-addressed and hashed.
+
+For current followers, produce a small patch with changed head NIFs/DDS only;
+do not require a full conversion. Compare the complete head, with all layers
+still present, from the same front-facing camera and lighting. Include legacy
+marker compatibility, native fallback, no light, alpha, deferred AO bypass,
+shade-texture colour/UV edges and corrupt metadata/cache checks. MToon0's ramp
+must be migrated by preserving both interval endpoints, not by copying its
+different shift/toony definitions directly into MToon1.
+
+## Face diagnosis after Prototype 3 game confirmation
+
+The user confirmed the diagnostic is flat with SSGI enabled and the normal
+prototype now looks toon-like, but Quon's cheeks still look hollow. The attached
+Quon_Misaki_TH_VRM1.vrm (SHA256 7e1b1cf763779a890c3f338c054aabef8cf5363e532bdfac5b91dc6335a40b2f)
+looks normal in Unity. Its actual format is legacy VRM; the previous conversion
+input was VRM1, hash 3e2651b280ecafe6beae35374b863d70dcc2ec4c6becb06aa1dae5279e145fc4.
+Do not infer format from the filename or compare raw array indices/coordinates:
+the legacy file repeats the full vertex buffer for each primitive, while the
+previous input compacts it. Indexed face positions/normals/UV agree after the
+VRM coordinate rotation (-x,y,-z), to floating-point precision. No active default
+morphs are present in the old input. The converter's posed source reference and
+output geometry agree; normalized NIF normal error is below 0.33 degrees for
+99% of vertices, with isolated maxima around 4.34 degrees. The custom-normal
+reset is a general preservation concern, not an established cause here.
+
+The source face uses a separate Misaki_face_2 shade texture, shade colour factor
+1, authored MToon edge controls and rim/emission inputs. The prototype discards
+shade textures and caps pale multipliers at 0.55. Prioritize restoring authored
+face shading before flattening geometry/normals or asking the user to undo edits.
+Keep complete head layers and identical illumination/camera in comparisons.
+Audit arrays and reports: build/toon-face-normal-audit/. Actual Unity lighting
+is not reproduced by the offscreen fixture; do not call source appearance matched
+until that comparison succeeds.
+
 ## Activation failure: isolate before adjusting appearance
 
 The user installed the Prototype 2 diagnostic and observed no pink. The deployed
@@ -106,7 +156,7 @@ Use the native Glowmap technique's t6 texture binding with a private 8x4
 RGBA8 signature and alpha-channel parameters. Emission remains zero. The
 wrapper delegates unmarked lighting to the original EvaluateLighting;
 marked materials use two-band direct lighting and flatter directional GI.
-Exclude unskinned and True PBR permutations. Pin the entire installed
+Exclude landscape and True PBR permutations; do not require SKINNED on pixel shaders. Pin the entire installed
 Lighting.hlsl SHA256: the DLL's 1.9.0.0 version alone did not identify its
 actual shader source. Carry VRM 0/1 shade/lit color ratios and shadow-edge
 parameters; outlines, shade textures, matcaps and rim light remain outside

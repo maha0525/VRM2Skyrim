@@ -40,7 +40,7 @@ def control_bytes(parameters):
     return bytes(header+pixels)
 
 
-def parameters_for(material, strength=.15):
+def parameters_for(material, strength=.15, authored=False):
     mtoon = material.get('extensions', {}).get('VRMC_materials_mtoon', {})
     # A calm prototype palette. Original shade multipliers tint this palette;
     # source shade textures, matcaps, outlines and rim effects are not ported.
@@ -48,7 +48,7 @@ def parameters_for(material, strength=.15):
     lit = material.get('pbrMetallicRoughness', {}).get('baseColorFactor', [1, 1, 1, 1])
     return {'shade': [max(0., min(1., shade[i]/lit[i]))*(1-strength) if lit[i] > 1e-6 else 1-strength
                       for i in range(3)],
-            'toony': max(0., min(.98, mtoon.get('shadingToonyFactor', .9))),
+            'toony': max(0., min(1. if authored else .98, mtoon.get('shadingToonyFactor', .9))),
             'shift': max(-1., min(1., mtoon.get('shadingShiftFactor', 0.))),
             'gi_equalization': max(0., min(1., mtoon.get('giEqualizationFactor', .9)))}
 
@@ -91,8 +91,10 @@ def patch_lighting(source, diagnostic=False):
     # output. Clear deferred reflection/GI inputs as well as local specular.
     text = text.replace(forward, '''#if !defined(LANDSCAPE) && !defined(LODLANDSCAPE) && !defined(TRUE_PBR)
     if (V2SToonEnabled) {
-        color.xyz = saturate(material.BaseColor) * V2SToonResolve(
-            V2SToonDirectSum, V2SToonUnshadedSum, v2sAmbient, V2SToon.shade);
+        color.xyz = V2SToonAuthored ? V2SToonResolveAuthored(
+            V2SToonDirectSum, V2SToonUnshadedSum, v2sAmbient, saturate(material.BaseColor)) :
+            saturate(material.BaseColor) * V2SToonResolve(
+                V2SToonDirectSum, V2SToonUnshadedSum, v2sAmbient, V2SToon.shade);
         specularColor = 0;
         indirectLobeWeights.specular = 0;
         indirectLobeWeights.diffuse = 0;
@@ -160,16 +162,17 @@ def shader_package(shader_root, output, diagnostic=False):
     shutil.copy2(shader_root/'LICENSE', target/'VRM2Skyrim/CommunityShaders-LICENSE.txt')
     shutil.copy2(ROOT/'docs/TOON.md', target/'VRM2Skyrim/README.md')
     shutil.copy2(ROOT/'LICENSE', target/'VRM2Skyrim/VRM2Skyrim-LICENSE.txt')
-    metadata = {'prototype': 3, 'diagnostic': diagnostic, 'community_shaders_dll_version': '1.9.0.0',
+    metadata = {'prototype': 4, 'diagnostic': diagnostic, 'community_shaders_dll_version': '1.9.0.0',
                 'lighting_sha256': SUPPORTED_LIGHTING,
                 'patched_lighting_sha256': hashlib.sha256(patched).hexdigest(),
                 'composite_sha256': SUPPORTED_COMPOSITE,
                 'patched_composite_sha256': hashlib.sha256(composite).hexdigest(),
-                'scope': 'non-landscape non-PBR Glowmap material with exact 8x4 DDS signature',
+                'scope': 'non-landscape non-PBR Glowmap with private legacy or authored-face DDS signature',
+                'authored_face_metadata_version': 1,
                 'original_evaluation_for_unmarked_materials': True}
     (target/'VRM2Skyrim/adapter.json').write_text(json.dumps(metadata, indent=2), encoding='utf8')
     suffix = '-Diagnostic' if diagnostic else ''
-    archive = output/f'VRM2Skyrim-Toon-Shader-Prototype-3{suffix}.zip'
+    archive = output/f'VRM2Skyrim-Toon-Shader-Prototype-4{suffix}.zip'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
         for path in sorted((output/folder).rglob('*')):
             if path.is_file():
@@ -192,16 +195,21 @@ def prepare_materials(output, strength=.15):
     settings.save(output/'settings.json')
     manifest = json.loads((output/'appearance.json').read_text(encoding='utf8'))
     originals = {}
+    document, binary = None, None
     if (output/'source.glb').exists():
         from inspect_vrm import read_glb
         from nif_materials import normalize_material_colors
-        document, _ = read_glb(output/'source.glb')
+        document, binary = read_glb(output/'source.glb')
         normalize_material_colors(document)
         originals = {m['name']: m for m in document.get('materials', [])}
     mod = output/'mod'
     prepared = []
     shapes = {s['name']: s for c in manifest['components'] for s in c.get('shapes', [])}
     by_file = {c['file']: {s['name']: s for s in c.get('shapes', [])} for c in manifest['components']}
+    face_files = {c['file'] for c in manifest['components'] if c.get('id') == 'face'}
+    face_nodes = {s['source_node'] for c in manifest['components'] if c.get('id') == 'face'
+                  for s in c.get('shapes', []) if 'source_node' in s}
+    authored_cache = {}
     paths = avatar_paths(output, settings, manifest)
     for path in sorted(paths):
         with NifFile(str(path.resolve())) as nif:
@@ -218,14 +226,24 @@ def prepare_materials(output, strength=.15):
             if material is None:
                 raise ValueError('Regenerate the appearance to retain source material metadata')
             material = originals.get(material.get('name'), material)
-            parameters = parameters_for(material, strength)
-            data = control_bytes(parameters)
+            authored = (document is not None and 'VRMC_materials_mtoon' in material.get('extensions', {})
+                        and (path.name in face_files or info.get('source_node') in face_nodes))
+            parameters = parameters_for(material, 0. if authored else strength, authored=authored)
+            extra = {}
+            if authored:
+                from toon_shade import build_shade
+                cache_key = json.dumps([material, parameters], sort_keys=True)
+                if cache_key not in authored_cache:
+                    authored_cache[cache_key] = build_shade(output, document, binary, material, parameters)
+                data, extra = authored_cache[cache_key]
+            else:
+                data = control_bytes(parameters)
             digest = hashlib.sha256(data).hexdigest()[:16]
             relative = f'textures/{settings.asset_dir}/toon_{digest}.dds'
             texture = mod/relative
             texture.parent.mkdir(parents=True, exist_ok=True)
             texture.write_bytes(data)
-            validate_dds(texture, (8, 4), 'R8G8B8A8_UNORM')
+            validate_dds(texture, extra.get('size', (8, 4)), 'BC7_UNORM' if authored else 'R8G8B8A8_UNORM')
             with NifFile(str(path.resolve())) as nif:
                 shape = next(s for s in nif.shapes if s.name == info['name'])
                 properties = shape.shader.properties
@@ -244,11 +262,13 @@ def prepare_materials(output, strength=.15):
                 if shape.shader.properties.Emissive_Mult != 0:
                     raise ValueError('Toon marker must not illuminate the fallback material')
             prepared.append({'file': path.name, 'shape': info['name'], 'control': relative,
-                             'parameters': parameters})
+                             'parameters': parameters, **extra})
     report = {'prototype': 1, 'enabled': True, 'materials': prepared, 'game_verified': False}
+    report['authored_face_shapes'] = sum(e.get('profile') == 'authored_face' for e in prepared)
     (output/'toon.json').write_text(json.dumps(report, indent=2), encoding='utf8')
     validate_toon(output)
     logging.info('Toon prototype: %d source shapes; zero emission, original alpha/skin retained', len(prepared))
+    logging.info('Authored face shading: %d shapes; source shade RGB and lit-colour ambient', report['authored_face_shapes'])
     return report
 
 
@@ -260,7 +280,7 @@ def validate_toon(output):
     report = json.loads((output/'toon.json').read_text(encoding='utf8'))
     if not settings.toon_enabled or not report['enabled'] or not report['materials']:
         raise ValueError('Toon material report disagrees with settings')
-    seen = set()
+    seen, checked_shades = set(), set()
     for entry in report['materials']:
         key = (entry['file'], entry['shape'])
         if key in seen:
@@ -271,9 +291,16 @@ def validate_toon(output):
         if not relative.startswith('textures/'+settings.asset_dir+'/toon_') or '..' in relative:
             raise ValueError('Toon control is not private to this follower')
         data = (output/'mod'/relative).read_bytes()
-        if data != control_bytes(entry['parameters']):
-            raise ValueError('Toon DDS parameters changed: '+entry['shape'])
-        validate_dds(output/'mod'/relative, (8, 4), 'R8G8B8A8_UNORM')
+        if entry.get('profile') == 'authored_face':
+            from toon_shade import validate_shade
+            shade_key = (relative, json.dumps(entry['parameters'], sort_keys=True), entry['sha256'])
+            if shade_key not in checked_shades:
+                validate_shade(output/'mod'/relative, entry['parameters'], entry['size'], entry['sha256'])
+                checked_shades.add(shade_key)
+        else:
+            if data != control_bytes(entry['parameters']):
+                raise ValueError('Toon DDS parameters changed: '+entry['shape'])
+            validate_dds(output/'mod'/relative, (8, 4), 'R8G8B8A8_UNORM')
         with NifFile(str(path.resolve())) as nif:
             shape = next(s for s in nif.shapes if s.name == entry['shape'])
             p = shape.shader.properties

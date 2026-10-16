@@ -60,6 +60,8 @@ struct Fixture{
     ComPtr<ID3D11Buffer> cameraBuffer;
     std::map<std::string,ComPtr<ID3D11ShaderResourceView>> textures;
     std::array<ComPtr<ID3D11Texture2D>,8> lastGBuffer;
+    bool focusHead=false;XMFLOAT3 focusLo{},focusHi{};
+    std::array<float,3> lightDirection={-.4056f,.7605f,.5070f};
     Fixture(){
         D3D_FEATURE_LEVEL level;check(D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_HARDWARE,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&device,&level,&context));
         std::cout<<"D3D hardware feature level "<<std::hex<<level<<std::dec<<"\n";
@@ -125,7 +127,7 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
         for(const char* name:{"FrameBuffer::CameraView","FrameBuffer::CameraViewProjUnjittered","FrameBuffer::CameraPreviousViewProjUnjittered"})set(name,&identity,sizeof(identity));
         f4("FrameBuffer::DynamicResolutionParams1",{1,1,1,1});f4("FrameBuffer::DynamicResolutionParams2",{1,1,1,1});f4("FrameBuffer::FrameParams",{1,0,0,0});
         f4("ColourOutputClamp",{100,100,100,100});f4("SharedData::BufferDim",{float(width),float(height),1.f/width,1.f/height});
-        f3("DirLightDirection",{-.4056f,.7605f,.5070f});f3("DirLightColor",night?std::array<float,3>{0,0,0}:std::array<float,3>{power,.95f*power,.9f*power});
+        f3("DirLightDirection",lightDirection);f3("DirLightColor",night?std::array<float,3>{0,0,0}:std::array<float,3>{power,.95f*power,.9f*power});
         uint32_t enableLinear=linear;set("SharedData::linearLightingSettings.enableLinearLighting",&enableLinear,4);
         for(auto name:{"colorGamma","lightGamma","ambientGamma","emitColorGamma","glowmapGamma","fogGamma","fogAlphaGamma"}){std::string field="SharedData::linearLightingSettings.";field+=name;float value=1.8f;if(!set(field.c_str(),&value,4))throw std::runtime_error("Missing lighting fixture field "+field);}
         for(auto name:{"vanillaDiffuseColorMult","directionalLightMult","pointLightMult","ambientMult","emitColorMult","glowmapMult"}){std::string field="SharedData::linearLightingSettings.";field+=name;float value=1.f;if(!set(field.c_str(),&value,4))throw std::runtime_error("Missing lighting fixture field "+field);}
@@ -133,8 +135,9 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
         float minF0=.04f,one=1;set("SharedData::vanillaFresnelSettings.MinF0",&minF0,4);set("SharedData::vanillaFresnelSettings.BaseF0Multiplier",&one,4);set("SharedData::vanillaFresnelSettings.RoughnessMultiplier",&one,4);
         float ambient[12]={0,0,0,.5f,0,0,0,.55f,0,0,0,.62f};if(night)std::fill(std::begin(ambient),std::end(ambient),0.f);set("DirectionalAmbient",ambient,sizeof(ambient));
         uint32_t interior=1;set("SharedData::InInterior",&interior,4);
-        const float scale=scene.hi.z-scene.lo.z;XMVECTOR center=XMVectorSet((scene.lo.x+scene.hi.x)*.5f,(scene.lo.y+scene.hi.y)*.5f,(scene.lo.z+scene.hi.z)*.5f,1);
-        XMVECTOR eye=XMVectorAdd(center,XMVectorSet(scale*1.8f,scale*4,scale*.55f,0));
+        auto lo=focusHead?focusLo:scene.lo,hi=focusHead?focusHi:scene.hi;
+        const float scale=hi.z-lo.z;XMVECTOR center=XMVectorSet((lo.x+hi.x)*.5f,(lo.y+hi.y)*.5f,(lo.z+hi.z)*.5f,1);
+        XMVECTOR eye=XMVectorAdd(center,focusHead?XMVectorSet(scale*.6f,scale*4,scale*.25f,0):XMVectorSet(scale*1.8f,scale*4,scale*.55f,0));
         struct Camera{XMFLOAT4X4 vp;XMFLOAT4 eye;}camera;
         XMStoreFloat4(&camera.eye,eye);XMStoreFloat4x4(&camera.vp,XMMatrixMultiply(XMMatrixLookAtRH(eye,center,XMVectorSet(0,0,1,0)),XMMatrixOrthographicRH(scale*1.3f*width/height,scale*1.3f,.1f,scale*10)));
         cameraBuffer=buffer(&camera,sizeof(camera),D3D11_BIND_CONSTANT_BUFFER);auto cameraPtr=cameraBuffer.Get();context->VSSetConstantBuffers(0,1,&cameraPtr);
@@ -157,7 +160,7 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
         for(int i=0;i<8;i++)context->ClearRenderTargetView(mrt[i],i?black:bg);
         context->ClearDepthStencilView(dsv.Get(),D3D11_CLEAR_DEPTH,1,0);
         for(auto& mesh:scene.meshes){
-            D3D11_RASTERIZER_DESC rasterDesc{};rasterDesc.FillMode=D3D11_FILL_SOLID;rasterDesc.CullMode=(mesh.flags&(1u<<20))?D3D11_CULL_NONE:D3D11_CULL_BACK;rasterDesc.DepthClipEnable=TRUE;
+            D3D11_RASTERIZER_DESC rasterDesc{};rasterDesc.FillMode=D3D11_FILL_SOLID;rasterDesc.CullMode=(mesh.flags&(1u<<20))?D3D11_CULL_NONE:D3D11_CULL_BACK;rasterDesc.DepthClipEnable=TRUE;rasterDesc.FrontCounterClockwise=TRUE;
             ComPtr<ID3D11RasterizerState> rasterState;check(device->CreateRasterizerState(&rasterDesc,&rasterState));context->RSSetState(rasterState.Get());
             f4("MaterialData",{1,1,mesh.alpha,0});f4("SpecularColor",{.8f,.8f,.8f,1});f4("TintColor",{1,1,1,1});f4("CharacterLightParams",{0,0,0,0});
             uint32_t descriptor=mesh.type<<24;set("Permutation::PixelShaderDescriptor",&descriptor,4);
@@ -197,12 +200,16 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
 };
 #include "toon_composite_checks.h"
 int main(int argc,char** argv){try{
-    if(argc!=6&&argc!=7&&argc!=9&&argc!=10)throw std::runtime_error("Usage: toon_gpu base.scene marked.scene original.cso patched.cso output-dir [--diagnostic | old.cso diagnostic.cso deferred.cso sphere.scene]");
+    if(argc!=6&&argc!=7&&argc!=8&&argc!=9&&argc!=10)throw std::runtime_error("Usage: toon_gpu base.scene marked.scene original.cso patched.cso output-dir [--diagnostic | old.cso diagnostic.cso deferred.cso sphere.scene]");
     fs::path output=fs::u8path(argv[5]);fs::create_directories(output);auto base=loadScene(fs::u8path(argv[1])),marked=loadScene(fs::u8path(argv[2]));Fixture f;
     if(argc==9){
         if(std::string(argv[8])!="--composite")throw std::runtime_error("Unknown fixture mode");
         verifyComposite(base,marked,fs::u8path(argv[3]),fs::u8path(argv[4]),fs::u8path(argv[6]),fs::u8path(argv[7]),output,f);
         return 0;
+    }
+    if(argc==8){
+        if(std::string(argv[7])!="--face")throw std::runtime_error("Unknown fixture mode");
+        auto focus=loadScene(fs::u8path(argv[6]));f.focusHead=true;f.focusLo=focus.lo;f.focusHi=focus.hi;
     }
     auto original=f.render(base,fs::u8path(argv[3]));auto untouched=f.render(base,fs::u8path(argv[4]));auto fallback=f.render(marked,fs::u8path(argv[3]));auto toon=f.render(marked,fs::u8path(argv[4]));auto night=f.render(marked,fs::u8path(argv[4]),true);auto baselineNight=f.render(base,fs::u8path(argv[3]),true);
     Fixture::save(output/"original.ppm",original);Fixture::save(output/"unmarked.ppm",untouched);Fixture::save(output/"fallback.ppm",fallback);Fixture::save(output/"toon.ppm",toon);Fixture::save(output/"night.ppm",night);
@@ -222,6 +229,32 @@ int main(int argc,char** argv){try{
         return 0;
     }
     if(unchanged>1||fallbackError>1||nightError>1||changed<1000)throw std::runtime_error("Shading isolation assertion failed");
+    if(argc==8){
+        for(auto pair:{std::pair<const char*,std::array<float,3>>{"top",{0,0,1}}, {"side",{.94f,.2f,.28f}}, {"reverse",{-.8f,.5f,.3f}}}){
+            f.lightDirection=pair.second;
+            Fixture::save(output/(std::string("toon-")+pair.first+".ppm"),f.render(marked,fs::u8path(argv[4])));
+        }
+        Fixture::save(output/"toon-bright.ppm",f.render(marked,fs::u8path(argv[4]),false,4.f));
+        Fixture::save(output/"toon-dim.ppm",f.render(marked,fs::u8path(argv[4]),false,.05f));
+        Fixture::save(output/"toon-linear.ppm",f.render(marked,fs::u8path(argv[4]),false,1.f,0,true));
+        if(f.render(base,fs::u8path(argv[4]),false,1.f,0,true)!=f.render(base,fs::u8path(argv[3]),false,1.f,0,true))throw std::runtime_error("Linear ordinary face fixture changed");
+        if(f.render(marked,fs::u8path(argv[4]),true,1.f,0,true)!=f.render(base,fs::u8path(argv[3]),true,1.f,0,true))throw std::runtime_error("Linear face fixture emits without light");
+        auto invalid=marked;
+        for(size_t i=0;i<invalid.meshes.size();i++){
+            auto& mesh=invalid.meshes[i];if(mesh.textures[2].empty())continue;
+            auto bytes=readFile(fs::u8path(mesh.textures[2]));
+            if(bytes.size()==276)bytes[148]^=0x7f;
+            else{
+                uint32_t w,h;memcpy(&w,bytes.data()+16,4);memcpy(&h,bytes.data()+12,4);
+                size_t block=148+size_t(w/4)*(h/4-1)*16;
+                if(block+16>bytes.size())throw std::runtime_error("Face metadata block outside DDS");
+                std::fill(bytes.begin()+block,bytes.begin()+block+16,0);
+            }
+            auto path=output/("invalid-face-"+std::to_string(i)+".dds");std::ofstream file(path,std::ios::binary);file.write(bytes.data(),bytes.size());file.close();mesh.textures[2]=path.string();
+        }
+        if(f.render(invalid,fs::u8path(argv[4]))!=f.render(invalid,fs::u8path(argv[3])))throw std::runtime_error("Corrupt face metadata activated toon");
+        std::cout<<"Authored/legacy metadata, full head layers, linear darkness/isolation: PASS\n";
+    }
     std::ofstream report(output/"gpu-verification.json");report<<"{\"actual_cs_pixel_shaders\":true,\"hardware_d3d11\":true,\"unmarked_max_byte_error\":"<<unchanged<<",\"fallback_max_byte_error\":"<<fallbackError<<",\"night_max_byte_error\":"<<nightError<<",\"toon_changed_pixels\":"<<changed<<"}";
     if(argc==10){
         auto old=fs::u8path(argv[6]),diagnostic=fs::u8path(argv[7]),deferred=fs::u8path(argv[8]);auto sphere=loadScene(fs::u8path(argv[9]));
@@ -234,8 +267,15 @@ int main(int argc,char** argv){try{
         auto invalid=marked;
         for(size_t i=0;i<invalid.meshes.size();i++){
             auto& mesh=invalid.meshes[i];if(mesh.textures[2].empty())continue;
-            auto data=readFile(fs::u8path(mesh.textures[2]));if(data.size()!=276)throw std::runtime_error("Expected 8x4 control");
-            data[148]^=0x7f;auto path=output/("invalid-control-"+std::to_string(i)+".dds");std::ofstream file(path,std::ios::binary);file.write(data.data(),data.size());file.close();mesh.textures[2]=path.string();
+            auto data=readFile(fs::u8path(mesh.textures[2]));
+            if(data.size()==276)data[148]^=0x7f;
+            else{
+                uint32_t w,h;memcpy(&w,data.data()+16,4);memcpy(&h,data.data()+12,4);
+                size_t block=148+size_t(w/4)*(h/4-1)*16;
+                if(block+16>data.size())throw std::runtime_error("Invalid BC7 metadata location");
+                std::fill(data.begin()+block,data.begin()+block+16,0);
+            }
+            auto path=output/("invalid-control-"+std::to_string(i)+".dds");std::ofstream file(path,std::ios::binary);file.write(data.data(),data.size());file.close();mesh.textures[2]=path.string();
         }
         if(f.render(invalid,diagnostic)!=f.render(invalid,fs::u8path(argv[3])))throw std::runtime_error("Invalid signature activated toon");
         for(bool linear:{false,true})for(float power:{.05f,1.f,4.f,16.f}){

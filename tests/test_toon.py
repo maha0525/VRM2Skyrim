@@ -46,7 +46,7 @@ class ToonTests(unittest.TestCase):
                     self.assertTrue(all(name.startswith('Shaders/') for name in package.namelist()))
                     self.assertFalse(any(name.endswith(('.dll', '.pso', '.cso')) for name in package.namelist()))
                     metadata = json.loads(package.read('Shaders/VRM2Skyrim/adapter.json'))
-                    self.assertEqual(metadata['prototype'], 3)
+                    self.assertEqual(metadata['prototype'], 4)
                     self.assertEqual(metadata['diagnostic'], is_diagnostic)
                     lighting = package.read('Shaders/Lighting.hlsl')
                     self.assertEqual(hashlib.sha256(lighting).hexdigest(), metadata['patched_lighting_sha256'])
@@ -135,7 +135,7 @@ class ToonTests(unittest.TestCase):
         normalize_material_colors(document)
         parameters = parameters_for(document['materials'][0], strength=0.)
         np.testing.assert_allclose(parameters['shade'], [.21404114]*3)
-        self.assertEqual((parameters['toony'], parameters['shift']), (.8, -.1))
+        np.testing.assert_allclose([parameters['toony'], parameters['shift']], [.89, -.01])
 
     def test_control_alpha_survives_srgb_views_and_has_valid_dds_storage(self):
         parameters = parameters_for({})

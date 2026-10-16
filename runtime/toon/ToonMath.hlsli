@@ -40,4 +40,13 @@ float3 V2SToonResolve(float3 direct, float3 unshaded, float3 ambient, float3 sha
     float exposure = rcp(max(1.0, max(available.r, max(available.g, available.b))));
     return (max(direct, 0.0) + ambient * shade) * exposure;
 }
+
+float3 V2SToonResolveAuthored(float3 directSurface, float3 unshaded, float3 ambient, float3 litSurface)
+{
+    // MToon adds equalized GI through the lit surface, not its shade term.
+    ambient = max(ambient, 0.0);
+    float3 available = max(unshaded, 0.0) + ambient;
+    float exposure = rcp(max(1.0, max(available.r, max(available.g, available.b))));
+    return (max(directSurface, 0.0) + ambient * litSurface) * exposure;
+}
 #endif

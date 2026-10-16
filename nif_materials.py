@@ -72,8 +72,16 @@ def normalize_material_colors(document):
         shade = properties.get('vectorProperties', {}).get('_ShadeColor')
         if shade is not None:
             mtoon['shadeColorFactor'] = [v/12.92 if v <= .04045 else ((v+.055)/1.055)**2.4 for v in shade[:3]]
-        mtoon['shadingToonyFactor'] = props.get('_ShadeToony', .9)
-        mtoon['shadingShiftFactor'] = props.get('_ShadeShift', 0.)
+        # VRM0 ramps from shift to lerp(1, shift, toony); VRM1 uses a
+        # symmetric interval around -shift. Migrate the actual interval.
+        low = props.get('_ShadeShift', 0.)
+        high = 1+(low-1)*props.get('_ShadeToony', .9)
+        mtoon['shadingToonyFactor'] = max(0., min(1., 1-(high-low)/2))
+        mtoon['shadingShiftFactor'] = -(low+high)/2
+        mtoon['giEqualizationFactor'] = 1-props.get('_IndirectLightIntensity', .1)
+        texture = properties.get('textureProperties', {}).get('_ShadeTexture')
+        if texture is not None and texture >= 0:
+            mtoon['shadeMultiplyTexture'] = {'index': texture}
 
 
 def lighting_flags_2(material):
