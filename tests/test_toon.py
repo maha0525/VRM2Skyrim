@@ -14,7 +14,7 @@ import numpy as np
 
 from nif_materials import normalize_material_colors
 from settings import FollowerSettings
-from toon import SIGNATURE, control_bytes, parameters_for, patch_lighting, prepare_materials, shader_package, validate_toon
+from toon import SIGNATURE, control_bytes, parameters_for, patch_composite, patch_lighting, prepare_materials, shader_package, validate_toon
 
 NATIVE = os.name == 'nt' and (Path(__file__).resolve().parents[1]/'dependencies/io_scene_nifly/NiflyDLL.dll').is_file()
 
@@ -25,12 +25,18 @@ class ToonTests(unittest.TestCase):
         source = (b'#\tinclude "Common/LightingEval.hlsli"\n'
                   b'\tPS_OUTPUT psout;\n\tfloat4 color = 0;\n'
                   b'#\tif !defined(DEFERRED)\n\tcolor.xyz = Color::IrradianceToLinear(color.xyz);\n'
+                  b'\t// Stored as 1 - vertexAO so the cleared default (0) means no occlusion\n'
                   b'\treturn psout;\n')
+        composite = (b'#include "Common/GBuffer.hlsli"\n'
+                     b'\tfloat3 albedo = AlbedoTexture[dispatchID.xy];\n'
+                     b'\tSampleSSGI(dispatchID.xy, normalWS, ssgiAo, ssgiIl);\n')
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root/'Lighting.hlsl').write_bytes(source)
+            (root/'DeferredCompositeCS.hlsl').write_bytes(composite)
             (root/'LICENSE').write_text('Fixture upstream license', encoding='utf8')
-            with patch('toon.SUPPORTED_LIGHTING', hashlib.sha256(source).hexdigest()):
+            with patch('toon.SUPPORTED_LIGHTING', hashlib.sha256(source).hexdigest()), \
+                    patch('toon.SUPPORTED_COMPOSITE', hashlib.sha256(composite).hexdigest()):
                 normal = shader_package(root, root/'output')
                 diagnostic = shader_package(root, root/'output', diagnostic=True)
             self.assertNotEqual(normal, diagnostic)
@@ -40,11 +46,15 @@ class ToonTests(unittest.TestCase):
                     self.assertTrue(all(name.startswith('Shaders/') for name in package.namelist()))
                     self.assertFalse(any(name.endswith(('.dll', '.pso', '.cso')) for name in package.namelist()))
                     metadata = json.loads(package.read('Shaders/VRM2Skyrim/adapter.json'))
-                    self.assertEqual(metadata['prototype'], 2)
+                    self.assertEqual(metadata['prototype'], 3)
                     self.assertEqual(metadata['diagnostic'], is_diagnostic)
                     lighting = package.read('Shaders/Lighting.hlsl')
                     self.assertEqual(hashlib.sha256(lighting).hexdigest(), metadata['patched_lighting_sha256'])
                     self.assertIn(f'#define V2S_TOON_DIAGNOSTIC {int(is_diagnostic)}'.encode(), lighting)
+                    self.assertEqual(len(package.namelist()), 9)
+                    self.assertNotIn(b'defined(SKINNED)', lighting)
+                    self.assertEqual(hashlib.sha256(package.read('Shaders/DeferredCompositeCS.hlsl')).hexdigest(),
+                                     metadata['patched_composite_sha256'])
                     self.assertEqual(package.read('Shaders/VRM2Skyrim/CommunityShaders-LICENSE.txt'),
                                      b'Fixture upstream license')
                     self.assertIn('Shaders/VRM2Skyrim/VRM2Skyrim-LICENSE.txt', package.namelist())
@@ -140,9 +150,10 @@ class ToonTests(unittest.TestCase):
             control_bytes({**parameters, 'toony': float('nan')})
 
     def test_unverified_adapter_does_not_silently_patch_other_versions(self):
-        for source in (b'', b'#include "Common/LightingEval.hlsli"', b'other graphics mod'):
-            with self.assertRaisesRegex(ValueError, 'Unsupported Community'):
-                patch_lighting(source)
+        for function in (patch_lighting, patch_composite):
+            for source in (b'', b'#include "Common/LightingEval.hlsli"', b'other graphics mod'):
+                with self.assertRaisesRegex(ValueError, 'Unsupported Community'):
+                    function(source)
 
     @unittest.skipUnless(NATIVE, 'Requires local Windows NiflyDLL')
     def test_native_marker_preserves_visual_data_and_includes_head_variants(self):

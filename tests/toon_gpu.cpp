@@ -59,6 +59,7 @@ struct Fixture{
     ComPtr<ID3D11VertexShader> vs;ComPtr<ID3D11InputLayout> layout;
     ComPtr<ID3D11Buffer> cameraBuffer;
     std::map<std::string,ComPtr<ID3D11ShaderResourceView>> textures;
+    std::array<ComPtr<ID3D11Texture2D>,8> lastGBuffer;
     Fixture(){
         D3D_FEATURE_LEVEL level;check(D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_HARDWARE,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&device,&level,&context));
         std::cout<<"D3D hardware feature level "<<std::hex<<level<<std::dec<<"\n";
@@ -97,7 +98,7 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
         if(offset>bytes.size())throw std::runtime_error("Truncated DDS payload");
         ComPtr<ID3D11Texture2D> tex;check(device->CreateTexture2D(&desc,sub.data(),&tex));ComPtr<ID3D11ShaderResourceView> srv;check(device->CreateShaderResourceView(tex.Get(),nullptr,&srv));auto result=srv.Get();textures[path]=std::move(srv);return result;
     }
-    std::vector<uint8_t> render(const Scene& scene,const fs::path& shaderPath,bool night=false,float power=1,int captureTarget=0,bool linear=false){
+    std::vector<uint8_t> render(const Scene& scene,const fs::path& shaderPath,bool night=false,float power=1,int captureTarget=0,bool linear=false,bool nativeBuffers=false){
         auto shaderBytes=readFile(shaderPath);ComPtr<ID3D11PixelShader> ps;check(device->CreatePixelShader(shaderBytes.data(),shaderBytes.size(),nullptr,&ps));
         ComPtr<ID3D11ShaderReflection> reflection;check(D3DReflect(shaderBytes.data(),shaderBytes.size(),IID_ID3D11ShaderReflection,&reflection));
         D3D11_SHADER_DESC shaderDesc{};check(reflection->GetDesc(&shaderDesc));
@@ -140,8 +141,18 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
         context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(ps.Get(),nullptr,0);context->IASetInputLayout(layout.Get());context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         std::array<ComPtr<ID3D11Texture2D>,8> mrtTextures;
         std::array<ComPtr<ID3D11RenderTargetView>,8> mrtViews;std::array<ID3D11RenderTargetView*,8> mrt{};
-        mrtTextures[0]=target;mrtViews[0]=rtv;mrt[0]=rtv.Get();D3D11_TEXTURE2D_DESC mrtDesc{};target->GetDesc(&mrtDesc);
-        for(int i=1;i<8;i++){check(device->CreateTexture2D(&mrtDesc,nullptr,&mrtTextures[i]));check(device->CreateRenderTargetView(mrtTextures[i].Get(),nullptr,&mrtViews[i]));mrt[i]=mrtViews[i].Get();}
+        D3D11_TEXTURE2D_DESC mrtDesc{};target->GetDesc(&mrtDesc);
+        if(nativeBuffers){
+            mrtDesc.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;
+            mrtDesc.BindFlags=D3D11_BIND_RENDER_TARGET|D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_UNORDERED_ACCESS;
+            check(device->CreateTexture2D(&mrtDesc,nullptr,&mrtTextures[0]));
+            check(device->CreateRenderTargetView(mrtTextures[0].Get(),nullptr,&mrtViews[0]));mrt[0]=mrtViews[0].Get();
+        }else{mrtTextures[0]=target;mrtViews[0]=rtv;mrt[0]=rtv.Get();}
+        const DXGI_FORMAT nativeFormats[]={DXGI_FORMAT_UNKNOWN,DXGI_FORMAT_R16G16B16A16_FLOAT,DXGI_FORMAT_R10G10B10A2_UNORM,DXGI_FORMAT_R10G10B10A2_UNORM,DXGI_FORMAT_R11G11B10_FLOAT,DXGI_FORMAT_R11G11B10_FLOAT,DXGI_FORMAT_R11G11B10_FLOAT,DXGI_FORMAT_R16_UNORM};
+        for(int i=1;i<8;i++){
+            if(nativeBuffers){mrtDesc.Format=nativeFormats[i];mrtDesc.BindFlags=D3D11_BIND_RENDER_TARGET|D3D11_BIND_SHADER_RESOURCE;}
+            check(device->CreateTexture2D(&mrtDesc,nullptr,&mrtTextures[i]));check(device->CreateRenderTargetView(mrtTextures[i].Get(),nullptr,&mrtViews[i]));mrt[i]=mrtViews[i].Get();
+        }
         context->OMSetRenderTargets(8,mrt.data(),dsv.Get());float bg[]={.12f,.14f,.18f,1},black[]={0,0,0,0};
         for(int i=0;i<8;i++)context->ClearRenderTargetView(mrt[i],i?black:bg);
         context->ClearDepthStencilView(dsv.Get(),D3D11_CLEAR_DEPTH,1,0);
@@ -158,17 +169,58 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
             D3D11_DEPTH_STENCIL_DESC ds{};ds.DepthEnable=TRUE;ds.DepthWriteMask=b.BlendEnable?D3D11_DEPTH_WRITE_MASK_ZERO:D3D11_DEPTH_WRITE_MASK_ALL;ds.DepthFunc=D3D11_COMPARISON_LESS_EQUAL;ComPtr<ID3D11DepthStencilState> state;check(device->CreateDepthStencilState(&ds,&state));context->OMSetDepthStencilState(state.Get(),0);
             context->DrawIndexed(UINT(mesh.indices.size()),0,0);
         }
-        context->OMSetRenderTargets(0,nullptr,nullptr);D3D11_TEXTURE2D_DESC desc{};target->GetDesc(&desc);desc.BindFlags=0;desc.Usage=D3D11_USAGE_STAGING;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;ComPtr<ID3D11Texture2D> staging;check(device->CreateTexture2D(&desc,nullptr,&staging));context->CopyResource(staging.Get(),mrtTextures.at(captureTarget).Get());D3D11_MAPPED_SUBRESOURCE mapped{};check(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped));std::vector<uint8_t> result(width*height*4);for(UINT y=0;y<height;y++)memcpy(result.data()+y*width*4,static_cast<uint8_t*>(mapped.pData)+y*mapped.RowPitch,width*4);context->Unmap(staging.Get(),0);return result;
+        context->OMSetRenderTargets(0,nullptr,nullptr);
+        lastGBuffer=mrtTextures;
+        return readPixels(mrtTextures.at(captureTarget).Get());
     }
+    std::vector<uint8_t> readPixels(ID3D11Texture2D* texture){
+        D3D11_TEXTURE2D_DESC desc{};texture->GetDesc(&desc);
+        bool floats=desc.Format==DXGI_FORMAT_R32G32B32A32_FLOAT;
+        if(!floats&&desc.Format!=DXGI_FORMAT_R8G8B8A8_UNORM)throw std::runtime_error("Unsupported fixture capture format");
+        desc.BindFlags=0;desc.Usage=D3D11_USAGE_STAGING;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+        ComPtr<ID3D11Texture2D> staging;check(device->CreateTexture2D(&desc,nullptr,&staging));context->CopyResource(staging.Get(),texture);
+        D3D11_MAPPED_SUBRESOURCE mapped{};check(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped));
+        std::vector<uint8_t> result(width*height*4);
+        for(UINT y=0;y<height;y++){
+            auto row=static_cast<uint8_t*>(mapped.pData)+y*mapped.RowPitch;
+            if(!floats)memcpy(result.data()+y*width*4,row,width*4);
+            else for(UINT x=0;x<width*4;x++){
+                float v=reinterpret_cast<float*>(row)[x];
+                if(!std::isfinite(v))throw std::runtime_error("Non-finite composite output");
+                result[y*width*4+x]=uint8_t(std::round(std::clamp(v,0.f,1.f)*255.f));
+            }
+        }
+        context->Unmap(staging.Get(),0);return result;
+    }
+#include "toon_composite_fixture.h"
     static void save(const fs::path& path,const std::vector<uint8_t>& rgba){std::ofstream file(path,std::ios::binary);file<<"P6\n"<<width<<" "<<height<<"\n255\n";for(size_t i=0;i<rgba.size();i+=4)file.write(reinterpret_cast<const char*>(rgba.data()+i),3);}
 };
+#include "toon_composite_checks.h"
 int main(int argc,char** argv){try{
-    if(argc!=6&&argc!=10)throw std::runtime_error("Usage: toon_gpu base.scene marked.scene original.cso patched.cso output-dir [old.cso diagnostic.cso deferred.cso sphere.scene]");
+    if(argc!=6&&argc!=7&&argc!=9&&argc!=10)throw std::runtime_error("Usage: toon_gpu base.scene marked.scene original.cso patched.cso output-dir [--diagnostic | old.cso diagnostic.cso deferred.cso sphere.scene]");
     fs::path output=fs::u8path(argv[5]);fs::create_directories(output);auto base=loadScene(fs::u8path(argv[1])),marked=loadScene(fs::u8path(argv[2]));Fixture f;
+    if(argc==9){
+        if(std::string(argv[8])!="--composite")throw std::runtime_error("Unknown fixture mode");
+        verifyComposite(base,marked,fs::u8path(argv[3]),fs::u8path(argv[4]),fs::u8path(argv[6]),fs::u8path(argv[7]),output,f);
+        return 0;
+    }
     auto original=f.render(base,fs::u8path(argv[3]));auto untouched=f.render(base,fs::u8path(argv[4]));auto fallback=f.render(marked,fs::u8path(argv[3]));auto toon=f.render(marked,fs::u8path(argv[4]));auto night=f.render(marked,fs::u8path(argv[4]),true);auto baselineNight=f.render(base,fs::u8path(argv[3]),true);
     Fixture::save(output/"original.ppm",original);Fixture::save(output/"unmarked.ppm",untouched);Fixture::save(output/"fallback.ppm",fallback);Fixture::save(output/"toon.ppm",toon);Fixture::save(output/"night.ppm",night);
     int unchanged=0,fallbackError=0,nightError=0;size_t changed=0,visible=0;for(size_t i=0;i<original.size();i+=4){for(int c=0;c<3;c++){unchanged=std::max(unchanged,abs(int(original[i+c])-untouched[i+c]));fallbackError=std::max(fallbackError,abs(int(original[i+c])-fallback[i+c]));nightError=std::max(nightError,abs(int(night[i+c])-baselineNight[i+c]));}if(original[i]!=31||original[i+1]!=36||original[i+2]!=46)visible++;if(abs(int(original[i])-toon[i])+abs(int(original[i+1])-toon[i+1])+abs(int(original[i+2])-toon[i+2])>3)changed++;}
     std::cout<<"Unmarked maximum byte difference "<<unchanged<<"; fallback "<<fallbackError<<"; night "<<nightError<<"; toon changed pixels "<<changed<<" / "<<visible<<"\n";
+    if(argc==7){
+        if(std::string(argv[6])!="--diagnostic")throw std::runtime_error("Unknown fixture mode");
+        size_t pink=0,nightPink=0;
+        for(size_t i=0;i<toon.size();i+=4){
+            if(toon[i]==255&&toon[i+1]==0&&toon[i+2]==255)pink++;
+            if(night[i]==255&&night[i+1]==0&&night[i+2]==255)nightPink++;
+        }
+        std::ofstream report(output/"activation-verification.json");
+        report<<"{\"unmarked_max_byte_error\":"<<unchanged<<",\"fallback_max_byte_error\":"<<fallbackError<<",\"pink_pixels\":"<<pink<<",\"night_pink_pixels\":"<<nightPink<<"}";
+        if(unchanged||fallbackError||pink<1000||nightPink<1000)throw std::runtime_error("Diagnostic activation assertion failed");
+        std::cout<<"Diagnostic activation and ordinary-material isolation: PASS\n";
+        return 0;
+    }
     if(unchanged>1||fallbackError>1||nightError>1||changed<1000)throw std::runtime_error("Shading isolation assertion failed");
     std::ofstream report(output/"gpu-verification.json");report<<"{\"actual_cs_pixel_shaders\":true,\"hardware_d3d11\":true,\"unmarked_max_byte_error\":"<<unchanged<<",\"fallback_max_byte_error\":"<<fallbackError<<",\"night_max_byte_error\":"<<nightError<<",\"toon_changed_pixels\":"<<changed<<"}";
     if(argc==10){

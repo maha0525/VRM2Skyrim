@@ -18,6 +18,7 @@ from settings import load_settings
 ROOT = Path(__file__).resolve().parent
 SIGNATURE = bytes((255, 0, 255, 255, 0, 255, 0, 255))
 SUPPORTED_LIGHTING = '5cb3f71e483d6aba661f9adb10ac8d06db36878f6d6f05c4c8ec383be9fd40e8'
+SUPPORTED_COMPOSITE = 'e53c942c7ba4d755827e0feabdcc143e33f6f06ef30b448951ff3f5955d71225'
 
 
 def control_bytes(parameters):
@@ -57,11 +58,11 @@ def patch_lighting(source, diagnostic=False):
         raise ValueError('Unsupported Community Shaders Lighting.hlsl; generate an explicitly verified adapter first')
     text = source.decode('utf-8-sig').replace('\r\n', '\n')
     include = '#\tinclude "Common/LightingEval.hlsli"'
-    replacement = '''#if defined(SKINNED) && !defined(TRUE_PBR)
+    replacement = '''#if !defined(LANDSCAPE) && !defined(LODLANDSCAPE) && !defined(TRUE_PBR)
 #define EvaluateLighting V2SOriginalEvaluateLighting
 #endif
 '''+include+'''
-#if defined(SKINNED) && !defined(TRUE_PBR)
+#if !defined(LANDSCAPE) && !defined(LODLANDSCAPE) && !defined(TRUE_PBR)
 #undef EvaluateLighting
 #define V2S_TOON_DIAGNOSTIC '''+str(int(diagnostic))+'''
 #include "VRM2Skyrim/ToonBridge.hlsli"
@@ -75,10 +76,10 @@ def patch_lighting(source, diagnostic=False):
             raise ValueError('Shader integration anchor changed: '+token)
     text = text.replace(include, replacement)
     text = text.replace(initializer, initializer+'''
-#if defined(SKINNED) && !defined(TRUE_PBR)
+#if !defined(LANDSCAPE) && !defined(LODLANDSCAPE) && !defined(TRUE_PBR)
     V2SInitializeToon();
 #endif''')
-    text = text.replace(ambient, '''#if defined(SKINNED) && !defined(TRUE_PBR)
+    text = text.replace(ambient, '''#if !defined(LANDSCAPE) && !defined(LODLANDSCAPE) && !defined(TRUE_PBR)
     float3 v2sAmbient = 0;
     if (V2SToonEnabled) {
         float3 flatAmbient = float3(DirectionalAmbient[0].w, DirectionalAmbient[1].w, DirectionalAmbient[2].w);
@@ -88,7 +89,7 @@ def patch_lighting(source, diagnostic=False):
 '''+ambient)
     # Resolve after all lights/skylighting, before forward fog and deferred
     # output. Clear deferred reflection/GI inputs as well as local specular.
-    text = text.replace(forward, '''#if defined(SKINNED) && !defined(TRUE_PBR)
+    text = text.replace(forward, '''#if !defined(LANDSCAPE) && !defined(LODLANDSCAPE) && !defined(TRUE_PBR)
     if (V2SToonEnabled) {
         color.xyz = saturate(material.BaseColor) * V2SToonResolve(
             V2SToonDirectSum, V2SToonUnshadedSum, v2sAmbient, V2SToon.shade);
@@ -105,11 +106,42 @@ def patch_lighting(source, diagnostic=False):
     }
 #endif
 '''+forward)
-    text = text.replace(finish, '''#if defined(SKINNED) && !defined(TRUE_PBR) && V2S_TOON_DIAGNOSTIC
+    text = text.replace(finish, '''#if !defined(LANDSCAPE) && !defined(LODLANDSCAPE) && !defined(TRUE_PBR) && V2S_TOON_DIAGNOSTIC
     if (V2SToonEnabled)
         psout.Diffuse.xyz = float3(1, 0, 1);
 #endif
 '''+finish)
+    # A reserved non-SSS mask value carries ownership into the later CS
+    # composite pass. Ordinary masks use y=0/1; x=z=0 excludes normal skin.
+    masks = '\t// Stored as 1 - vertexAO so the cleared default (0) means no occlusion'
+    if text.count(masks) != 1:
+        raise ValueError('Shader deferred marker anchor changed')
+    text = text.replace(masks, '''#if !defined(LANDSCAPE) && !defined(LODLANDSCAPE) && !defined(TRUE_PBR)
+    if (V2SToonEnabled)
+        psout.Masks.xyz = float3(0, 0.5, 0);
+#endif
+
+'''+masks)
+    return text.encode('utf8')
+
+
+def patch_composite(source):
+    if hashlib.sha256(source).hexdigest() != SUPPORTED_COMPOSITE:
+        raise ValueError('Unsupported Community Shaders DeferredCompositeCS.hlsl')
+    text = source.decode('utf-8-sig').replace('\r\n', '\n')
+    include = '#include "Common/GBuffer.hlsli"'
+    albedo = '\tfloat3 albedo = AlbedoTexture[dispatchID.xy];'
+    sample = '\tSampleSSGI(dispatchID.xy, normalWS, ssgiAo, ssgiIl);'
+    for token in (include, albedo, sample):
+        if text.count(token) != 1:
+            raise ValueError('Shader composite anchor changed: '+token)
+    text = text.replace(include, include+'\n#include "VRM2Skyrim/ToonDeferred.hlsli"')
+    text = text.replace(albedo, albedo+'\n\tconst bool v2sMarked = V2SIsMarkedMask(MasksTexture[dispatchID.xy]);')
+    text = text.replace(sample, sample+'''
+    if (v2sMarked) {
+        ssgiAo = 1;
+        ssgiIl = 0;
+    }''')
     return text.encode('utf8')
 
 
@@ -117,23 +149,27 @@ def shader_package(shader_root, output, diagnostic=False):
     shader_root, output = Path(shader_root), Path(output)
     source = shader_root/'Lighting.hlsl'
     patched = patch_lighting(source.read_bytes(), diagnostic)
+    composite = patch_composite((shader_root/'DeferredCompositeCS.hlsl').read_bytes())
     folder = 'shader-diagnostic-mod' if diagnostic else 'shader-mod'
     target = output/folder/'Shaders'
     (target/'VRM2Skyrim').mkdir(parents=True, exist_ok=True)
     (target/'Lighting.hlsl').write_bytes(patched)
+    (target/'DeferredCompositeCS.hlsl').write_bytes(composite)
     for path in (ROOT/'runtime/toon').glob('*.hlsli'):
         shutil.copy2(path, target/'VRM2Skyrim'/path.name)
     shutil.copy2(shader_root/'LICENSE', target/'VRM2Skyrim/CommunityShaders-LICENSE.txt')
     shutil.copy2(ROOT/'docs/TOON.md', target/'VRM2Skyrim/README.md')
     shutil.copy2(ROOT/'LICENSE', target/'VRM2Skyrim/VRM2Skyrim-LICENSE.txt')
-    metadata = {'prototype': 2, 'diagnostic': diagnostic, 'community_shaders_dll_version': '1.9.0.0',
+    metadata = {'prototype': 3, 'diagnostic': diagnostic, 'community_shaders_dll_version': '1.9.0.0',
                 'lighting_sha256': SUPPORTED_LIGHTING,
                 'patched_lighting_sha256': hashlib.sha256(patched).hexdigest(),
-                'scope': 'skinned non-PBR Glowmap material with exact 8x4 DDS signature',
+                'composite_sha256': SUPPORTED_COMPOSITE,
+                'patched_composite_sha256': hashlib.sha256(composite).hexdigest(),
+                'scope': 'non-landscape non-PBR Glowmap material with exact 8x4 DDS signature',
                 'original_evaluation_for_unmarked_materials': True}
     (target/'VRM2Skyrim/adapter.json').write_text(json.dumps(metadata, indent=2), encoding='utf8')
     suffix = '-Diagnostic' if diagnostic else ''
-    archive = output/f'VRM2Skyrim-Toon-Shader-Prototype-2{suffix}.zip'
+    archive = output/f'VRM2Skyrim-Toon-Shader-Prototype-3{suffix}.zip'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
         for path in sorted((output/folder).rglob('*')):
             if path.is_file():

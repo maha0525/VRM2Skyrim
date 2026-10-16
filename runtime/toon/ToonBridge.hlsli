@@ -1,4 +1,4 @@
-// Included only in skinned non-PBR Lighting pixel shaders, after LightingEval.
+// Included only in non-landscape non-PBR Lighting pixel shaders, after LightingEval.
 #include "VRM2Skyrim/ToonMath.hlsli"
 static bool V2SToonEnabled = false;
 static V2SToonParameters V2SToon;

@@ -1,5 +1,43 @@
 # VRM-only toon shading prototype
 
+## Activation failure: isolate before adjusting appearance
+
+The user installed the Prototype 2 diagnostic and observed no pink. The deployed
+Lighting hash matched the diagnostic, and shader cache files were regenerated;
+these facts do not prove that the marked draw entered our branch.
+
+All previous pixel shader checks forced SKINNED. Without that macro, our guard
+compiled out marker recognition and the diagnostic entirely. An activation-only
+probe removes that macro dependency, retaining the exact Glowmap/8x4/signature
+checks and excluding landscape/PBR. It uses the delivered Prototype 2 helpers,
+separate from the unfinished face/AO changes below. tests/toon_activation_probe.py
+builds and checks this precise ZIP: 19 shader pairs, ordinary pixel invariance,
+old no-SKINNED output identical to original, new no-SKINNED output pink. The user subsequently confirmed actual game activation with the new pink diagnostic.
+
+## Face feedback and full deferred consumer path
+
+The in-game face still showed concave cheek shading after Prototype 2. The
+previous tests stopped at Lighting's pixel shader; DeferredCompositeCS applies
+sqrt(AO) to direct diffuse after that, even with albedo/reflectance set to zero.
+Carry marked-pixel ownership through a reserved non-SSS GBuffer mask value and
+bypass that later AO/GI application only for marked pixels. Pin and package the
+composite shader too. Exercise the real pixel -> GBuffer -> compute composite
+path with varying AO; ordinary pixels must still receive the original AO.
+
+Do not combine the AO isolation with the proposed flat-face profile yet.
+The user confirmed that disabling Screen Space GI removes the residual shading
+on the constant-pink diagnostic. First deliver normal/diagnostic adapters with
+only activation and the later AO/GI ownership fix. Existing avatar markers and
+fine-normal response stay compatible; decide further face adjustments from the
+correctly activated, AO-free output.
+
+Verification uses the real Lighting shader, native R11G11B10 mask target and
+DeferredComposite compute shader, with positive AO and IL input controls.
+Near-opaque blending can round 0.5 to 0.49609375 in the native mask format;
+the exact non-SSS marker test allows this adjacent value, keeping x=z=0 and
+rejecting native y=0/1. Test the whole ordinary image for byte invariance and
+marked opaque pixels for AO/IL invariance separately; the background must keep AO.
+
 ## Prototype 2: visible bands and activation evidence
 
 Keep existing follower NIF/DDS controls compatible. Resolve marked materials'
