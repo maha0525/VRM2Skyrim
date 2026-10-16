@@ -53,7 +53,7 @@ def scene(output, destination, unmarked=False):
     print('Native scene:', destination, len(data), 'shapes', flush=True)
 
 
-def build(output):
+def build(output, source=None):
     compiler_root = Path('C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC')
     msvc = sorted(compiler_root.iterdir())[-1]
     kits = Path('C:/Program Files (x86)/Windows Kits/10')
@@ -66,7 +66,7 @@ def build(output):
             '/DWIN32_LEAN_AND_MEAN', '/I'+str(msvc/'include')]
     for folder in ('um', 'shared', 'ucrt', 'winrt'):
         args += ['/I'+str(kits/'Include'/sdk/folder)]
-    args += [str(ROOT/'tests/toon_gpu.cpp'), '/Fo'+str(output/'toon_gpu.obj'),
+    args += [str(source or ROOT/'tests/toon_gpu.cpp'), '/Fo'+str(output/'toon_gpu.obj'),
              '/Fe'+str(output/'toon_gpu.exe'), '/link', 'd3d11.lib', 'd3dcompiler.lib', 'dxgi.lib', 'dxguid.lib']
     subprocess.run(args, env=env, check=True)
 

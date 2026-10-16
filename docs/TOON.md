@@ -8,27 +8,29 @@
 
 最初のアダプターは、2026-10-15に検証した **Community Shaders DLL 1.9.0.0** と、その環境の `Shaders/Lighting.hlsl` に対応します。DLLのバージョンが同じでもシェーダーファイルが異なる版があるため、生成時はSHA256も照合します。未検証のファイルを自動で書き換えません。
 
-### 試作4で変わる見た目
+### 試作5で変わる見た目
 
 Screen Space GIを有効にしたまま、対象VRMに後から付くAOの陰影を除きます。背景・通常NPCのAOと間接光は残ります。
 
-顔は元VRMの影用テクスチャと影色を使い、一律の暗化を外します。形状や法線は変えません。
+顔・身体・髪・衣服は元VRMの影用テクスチャと影色を使い、一律の暗化を外します。形状や法線は変えません。
 
-肌・髪・元衣装の明暗差を強め、強い光で色が白く潰れるのを抑えます。
+強い光で色が白く潰れるのを抑えます。
 VRM材質の環境反射・濡れた鏡面反射も抑えます。暗い場所では暗くなり、霧と透過は残ります。
 これはMToon完全互換ではなく、Skyrim向けに照明を調整する試作です。
 
-以前のトゥーン材質も引き続き使えます。**新しい顔の陰影には、フォロワーの再出力か、そのフォロワー用の顔パッチが必要**です。
-旧シェーダー試作MODを無効化し、試作4だけを有効にしてDeployしてください。
+以前のトゥーン材質も引き続き使えます。**元VRMの陰影を全身に反映するには、更新した本体でフォロワーを再出力し、試作5と一緒に導入してください。** 以前の顔パッチ・シェーダー試作MODは無効にし、新しいフォロワーの材質を使います。試作5は影画像の元の解像度と繰り返し・端の固定・折り返し設定に対応します。
+
+導入・切り替え時は、次の手順で更新します。
+旧シェーダー試作MODを無効化し、試作5だけを有効にしてDeployしてください。
 その後、下記手順のキャッシュ退避とSKSEからの再起動を行います。
 
 ### 適用を見分けたい場合
 
-`VRM2Skyrim-Toon-Shader-Prototype-4-Diagnostic.zip` は確認専用です。
+`VRM2Skyrim-Toon-Shader-Prototype-5-Diagnostic.zip` は確認専用です。
 他の試作版を無効化し、確認版だけを有効にしてDeploy、キャッシュ退避後に起動します。
 **Screen Space GIを有効にしたまま、トゥーン対象のVRM部分が陰影のないピンクになる**のが成功の目印です。
 背景や通常NPC、Skyrimの装備は元の表示です。
-確認後は確認版を無効化して通常の試作4へ切り替え、同じ手順でDeploy・キャッシュ退避・再起動してください。
+確認後は確認版を無効化して通常の試作5へ切り替え、同じ手順でDeploy・キャッシュ退避・再起動してください。
 
 ### ゲームで試す
 
@@ -38,11 +40,11 @@ VRM材質の環境反射・濡れた鏡面反射も抑えます。暗い場所�
 .\.venv\Scripts\python.exe toon.py --shader-root "<Skyrim>/Data/Shaders" --output build/toon-prototype
 ```
 
-対応するシェーダーソースなら、`build/toon-prototype/VRM2Skyrim-Toon-Shader-Prototype-4.zip` を生成します。既にアダプターを導入している場合は、生成元に元のCommunity Shaders MODの `Shaders` フォルダを指定するか、ゲーム終了中にアダプターを無効化してDeployし、元のCSシェーダーに戻してから実行してください。変更済みのファイルも非対応として拒否します。それでも非対応と表示された場合は、そのCS環境では使えません。MO2の場合も元のCS MODの実際の `Shaders` フォルダを指定します。このコマンドはゲームへ配置しません。
+対応するシェーダーソースなら、`build/toon-prototype/VRM2Skyrim-Toon-Shader-Prototype-5.zip` を生成します。既にアダプターを導入している場合は、生成元に元のCommunity Shaders MODの `Shaders` フォルダを指定するか、ゲーム終了中にアダプターを無効化してDeployし、元のCSシェーダーに戻してから実行してください。変更済みのファイルも非対応として拒否します。それでも非対応と表示された場合は、そのCS環境では使えません。MO2の場合も元のCS MODの実際の `Shaders` フォルダを指定します。このコマンドはゲームへ配置しません。
 
 1. Skyrimを終了します。
 2. 下記のウィザード設定で生成したフォロワーZIPをVortex / MO2で導入します。既存フォロワーを更新する場合は同じMOD IDのZIPを置き換え、旧版と新版を同時に有効にしません。トゥーン描画の切替だけなら、元VRMとセーブを削除する必要はありません。
-3. `VRM2Skyrim-Toon-Shader-Prototype-4.zip` を別MODとして導入します。**Community Shadersより後に読み込み、`Shaders/Lighting.hlsl` と `Shaders/DeferredCompositeCS.hlsl` はこの試作版を優先**します。VortexではDeployします。このZIPにはCS本体のDLLは入りません。
+3. `VRM2Skyrim-Toon-Shader-Prototype-5.zip` を別MODとして導入します。**Community Shadersより後に読み込み、`Shaders/Lighting.hlsl` と `Shaders/DeferredCompositeCS.hlsl` はこの試作版を優先**します。VortexではDeployします。このZIPにはCS本体のDLLは入りません。
 4. コンパイル済みシェーダーを退避します。ゲーム終了中に、Skyrimの **`Data/ShaderCache` フォルダを別名へ変更**してください。例：`ShaderCache-before-toon`。キャッシュは次の起動で作り直されます。MOD本体や `Data/Shaders` は移動しません。
 5. SKSEから起動し、シェーダーのコンパイルが終わるまで待ちます。変換したフォロワーの顔・衣服・髪の明暗の境界を確認します。背景、床、通常のNPCは従来の表示のままです。光源に対して向きを変え、屋内外でも確認してください。
 
@@ -56,8 +58,8 @@ MO2でキャッシュをOverwriteへ出している構成では、その実際�
 
 ### この試作の範囲
 
-- VRM 0 / 1の影色・明暗境界・環境光設定を読みます。明るすぎる影色の最大成分は0.55へ抑え、暗い影色と色相は保ちます。環境光の係数は0.6です。直接光と環境光を合成し、明暗の両側に共通の露出補正を掛けます。
-- 顔の影用テクスチャに対応します。顔以外の影テクスチャ、MatCap、リムライト、輪郭線はまだ移植していません。MToonそのものの完全実装ではありません。
+- VRM 0 / 1の影色・影用テクスチャ・明暗境界・環境光設定を、顔・身体・髪・衣服の元MToon材質ごとに反映します。影用テクスチャがない材質は元の影色を使います。環境光は明部の色へ加え、強い光には共通の露出補正を掛けます。
+- MatCap、リムライト、輪郭線、元のノーマルマップ・発光・UVアニメーションはまだ移植していません。MToonそのものの完全実装ではありません。旧材質は従来の影色補正で描画できます。
 - 既存のSkyrim装備を体型に合わせたメッシュは、通常のシェーダーを使います。元VRMの着脱衣装と顔・髪の表示切替用メッシュは対象です。
 - FSMPの骨・ウェイト・非表示衝突メッシュと透過順序を保持します。衝突用メッシュにはマーカーを付けません。
 - ゲームと同じCSのピクセルシェーダーを、実NIF/DDSとともに画面非表示のD3D11で描画して比較しています。対象外、シェーダーを外した場合、無照明の比較を行います。ゲーム内の描画順や実際の照明との最終確認は、上の導入手順で行います。
@@ -79,8 +81,16 @@ MO2でキャッシュをOverwriteへ出している構成では、その実際�
 This prototype applies MToon-like lighting only to opted-in source VRM
 materials. It preserves the existing path for unmarked geometry. It reads
 VRM 0/1 shade color, toony and shift values, equalizes directional ambient
-lighting, and reads the original shade controls. Face shade textures are supported in Prototype 4. Shade textures on other
-parts, matcaps, rim lights and outlines are outside this prototype.
+lighting, and reads the original shade controls. Prototype 5 uses each source
+MToon material's shade texture/factor on face, body, hair and clothing. Missing
+shade textures use the original constant shade colour. Source normal maps,
+emission, UV animation, matcaps, rim lights and outlines are not yet ported.
+
+Re-export the follower with the updated converter and install Prototype 5.
+Disable the old face-only patch and shader prototype, deploy both new packages,
+back up the shader cache and restart Skyrim. Prototype 5 preserves source shade
+resolution and repeat, clamp-to-edge and mirrored-repeat addressing. Existing
+8x4 markers and Prototype 4 face materials remain supported.
 
 Prototype 3 keeps existing follower markers compatible: no follower re-export is
 needed. It caps pale shade multipliers at 0.55 (preserving hue and darker shades),
@@ -91,9 +101,9 @@ indirect-light reception on marked surfaces only; ordinary pixels keep both.
 Keep Screen Space GI enabled when checking the diagnostic for residual shading. Darkness, transparency, fog and ordinary materials are preserved.
 This is an artistic Skyrim adaptation, not an exact MToon implementation.
 
-Disable other prototypes before enabling Prototype 4, deploy, back up the shader cache
+Disable other prototypes before enabling Prototype 5, deploy, back up the shader cache
 and relaunch through SKSE. The optional
-`VRM2Skyrim-Toon-Shader-Prototype-4-Diagnostic.zip` paints recognized VRM surfaces
+`VRM2Skyrim-Toon-Shader-Prototype-5-Diagnostic.zip` paints recognized VRM surfaces
 solid magenta. Use it alone to check activation. Afterwards switch back to the
 normal prototype, deploy, back up the cache and restart again.
 
@@ -114,7 +124,7 @@ unmodified CS shader. If an adapter is already installed, point to the original
 CS mod's `Shaders` folder, or close Skyrim, disable the adapter and deploy to
 restore the original shader first. For MO2, use the original CS mod's actual
 `Shaders` folder. The resulting ZIP is
-`build/toon-prototype/VRM2Skyrim-Toon-Shader-Prototype-4.zip`. An unsupported
+`build/toon-prototype/VRM2Skyrim-Toon-Shader-Prototype-5.zip`. An unsupported
 source is rejected; do not install the adapter with a different CS source.
 
 Install the generated follower ZIP and the separate shader prototype ZIP.

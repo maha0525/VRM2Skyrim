@@ -46,7 +46,7 @@ class ToonTests(unittest.TestCase):
                     self.assertTrue(all(name.startswith('Shaders/') for name in package.namelist()))
                     self.assertFalse(any(name.endswith(('.dll', '.pso', '.cso')) for name in package.namelist()))
                     metadata = json.loads(package.read('Shaders/VRM2Skyrim/adapter.json'))
-                    self.assertEqual(metadata['prototype'], 4)
+                    self.assertEqual(metadata['prototype'], 5)
                     self.assertEqual(metadata['diagnostic'], is_diagnostic)
                     lighting = package.read('Shaders/Lighting.hlsl')
                     self.assertEqual(hashlib.sha256(lighting).hexdigest(), metadata['patched_lighting_sha256'])

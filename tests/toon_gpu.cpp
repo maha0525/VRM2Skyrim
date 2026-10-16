@@ -245,8 +245,8 @@ int main(int argc,char** argv){try{
             auto bytes=readFile(fs::u8path(mesh.textures[2]));
             if(bytes.size()==276)bytes[148]^=0x7f;
             else{
-                uint32_t w,h;memcpy(&w,bytes.data()+16,4);memcpy(&h,bytes.data()+12,4);
-                size_t block=148+size_t(w/4)*(h/4-1)*16;
+                uint32_t w,h,format;memcpy(&w,bytes.data()+16,4);memcpy(&h,bytes.data()+12,4);memcpy(&format,bytes.data()+128,4);
+                size_t block=148+(format==28?size_t(w)*(h-4)*4:size_t(w/4)*(h/4-1)*16);
                 if(block+16>bytes.size())throw std::runtime_error("Face metadata block outside DDS");
                 std::fill(bytes.begin()+block,bytes.begin()+block+16,0);
             }
@@ -270,8 +270,8 @@ int main(int argc,char** argv){try{
             auto data=readFile(fs::u8path(mesh.textures[2]));
             if(data.size()==276)data[148]^=0x7f;
             else{
-                uint32_t w,h;memcpy(&w,data.data()+16,4);memcpy(&h,data.data()+12,4);
-                size_t block=148+size_t(w/4)*(h/4-1)*16;
+                uint32_t w,h,format;memcpy(&w,data.data()+16,4);memcpy(&h,data.data()+12,4);memcpy(&format,data.data()+128,4);
+                size_t block=148+(format==28?size_t(w)*(h-4)*4:size_t(w/4)*(h/4-1)*16);
                 if(block+16>data.size())throw std::runtime_error("Invalid BC7 metadata location");
                 std::fill(data.begin()+block,data.begin()+block+16,0);
             }

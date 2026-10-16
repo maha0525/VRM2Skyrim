@@ -1,4 +1,4 @@
-"""Clone only source-avatar assets; prepare/validate a small head-only patch.
+"""Clone source-avatar assets; prepare/validate an authored-material patch.
 
 No writes to the original conversion or installed game. Source textures in the
 clone also allow the complete avatar to be rendered by the D3D fixture.
@@ -66,12 +66,12 @@ def build(source, output):
         original = source/path.relative_to(output)
         if path.read_bytes() != original.read_bytes():
             changed.append(path.relative_to(output/'mod').as_posix())
-    face_entries = [e for e in report['materials'] if e.get('profile') == 'authored_face']
-    expected = {'meshes/'+settings.asset_dir+'/'+e['file'] for e in face_entries}
+    entries = [e for e in report['materials'] if e.get('profile') == 'authored_material']
+    expected = {'meshes/'+settings.asset_dir+'/'+e['file'] for e in entries}
     if set(changed) != expected:
-        raise ValueError('Patch changes exceed authored face owners: '+str(changed))
-    selected = set(changed) | {e['control'] for e in face_entries}
-    archive = output/(settings.mod_id+'-Toon-Face-4.zip')
+        raise ValueError('Patch changes differ from authored material owners: '+str(changed))
+    selected = set(changed) | {e['control'] for e in entries}
+    archive = output/(settings.mod_id+'-Toon-Materials-5.zip')
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
         for relative in sorted(selected):
             package.write(output/'mod'/relative, relative)
@@ -79,9 +79,10 @@ def build(source, output):
         assert package.testzip() is None and set(package.namelist()) == selected
     record = {'source': str(source), 'patch': str(archive), 'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
               'size': archive.stat().st_size, 'files': sorted(selected),
-              'geometry_normals_uvs_unchanged': True, 'authored_face_shapes': len(face_entries)}
+              'geometry_normals_uvs_unchanged': True, 'authored_shapes': len(entries),
+              'authored_face_shapes': report['authored_face_shapes']}
     record['skin_weights_bind_transforms_unchanged'] = True
-    (output/'face-patch-verification.json').write_text(json.dumps(record, indent=2), encoding='utf8')
+    (output/'material-patch-verification.json').write_text(json.dumps(record, indent=2), encoding='utf8')
     print(json.dumps(record, indent=2))
 
 

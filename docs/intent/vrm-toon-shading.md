@@ -1,5 +1,24 @@
 # VRM-only toon shading prototype
 
+## Authored shading on every source MToon material
+
+The user confirmed Prototype 4's face in game. Extend the same conversion to
+body, hair, underwear, clothing and their derived skin/head variants, using each
+shape's explicit source material. Source shade RGB/factor, ramp and equalized
+ambient replace the legacy palette on all MToon materials, including constant
+shade colours without a texture. Non-MToon materials keep their existing path.
+Preserve geometry, alpha, skinning, physics and fitted Skyrim equipment.
+
+The user reports ten-minute game shader compilations. Real Erys/Aifi inputs
+include 2x2 and 1254x1254 shade images and clamp-to-edge addressing, which the
+Prototype 4 face-only layout cannot represent. Prototype 5 metadata stores the
+original image dimensions and per-axis wrap modes. Pad without resampling and
+map source UVs to the exact image domain, with repeat/clamp/mirror gutters.
+Keep old 8x4 and Prototype 4 face layouts readable. Package one tested shader
+update together with the converter change; verify all four real avatars,
+compressed metadata, invalid controls, UV seams and off-domain sampling before
+asking for a single game comparison.
+
 ## Prototype 4: authored face shade through the proven texture binding
 
 Restore face materials' own shade RGB and add equalized GI through their lit
@@ -158,9 +177,10 @@ wrapper delegates unmarked lighting to the original EvaluateLighting;
 marked materials use two-band direct lighting and flatter directional GI.
 Exclude landscape and True PBR permutations; do not require SKINNED on pixel shaders. Pin the entire installed
 Lighting.hlsl SHA256: the DLL's 1.9.0.0 version alone did not identify its
-actual shader source. Carry VRM 0/1 shade/lit color ratios and shadow-edge
-parameters; outlines, shade textures, matcaps and rim light remain outside
-this prototype.
+actual shader source. Legacy markers carry shade/lit ratios and shadow-edge
+parameters. Prototype 5 adds source shade RGB and explicit image dimensions and
+addressing on all source MToon materials. Outlines, matcaps and rim light remain
+outside this prototype.
 
 Compile 16 original/patched permutation pairs, and render the actual
 compiled Community Shaders pixel shader against the real NIF/DDS output
