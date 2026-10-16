@@ -97,7 +97,7 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
         if(offset>bytes.size())throw std::runtime_error("Truncated DDS payload");
         ComPtr<ID3D11Texture2D> tex;check(device->CreateTexture2D(&desc,sub.data(),&tex));ComPtr<ID3D11ShaderResourceView> srv;check(device->CreateShaderResourceView(tex.Get(),nullptr,&srv));auto result=srv.Get();textures[path]=std::move(srv);return result;
     }
-    std::vector<uint8_t> render(const Scene& scene,const fs::path& shaderPath,bool night=false){
+    std::vector<uint8_t> render(const Scene& scene,const fs::path& shaderPath,bool night=false,float power=1,int captureTarget=0,bool linear=false){
         auto shaderBytes=readFile(shaderPath);ComPtr<ID3D11PixelShader> ps;check(device->CreatePixelShader(shaderBytes.data(),shaderBytes.size(),nullptr,&ps));
         ComPtr<ID3D11ShaderReflection> reflection;check(D3DReflect(shaderBytes.data(),shaderBytes.size(),IID_ID3D11ShaderReflection,&reflection));
         D3D11_SHADER_DESC shaderDesc{};check(reflection->GetDesc(&shaderDesc));
@@ -107,14 +107,29 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
             auto cb=reflection->GetConstantBufferByIndex(i);D3D11_SHADER_BUFFER_DESC desc{};check(cb->GetDesc(&desc));D3D11_SHADER_INPUT_BIND_DESC binding{};check(reflection->GetResourceBindingDescByName(desc.Name,&binding));
             Constants value{binding.BindPoint,std::vector<uint8_t>((desc.Size+15)&~15u),{},cb};constants.push_back(std::move(value));
         }
-        auto set=[&](const char* name,const void* ptr,size_t size){for(auto& c:constants){auto v=c.reflected->GetVariableByName(name);D3D11_SHADER_VARIABLE_DESC desc{};if(SUCCEEDED(v->GetDesc(&desc))){if(size>desc.Size)throw std::runtime_error(std::string("Constant size ")+name);memcpy(c.bytes.data()+desc.StartOffset,ptr,size);return true;}}return false;};
+        auto set=[&](const char* name,const void* ptr,size_t size){
+            std::string key(name);auto dot=key.find('.');auto root=key.substr(0,dot);
+            for(auto& c:constants){auto v=c.reflected->GetVariableByName(root.c_str());D3D11_SHADER_VARIABLE_DESC desc{};
+                if(SUCCEEDED(v->GetDesc(&desc))){UINT offset=desc.StartOffset;
+                    if(dot!=std::string::npos){auto type=v->GetType()->GetMemberTypeByName(key.substr(dot+1).c_str());D3D11_SHADER_TYPE_DESC member{};if(FAILED(type->GetDesc(&member)))return false;offset+=member.Offset;}
+                    else if(size>desc.Size)throw std::runtime_error(std::string("Constant size ")+name);
+                    if(offset+size>c.bytes.size())throw std::runtime_error("Constant buffer overflow");
+                    memcpy(c.bytes.data()+offset,ptr,size);return true;
+                }
+            }return false;
+        };
         auto f4=[&](const char* name,std::array<float,4> v){set(name,v.data(),sizeof(v));};
         auto f3=[&](const char* name,std::array<float,3> v){set(name,v.data(),sizeof(v));};
         XMFLOAT4X4 identity;XMStoreFloat4x4(&identity,XMMatrixIdentity());
         for(const char* name:{"FrameBuffer::CameraView","FrameBuffer::CameraViewProjUnjittered","FrameBuffer::CameraPreviousViewProjUnjittered"})set(name,&identity,sizeof(identity));
         f4("FrameBuffer::DynamicResolutionParams1",{1,1,1,1});f4("FrameBuffer::DynamicResolutionParams2",{1,1,1,1});f4("FrameBuffer::FrameParams",{1,0,0,0});
         f4("ColourOutputClamp",{100,100,100,100});f4("SharedData::BufferDim",{float(width),float(height),1.f/width,1.f/height});
-        f3("DirLightDirection",{-.4056f,.7605f,.5070f});f3("DirLightColor",night?std::array<float,3>{0,0,0}:std::array<float,3>{1.f,.95f,.9f});
+        f3("DirLightDirection",{-.4056f,.7605f,.5070f});f3("DirLightColor",night?std::array<float,3>{0,0,0}:std::array<float,3>{power,.95f*power,.9f*power});
+        uint32_t enableLinear=linear;set("SharedData::linearLightingSettings.enableLinearLighting",&enableLinear,4);
+        for(auto name:{"colorGamma","lightGamma","ambientGamma","emitColorGamma","glowmapGamma","fogGamma","fogAlphaGamma"}){std::string field="SharedData::linearLightingSettings.";field+=name;float value=1.8f;if(!set(field.c_str(),&value,4))throw std::runtime_error("Missing lighting fixture field "+field);}
+        for(auto name:{"vanillaDiffuseColorMult","directionalLightMult","pointLightMult","ambientMult","emitColorMult","glowmapMult"}){std::string field="SharedData::linearLightingSettings.";field+=name;float value=1.f;if(!set(field.c_str(),&value,4))throw std::runtime_error("Missing lighting fixture field "+field);}
+        uint32_t fresnel=1;set("SharedData::vanillaFresnelSettings.Enable",&fresnel,4);set("SharedData::vanillaFresnelSettings.EnableGGX",&fresnel,4);
+        float minF0=.04f,one=1;set("SharedData::vanillaFresnelSettings.MinF0",&minF0,4);set("SharedData::vanillaFresnelSettings.BaseF0Multiplier",&one,4);set("SharedData::vanillaFresnelSettings.RoughnessMultiplier",&one,4);
         float ambient[12]={0,0,0,.5f,0,0,0,.55f,0,0,0,.62f};if(night)std::fill(std::begin(ambient),std::end(ambient),0.f);set("DirectionalAmbient",ambient,sizeof(ambient));
         uint32_t interior=1;set("SharedData::InInterior",&interior,4);
         const float scale=scene.hi.z-scene.lo.z;XMVECTOR center=XMVectorSet((scene.lo.x+scene.hi.x)*.5f,(scene.lo.y+scene.hi.y)*.5f,(scene.lo.z+scene.hi.z)*.5f,1);
@@ -123,11 +138,17 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
         XMStoreFloat4(&camera.eye,eye);XMStoreFloat4x4(&camera.vp,XMMatrixMultiply(XMMatrixLookAtRH(eye,center,XMVectorSet(0,0,1,0)),XMMatrixOrthographicRH(scale*1.3f*width/height,scale*1.3f,.1f,scale*10)));
         cameraBuffer=buffer(&camera,sizeof(camera),D3D11_BIND_CONSTANT_BUFFER);auto cameraPtr=cameraBuffer.Get();context->VSSetConstantBuffers(0,1,&cameraPtr);
         context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(ps.Get(),nullptr,0);context->IASetInputLayout(layout.Get());context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        auto targetPtr=rtv.Get();context->OMSetRenderTargets(1,&targetPtr,dsv.Get());float bg[]={.12f,.14f,.18f,1};context->ClearRenderTargetView(rtv.Get(),bg);context->ClearDepthStencilView(dsv.Get(),D3D11_CLEAR_DEPTH,1,0);
+        std::array<ComPtr<ID3D11Texture2D>,8> mrtTextures;
+        std::array<ComPtr<ID3D11RenderTargetView>,8> mrtViews;std::array<ID3D11RenderTargetView*,8> mrt{};
+        mrtTextures[0]=target;mrtViews[0]=rtv;mrt[0]=rtv.Get();D3D11_TEXTURE2D_DESC mrtDesc{};target->GetDesc(&mrtDesc);
+        for(int i=1;i<8;i++){check(device->CreateTexture2D(&mrtDesc,nullptr,&mrtTextures[i]));check(device->CreateRenderTargetView(mrtTextures[i].Get(),nullptr,&mrtViews[i]));mrt[i]=mrtViews[i].Get();}
+        context->OMSetRenderTargets(8,mrt.data(),dsv.Get());float bg[]={.12f,.14f,.18f,1},black[]={0,0,0,0};
+        for(int i=0;i<8;i++)context->ClearRenderTargetView(mrt[i],i?black:bg);
+        context->ClearDepthStencilView(dsv.Get(),D3D11_CLEAR_DEPTH,1,0);
         for(auto& mesh:scene.meshes){
             D3D11_RASTERIZER_DESC rasterDesc{};rasterDesc.FillMode=D3D11_FILL_SOLID;rasterDesc.CullMode=(mesh.flags&(1u<<20))?D3D11_CULL_NONE:D3D11_CULL_BACK;rasterDesc.DepthClipEnable=TRUE;
             ComPtr<ID3D11RasterizerState> rasterState;check(device->CreateRasterizerState(&rasterDesc,&rasterState));context->RSSetState(rasterState.Get());
-            f4("MaterialData",{1,1,mesh.alpha,0});f4("SpecularColor",{0,0,0,1});f4("TintColor",{1,1,1,1});f4("CharacterLightParams",{0,0,0,0});
+            f4("MaterialData",{1,1,mesh.alpha,0});f4("SpecularColor",{.8f,.8f,.8f,1});f4("TintColor",{1,1,1,1});f4("CharacterLightParams",{0,0,0,0});
             uint32_t descriptor=mesh.type<<24;set("Permutation::PixelShaderDescriptor",&descriptor,4);
             float threshold=(mesh.flags&512)?float(mesh.threshold)/255.f:0.f;set("AlphaTestRefRS",&threshold,4);
             for(auto& c:constants){c.gpu=buffer(c.bytes.data(),UINT(c.bytes.size()),D3D11_BIND_CONSTANT_BUFFER);auto ptr=c.gpu.Get();context->PSSetConstantBuffers(c.slot,1,&ptr);}
@@ -137,12 +158,12 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
             D3D11_DEPTH_STENCIL_DESC ds{};ds.DepthEnable=TRUE;ds.DepthWriteMask=b.BlendEnable?D3D11_DEPTH_WRITE_MASK_ZERO:D3D11_DEPTH_WRITE_MASK_ALL;ds.DepthFunc=D3D11_COMPARISON_LESS_EQUAL;ComPtr<ID3D11DepthStencilState> state;check(device->CreateDepthStencilState(&ds,&state));context->OMSetDepthStencilState(state.Get(),0);
             context->DrawIndexed(UINT(mesh.indices.size()),0,0);
         }
-        context->OMSetRenderTargets(0,nullptr,nullptr);D3D11_TEXTURE2D_DESC desc{};target->GetDesc(&desc);desc.BindFlags=0;desc.Usage=D3D11_USAGE_STAGING;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;ComPtr<ID3D11Texture2D> staging;check(device->CreateTexture2D(&desc,nullptr,&staging));context->CopyResource(staging.Get(),target.Get());D3D11_MAPPED_SUBRESOURCE mapped{};check(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped));std::vector<uint8_t> result(width*height*4);for(UINT y=0;y<height;y++)memcpy(result.data()+y*width*4,static_cast<uint8_t*>(mapped.pData)+y*mapped.RowPitch,width*4);context->Unmap(staging.Get(),0);return result;
+        context->OMSetRenderTargets(0,nullptr,nullptr);D3D11_TEXTURE2D_DESC desc{};target->GetDesc(&desc);desc.BindFlags=0;desc.Usage=D3D11_USAGE_STAGING;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;ComPtr<ID3D11Texture2D> staging;check(device->CreateTexture2D(&desc,nullptr,&staging));context->CopyResource(staging.Get(),mrtTextures.at(captureTarget).Get());D3D11_MAPPED_SUBRESOURCE mapped{};check(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped));std::vector<uint8_t> result(width*height*4);for(UINT y=0;y<height;y++)memcpy(result.data()+y*width*4,static_cast<uint8_t*>(mapped.pData)+y*mapped.RowPitch,width*4);context->Unmap(staging.Get(),0);return result;
     }
     static void save(const fs::path& path,const std::vector<uint8_t>& rgba){std::ofstream file(path,std::ios::binary);file<<"P6\n"<<width<<" "<<height<<"\n255\n";for(size_t i=0;i<rgba.size();i+=4)file.write(reinterpret_cast<const char*>(rgba.data()+i),3);}
 };
 int main(int argc,char** argv){try{
-    if(argc!=6)throw std::runtime_error("Usage: toon_gpu base.scene marked.scene original.cso patched.cso output-dir");
+    if(argc!=6&&argc!=10)throw std::runtime_error("Usage: toon_gpu base.scene marked.scene original.cso patched.cso output-dir [old.cso diagnostic.cso deferred.cso sphere.scene]");
     fs::path output=fs::u8path(argv[5]);fs::create_directories(output);auto base=loadScene(fs::u8path(argv[1])),marked=loadScene(fs::u8path(argv[2]));Fixture f;
     auto original=f.render(base,fs::u8path(argv[3]));auto untouched=f.render(base,fs::u8path(argv[4]));auto fallback=f.render(marked,fs::u8path(argv[3]));auto toon=f.render(marked,fs::u8path(argv[4]));auto night=f.render(marked,fs::u8path(argv[4]),true);auto baselineNight=f.render(base,fs::u8path(argv[3]),true);
     Fixture::save(output/"original.ppm",original);Fixture::save(output/"unmarked.ppm",untouched);Fixture::save(output/"fallback.ppm",fallback);Fixture::save(output/"toon.ppm",toon);Fixture::save(output/"night.ppm",night);
@@ -150,5 +171,40 @@ int main(int argc,char** argv){try{
     std::cout<<"Unmarked maximum byte difference "<<unchanged<<"; fallback "<<fallbackError<<"; night "<<nightError<<"; toon changed pixels "<<changed<<" / "<<visible<<"\n";
     if(unchanged>1||fallbackError>1||nightError>1||changed<1000)throw std::runtime_error("Shading isolation assertion failed");
     std::ofstream report(output/"gpu-verification.json");report<<"{\"actual_cs_pixel_shaders\":true,\"hardware_d3d11\":true,\"unmarked_max_byte_error\":"<<unchanged<<",\"fallback_max_byte_error\":"<<fallbackError<<",\"night_max_byte_error\":"<<nightError<<",\"toon_changed_pixels\":"<<changed<<"}";
+    if(argc==10){
+        auto old=fs::u8path(argv[6]),diagnostic=fs::u8path(argv[7]),deferred=fs::u8path(argv[8]);auto sphere=loadScene(fs::u8path(argv[9]));
+        Fixture::save(output/"old.ppm",f.render(marked,old));
+        Fixture::save(output/"old-bright.ppm",f.render(marked,old,false,4.f));
+        Fixture::save(output/"toon-bright.ppm",f.render(marked,fs::u8path(argv[4]),false,4.f));
+        Fixture::save(output/"diagnostic.ppm",f.render(marked,diagnostic));
+        auto unmarkedDiagnostic=f.render(base,diagnostic);
+        if(unmarkedDiagnostic!=original)throw std::runtime_error("Diagnostic changed unmarked surfaces");
+        auto invalid=marked;
+        for(size_t i=0;i<invalid.meshes.size();i++){
+            auto& mesh=invalid.meshes[i];if(mesh.textures[2].empty())continue;
+            auto data=readFile(fs::u8path(mesh.textures[2]));if(data.size()!=276)throw std::runtime_error("Expected 8x4 control");
+            data[148]^=0x7f;auto path=output/("invalid-control-"+std::to_string(i)+".dds");std::ofstream file(path,std::ios::binary);file.write(data.data(),data.size());file.close();mesh.textures[2]=path.string();
+        }
+        if(f.render(invalid,diagnostic)!=f.render(invalid,fs::u8path(argv[3])))throw std::runtime_error("Invalid signature activated toon");
+        for(bool linear:{false,true})for(float power:{.05f,1.f,4.f,16.f}){
+            auto suffix=std::string(linear?"linear-":"legacy-")+std::to_string(int(power*100));
+            Fixture::save(output/("sphere-old-"+suffix+".ppm"),f.render(sphere,old,false,power,0,linear));
+            Fixture::save(output/("sphere-new-"+suffix+".ppm"),f.render(sphere,fs::u8path(argv[4]),false,power,0,linear));
+        }
+        for(int target:{3,4,5}){
+            auto pixels=f.render(sphere,deferred,false,1.f,target);int maximum=0;
+            for(size_t i=0;i<pixels.size();i+=4)for(int c=0;c<3;c++)maximum=std::max(maximum,int(pixels[i+c]));
+            if(maximum)throw std::runtime_error("Marked deferred reflection/GI output not zero");
+            Fixture::save(output/("deferred-"+std::to_string(target)+".ppm"),pixels);
+        }
+        auto ordinary=sphere;for(auto& mesh:ordinary.meshes){mesh.type=0;mesh.textures[2]="";}
+        auto originalDeferred=deferred.parent_path()/"original-reflection-deferred.cso";
+        for(int target:{0,3,4,5})if(f.render(ordinary,deferred,false,1.f,target)!=f.render(ordinary,originalDeferred,false,1.f,target))throw std::runtime_error("Ordinary deferred output changed");
+        auto reflection=f.render(ordinary,originalDeferred,false,1.f,5);int reflectionMaximum=0;
+        for(size_t i=0;i<reflection.size();i+=4)for(int c=0;c<3;c++)reflectionMaximum=std::max(reflectionMaximum,int(reflection[i+c]));
+        if(reflectionMaximum<5)throw std::runtime_error("Reflection fixture has no reflection to suppress");
+        Fixture::save(output/"sphere-original-reflectance.ppm",reflection);
+        std::cout<<"Quality renders: legacy/linear light sweep, invalid signature, diagnostic isolation, deferred reflection and GI: PASS\n";
+    }
     return 0;
 }catch(const std::exception& error){std::cerr<<error.what()<<"\n";return 1;}}

@@ -24,4 +24,20 @@ float3 V2SToonAmbient(float3 directional, float3 nondirectional, float equalizat
 {
     return lerp(max(directional, 0.0), max(nondirectional, 0.0), saturate(equalization));
 }
+float3 V2SToonShade(float3 source)
+{
+    // Preserve authored dark shades and hue; pale shades need enough contrast
+    // to remain visible after Skyrim's ambient light is added.
+    float peak = max(source.r, max(source.g, source.b));
+    return source * min(1.0, 0.55 / max(peak, 0.0001));
+}
+
+float3 V2SToonResolve(float3 direct, float3 unshaded, float3 ambient, float3 shade)
+{
+    ambient = max(ambient, 0.0) * 0.6;
+    float3 available = max(unshaded, 0.0) + ambient;
+    // Both bands use the same exposure, independent of the shaded pixel.
+    float exposure = rcp(max(1.0, max(available.r, max(available.g, available.b))));
+    return (max(direct, 0.0) + ambient * shade) * exposure;
+}
 #endif

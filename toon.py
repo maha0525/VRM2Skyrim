@@ -52,7 +52,7 @@ def parameters_for(material, strength=.15):
             'gi_equalization': max(0., min(1., mtoon.get('giEqualizationFactor', .9)))}
 
 
-def patch_lighting(source):
+def patch_lighting(source, diagnostic=False):
     if hashlib.sha256(source).hexdigest() != SUPPORTED_LIGHTING:
         raise ValueError('Unsupported Community Shaders Lighting.hlsl; generate an explicitly verified adapter first')
     text = source.decode('utf-8-sig').replace('\r\n', '\n')
@@ -63,11 +63,14 @@ def patch_lighting(source):
 '''+include+'''
 #if defined(SKINNED) && !defined(TRUE_PBR)
 #undef EvaluateLighting
+#define V2S_TOON_DIAGNOSTIC '''+str(int(diagnostic))+'''
 #include "VRM2Skyrim/ToonBridge.hlsli"
 #endif'''
     initializer = '\tPS_OUTPUT psout;'
     ambient = '\tfloat4 color = 0;'
-    for token in (include, initializer, ambient):
+    forward = '#\tif !defined(DEFERRED)\n\tcolor.xyz = Color::IrradianceToLinear(color.xyz);'
+    finish = '\treturn psout;'
+    for token in (include, initializer, ambient, forward, finish):
         if text.count(token) != 1:
             raise ValueError('Shader integration anchor changed: '+token)
     text = text.replace(include, replacement)
@@ -76,20 +79,46 @@ def patch_lighting(source):
     V2SInitializeToon();
 #endif''')
     text = text.replace(ambient, '''#if defined(SKINNED) && !defined(TRUE_PBR)
+    float3 v2sAmbient = 0;
     if (V2SToonEnabled) {
         float3 flatAmbient = float3(DirectionalAmbient[0].w, DirectionalAmbient[1].w, DirectionalAmbient[2].w);
-        directionalAmbientColor = V2SToonAmbient(directionalAmbientColor, Color::Ambient(flatAmbient), V2SToon.giEqualization);
+        v2sAmbient = V2SToonAmbient(directionalAmbientColor, Color::Ambient(flatAmbient), V2SToon.giEqualization);
     }
 #endif
 '''+ambient)
+    # Resolve after all lights/skylighting, before forward fog and deferred
+    # output. Clear deferred reflection/GI inputs as well as local specular.
+    text = text.replace(forward, '''#if defined(SKINNED) && !defined(TRUE_PBR)
+    if (V2SToonEnabled) {
+        color.xyz = saturate(material.BaseColor) * V2SToonResolve(
+            V2SToonDirectSum, V2SToonUnshadedSum, v2sAmbient, V2SToon.shade);
+        specularColor = 0;
+        indirectLobeWeights.specular = 0;
+        indirectLobeWeights.diffuse = 0;
+        outputAlbedo = 0;
+        directionalAmbientColor = 0;
+        material.Roughness = 1;
+#if defined(WETNESS_EFFECTS)
+        wetnessReflectance = 0;
+        waterRoughnessSpecular = 1;
+#endif
+    }
+#endif
+'''+forward)
+    text = text.replace(finish, '''#if defined(SKINNED) && !defined(TRUE_PBR) && V2S_TOON_DIAGNOSTIC
+    if (V2SToonEnabled)
+        psout.Diffuse.xyz = float3(1, 0, 1);
+#endif
+'''+finish)
     return text.encode('utf8')
 
 
-def shader_package(shader_root, output):
+def shader_package(shader_root, output, diagnostic=False):
     shader_root, output = Path(shader_root), Path(output)
     source = shader_root/'Lighting.hlsl'
-    patched = patch_lighting(source.read_bytes())
-    target = output/'shader-mod/Shaders'
+    patched = patch_lighting(source.read_bytes(), diagnostic)
+    folder = 'shader-diagnostic-mod' if diagnostic else 'shader-mod'
+    target = output/folder/'Shaders'
     (target/'VRM2Skyrim').mkdir(parents=True, exist_ok=True)
     (target/'Lighting.hlsl').write_bytes(patched)
     for path in (ROOT/'runtime/toon').glob('*.hlsli'):
@@ -97,17 +126,18 @@ def shader_package(shader_root, output):
     shutil.copy2(shader_root/'LICENSE', target/'VRM2Skyrim/CommunityShaders-LICENSE.txt')
     shutil.copy2(ROOT/'docs/TOON.md', target/'VRM2Skyrim/README.md')
     shutil.copy2(ROOT/'LICENSE', target/'VRM2Skyrim/VRM2Skyrim-LICENSE.txt')
-    metadata = {'prototype': 1, 'community_shaders_dll_version': '1.9.0.0',
+    metadata = {'prototype': 2, 'diagnostic': diagnostic, 'community_shaders_dll_version': '1.9.0.0',
                 'lighting_sha256': SUPPORTED_LIGHTING,
                 'patched_lighting_sha256': hashlib.sha256(patched).hexdigest(),
                 'scope': 'skinned non-PBR Glowmap material with exact 8x4 DDS signature',
                 'original_evaluation_for_unmarked_materials': True}
     (target/'VRM2Skyrim/adapter.json').write_text(json.dumps(metadata, indent=2), encoding='utf8')
-    archive = output/'VRM2Skyrim-Toon-Shader-Prototype-1.zip'
+    suffix = '-Diagnostic' if diagnostic else ''
+    archive = output/f'VRM2Skyrim-Toon-Shader-Prototype-2{suffix}.zip'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
-        for path in sorted((output/'shader-mod').rglob('*')):
+        for path in sorted((output/folder).rglob('*')):
             if path.is_file():
-                package.write(path, path.relative_to(output/'shader-mod').as_posix())
+                package.write(path, path.relative_to(output/folder).as_posix())
     logging.info('Toon shader prototype: %s; original shader SHA256 %s', archive, SUPPORTED_LIGHTING)
     return archive
 
@@ -232,8 +262,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--shader-root', type=Path)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--diagnostic', action='store_true', help='mark recognized surfaces magenta for activation checks')
     args = parser.parse_args()
     if args.shader_root:
-        shader_package(args.shader_root, args.output)
+        shader_package(args.shader_root, args.output, args.diagnostic)
     else:
         prepare_materials(args.output)

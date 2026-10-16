@@ -2,6 +2,8 @@
 #include "VRM2Skyrim/ToonMath.hlsli"
 static bool V2SToonEnabled = false;
 static V2SToonParameters V2SToon;
+static float3 V2SToonDirectSum = 0;
+static float3 V2SToonUnshadedSum = 0;
 
 float V2SToonData(uint index)
 {
@@ -12,6 +14,8 @@ float V2SToonData(uint index)
 void V2SInitializeToon()
 {
     V2SToonEnabled = false;
+    V2SToonDirectSum = 0;
+    V2SToonUnshadedSum = 0;
     uint shaderTechnique = (Permutation::PixelShaderDescriptor >> 24) & 0x3F;
     if (shaderTechnique != Permutation::LightingTechnique::Glowmap)
         return;
@@ -24,7 +28,7 @@ void V2SInitializeToon()
     if (any(abs(header0 - float4(1, 0, 1, 1)) > 0.001) ||
         any(abs(header1 - float4(0, 1, 0, 1)) > 0.001))
         return;
-    V2SToon.shade = float3(V2SToonData(2), V2SToonData(3), V2SToonData(4));
+    V2SToon.shade = V2SToonShade(float3(V2SToonData(2), V2SToonData(3), V2SToonData(4)));
     V2SToon.toony = V2SToonData(5);
     V2SToon.shift = V2SToonData(6) * 2.0 - 1.0;
     V2SToon.giEqualization = V2SToonData(7);
@@ -43,4 +47,6 @@ void EvaluateLighting(DirectContext context, MaterialProperties material, float3
     lightingOutput.diffuse = V2SToonDirect(context.worldNormal, context.lightDir,
         context.lightColor, min(context.detailedShadow, context.softShadow), V2SToon)
         * Color::VanillaNormalization();
+    V2SToonDirectSum += lightingOutput.diffuse;
+    V2SToonUnshadedSum += max(context.lightColor, 0.0) * Color::VanillaNormalization();
 }

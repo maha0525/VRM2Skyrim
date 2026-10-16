@@ -1,5 +1,23 @@
 # VRM-only toon shading prototype
 
+## Prototype 2: visible bands and activation evidence
+
+Keep existing follower NIF/DDS controls compatible. Resolve marked materials'
+direct and ambient illumination together; cap pale shade multipliers while
+preserving authored dark shades and their hue. Normalize by the available
+unshaded light, so intense lights do not erase colour and band contrast.
+Suppress forward and deferred physical reflections, wet specular and later
+diffuse GI for the marked surface only. Preserve fog, alpha and world darkness.
+Provide a separate optional diagnostic adapter that colours only successfully
+recognized marked surfaces magenta. Never treat this offline check as a live
+game capture. Deliver ZIPs; do not change the deployed game or its cache.
+
+Compare the old/new full CS shaders with identical real avatars and lighting.
+Also exercise controlled curved surfaces, intense light, no light, wrong or
+missing signatures, ordinary objects, forward/deferred output and reflections.
+Verify diagnostic coverage and unmarked byte/pixel invariance. Record numerical
+band contrast, clipping and deferred reflectance, alongside actual images.
+
 ## User request
 
 Apply MToon-like shading inside Skyrim only to opted-in converted VRM

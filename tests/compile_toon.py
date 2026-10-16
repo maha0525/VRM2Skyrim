@@ -12,9 +12,10 @@ sys.path.insert(0, str(ROOT))
 from toon import shader_package  # noqa: E402
 
 
-def verify(shader_root, output):
+def verify(shader_root, output, diagnostic=False):
     shader_root, output = Path(shader_root).resolve(), Path(output).resolve()
-    shader_package(shader_root, output)
+    shader_package(shader_root, output, diagnostic)
+    patched_folder = 'shader-diagnostic-mod' if diagnostic else 'shader-mod'
     fxc = Path('C:/Program Files (x86)/Windows Kits/10/bin/10.0.22621.0/x64/fxc.exe')
     feature_flags = ('DYNAMIC_CUBEMAPS', 'IBL', 'LIGHT_LIMIT_FIX', 'SKYLIGHTING',
                      'SCREEN_SPACE_GI', 'SCREEN_SPACE_SHADOWS', 'WETNESS_EFFECTS',
@@ -26,6 +27,7 @@ def verify(shader_root, output):
         ('cutout', 'ps_5_0', ('PSHADER', 'SKINNED', 'DO_ALPHA_TEST')),
         ('deferred', 'ps_5_0', ('PSHADER', 'SKINNED', 'DEFERRED')),
         ('deferred-cutout', 'ps_5_0', ('PSHADER', 'SKINNED', 'DEFERRED', 'DO_ALPHA_TEST')),
+        ('reflection-deferred', 'ps_5_0', ('PSHADER', 'SKINNED', 'DEFERRED', 'SPECULAR', 'DYNAMIC_CUBEMAPS', 'VANILLA_FRESNEL')),
         ('features', 'ps_5_0', ('PSHADER', 'SKINNED')+feature_flags),
         ('features-deferred', 'ps_5_0', ('PSHADER', 'SKINNED', 'DEFERRED')+feature_flags),
         ('ordinary', 'ps_5_0', ('PSHADER',)),
@@ -41,10 +43,10 @@ def verify(shader_root, output):
     def compile_variant(variant):
         name, target, flags = variant
         results = []
-        for kind, folder in [('original', shader_root), ('toon', output/'shader-mod/Shaders')]:
+        for kind, folder in [('original', shader_root), ('toon', output/patched_folder/'Shaders')]:
             path = output/f'{kind}-{name}.cso'
             args = [str(fxc), '/nologo', '/T', target, '/E', 'main',
-                    '/I', str(output/'shader-mod/Shaders'), '/I', str(shader_root), '/Fo', str(path)]
+                    '/I', str(output/patched_folder/'Shaders'), '/I', str(shader_root), '/Fo', str(path)]
             for flag in flags:
                 args += ['/D', flag+'=1']
             args.append(str(folder/'Lighting.hlsl'))
@@ -68,5 +70,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--shader-root', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--diagnostic', action='store_true')
     args = parser.parse_args()
-    verify(args.shader_root, args.output)
+    verify(args.shader_root, args.output, args.diagnostic)

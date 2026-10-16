@@ -15,7 +15,7 @@ from custom_skeleton import NifFile, children  # noqa: E402
 from settings import load_settings  # noqa: E402
 
 
-def scene(output, destination):
+def scene(output, destination, unmarked=False):
     output = Path(output)
     settings = load_settings(output)
     manifest = json.loads((output/'appearance.json').read_text(encoding='utf8'))
@@ -32,6 +32,10 @@ def scene(output, destination):
                 flags = shape.alpha_property.properties.flags if shape.has_alpha_property else 0
                 threshold = shape.alpha_property.properties.threshold if shape.has_alpha_property else 0
                 props = shape.shader.properties
+                if unmarked and props.Shader_Type == 2:
+                    marker = shape.shader.textures.get('Glow', '')
+                    if marker and Path(marker.replace('\\', '/')).name.startswith('toon_'):
+                        raise ValueError('Comparison base contains toon markers; use the original unmarked export')
                 if props.Shader_Flags_2 & 16:
                     flags |= 1 << 20
                 vertices = np.column_stack((shape.verts, shape.normals, shape.uvs)).astype('<f4')
@@ -77,7 +81,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.output = args.output.resolve()
     args.output.mkdir(parents=True, exist_ok=True)
-    scene(args.base, args.output/'base.scene')
+    scene(args.base, args.output/'base.scene', unmarked=True)
     scene(args.marked, args.output/'marked.scene')
     build(args.output)
     shaders = (args.compiled_shaders or args.output.parent).resolve()
