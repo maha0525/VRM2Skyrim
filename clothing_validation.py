@@ -48,6 +48,8 @@ def validate_clothing_skin(output, settings):
         with ExitStack() as stack:
             sources = [stack.enter_context(NifFile(str(root/file))) for file in files]
             for shape in [shape for source in sources for shape in source.shapes]:
+                if shape.name.startswith('V2SOutline_'):
+                    continue  # Decorative shell is not retained body geometry.
                 if not set(p.id for p in shape.partitions).issubset(slots):
                     continue
                 key = shape.textures['Diffuse']

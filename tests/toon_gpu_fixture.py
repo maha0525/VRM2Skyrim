@@ -15,12 +15,14 @@ from custom_skeleton import NifFile, children  # noqa: E402
 from settings import load_settings  # noqa: E402
 
 
-def scene(output, destination, unmarked=False):
+def scene(output, destination, unmarked=False, component_ids=None):
     output = Path(output)
     settings = load_settings(output)
     manifest = json.loads((output/'appearance.json').read_text(encoding='utf8'))
     data = []
     for part in manifest['components']:
+        if component_ids is not None and part['id'] not in component_ids:
+            continue
         with NifFile(str((output/'mod/meshes'/settings.asset_dir/part['file']).resolve())) as nif:
             by_id = {s.id: s for s in nif.shapes}
             shapes = [by_id[i] for i in children(nif, nif.rootNode) if i in by_id]
@@ -38,6 +40,8 @@ def scene(output, destination, unmarked=False):
                         raise ValueError('Comparison base contains toon markers; use the original unmarked export')
                 if props.Shader_Flags_2 & 16:
                     flags |= 1 << 20
+                if not props.Shader_Flags_2 & 1:
+                    flags |= 1 << 21  # Preserve native ZBUFFER_WRITE even for alpha blending.
                 vertices = np.column_stack((shape.verts, shape.normals, shape.uvs)).astype('<f4')
                 indices = np.asarray(shape.tris, dtype='<u4').ravel()
                 blob = bytearray(struct.pack('<5If', len(vertices), len(indices), props.Shader_Type,

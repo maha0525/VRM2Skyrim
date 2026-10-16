@@ -87,7 +87,7 @@ def local_points(points, global_matrix):
 def weighted_points(nif, shape_filter=None, minimum_weight=.001):
     result = {}
     for shape in nif.shapes:
-        if shape.name.startswith('V2SCollision_'):
+        if shape.name.startswith(('V2SCollision_', 'V2SOutline_')):
             continue
         if shape_filter is not None and not shape_filter(shape):
             continue
@@ -105,7 +105,7 @@ def skin_samples(nif):
     """Parallel points/weights, excluding generated contact geometry."""
     points, weights = {}, {}
     for shape in nif.shapes:
-        if shape.name.startswith('V2SCollision_'):
+        if shape.name.startswith(('V2SCollision_', 'V2SOutline_')):
             continue
         value = matrix(shape.transform)
         vertices = np.asarray(shape.verts) @ value[:3, :3].T + value[:3, 3]
@@ -152,7 +152,7 @@ def skin_co_influences(nif):
     """Bones affecting the same visual vertex; no generated proxy feedback."""
     groups = set()
     for shape in nif.shapes:
-        if shape.name.startswith('V2SCollision_'):
+        if shape.name.startswith(('V2SCollision_', 'V2SOutline_')):
             continue
         vertices = {}
         for name, pairs in shape.bone_weights.items():

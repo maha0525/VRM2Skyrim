@@ -95,6 +95,7 @@ def patch_lighting(source, diagnostic=False):
             V2SToonDirectSum, V2SToonUnshadedSum, v2sAmbient, saturate(material.BaseColor)) :
             saturate(material.BaseColor) * V2SToonResolve(
                 V2SToonDirectSum, V2SToonUnshadedSum, v2sAmbient, V2SToon.shade);
+        color.xyz = V2SFinishEffects(color.xyz, worldNormal, viewDirection, uv, directionalAmbientColor, v2sAmbient);
         specularColor = 0;
         indirectLobeWeights.specular = 0;
         indirectLobeWeights.diffuse = 0;
@@ -108,6 +109,13 @@ def patch_lighting(source, diagnostic=False):
     }
 #endif
 '''+forward)
+    normal_anchor = '\tfloat3 worldNormal = normalize(mul(tbn, normal.xyz));'
+    if text.count(normal_anchor) != 1:
+        raise ValueError('Shader normal integration anchor changed')
+    text = text.replace(normal_anchor, normal_anchor+'''
+#if !defined(LANDSCAPE) && !defined(LODLANDSCAPE) && !defined(TRUE_PBR)
+    worldNormal = V2SApplySourceNormal(worldNormal, input.WorldPosition.xyz, uv);
+#endif''')
     text = text.replace(finish, '''#if !defined(LANDSCAPE) && !defined(LODLANDSCAPE) && !defined(TRUE_PBR) && V2S_TOON_DIAGNOSTIC
     if (V2SToonEnabled)
         psout.Diffuse.xyz = float3(1, 0, 1);
@@ -162,18 +170,18 @@ def shader_package(shader_root, output, diagnostic=False):
     shutil.copy2(shader_root/'LICENSE', target/'VRM2Skyrim/CommunityShaders-LICENSE.txt')
     shutil.copy2(ROOT/'docs/TOON.md', target/'VRM2Skyrim/README.md')
     shutil.copy2(ROOT/'LICENSE', target/'VRM2Skyrim/VRM2Skyrim-LICENSE.txt')
-    metadata = {'prototype': 5, 'diagnostic': diagnostic, 'community_shaders_dll_version': '1.9.0.0',
+    metadata = {'prototype': 6, 'diagnostic': diagnostic, 'community_shaders_dll_version': '1.9.0.0',
                 'lighting_sha256': SUPPORTED_LIGHTING,
                 'patched_lighting_sha256': hashlib.sha256(patched).hexdigest(),
                 'composite_sha256': SUPPORTED_COMPOSITE,
                 'patched_composite_sha256': hashlib.sha256(composite).hexdigest(),
                 'scope': 'non-landscape non-PBR Glowmap with private legacy or authored-material DDS signature',
                 'authored_face_metadata_version': 1,
-                'authored_material_metadata_version': 2,
+                'authored_material_metadata_version': 3,
                 'original_evaluation_for_unmarked_materials': True}
     (target/'VRM2Skyrim/adapter.json').write_text(json.dumps(metadata, indent=2), encoding='utf8')
     suffix = '-Diagnostic' if diagnostic else ''
-    archive = output/f'VRM2Skyrim-Toon-Shader-Prototype-5{suffix}.zip'
+    archive = output/f'VRM2Skyrim-Toon-Shader-Prototype-6{suffix}.zip'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
         for path in sorted((output/folder).rglob('*')):
             if path.is_file():
@@ -190,6 +198,7 @@ def avatar_paths(output, settings, manifest):
 def prepare_materials(output, strength=.15):
     """Mark only source avatar shapes, leaving collisions and existing gear alone."""
     from custom_skeleton import NifFile
+    from toon_outlines import reset_originals, remember_prepared, width_for, create_hull, order_hulls
     output = Path(output)
     settings = load_settings(output)
     settings.toon_enabled = True
@@ -212,6 +221,8 @@ def prepare_materials(output, strength=.15):
                   for s in c.get('shapes', []) if 'source_node' in s}
     authored_cache = {}
     paths = avatar_paths(output, settings, manifest)
+    reset_originals(output, paths)
+    pending_hulls = []
     for path in sorted(paths):
         with NifFile(str(path.resolve())) as nif:
             infos = []
@@ -231,10 +242,10 @@ def prepare_materials(output, strength=.15):
             parameters = parameters_for(material, 0. if authored else strength, authored=authored)
             extra = {}
             if authored:
-                from toon_shade import build_shade
+                from toon_effects import build_material
                 cache_key = json.dumps([material, parameters], sort_keys=True)
                 if cache_key not in authored_cache:
-                    authored_cache[cache_key] = build_shade(output, document, binary, material, parameters)
+                    authored_cache[cache_key] = build_material(output, document, binary, material, parameters)
                 data, extra = authored_cache[cache_key]
             else:
                 data = control_bytes(parameters)
@@ -264,9 +275,38 @@ def prepare_materials(output, strength=.15):
             prepared.append({'file': path.name, 'shape': info['name'], 'control': relative,
                              'parameters': parameters, 'source_material': material.get('name'),
                              'face': path.name in face_files or info.get('source_node') in face_nodes, **extra})
+            if authored:
+                with NifFile(str(path.resolve())) as nif:
+                    shape = next(s for s in nif.shapes if s.name == info['name'])
+                    widths = width_for(document, binary, material, shape.uvs)
+                if widths is not None and max(widths) > 0:
+                    pending_hulls.append((path, info['name'], material, parameters, widths, prepared[-1]['face']))
+    for path, source, material, parameters, widths, face in pending_hulls:
+        from toon_effects import build_material
+        cache_key = json.dumps([material, parameters, 'outline'], sort_keys=True)
+        if cache_key not in authored_cache:
+            authored_cache[cache_key] = build_material(output, document, binary, material, parameters, outline=True)
+        data, extra = authored_cache[cache_key]
+        relative = f'textures/{settings.asset_dir}/toon_{hashlib.sha256(data).hexdigest()[:16]}.dds'
+        (mod/relative).write_bytes(data)
+        name = create_hull(path, source, widths, relative)
+        with NifFile(str(path.resolve())) as nif:
+            import numpy as np
+            by_name = {s.name: s for s in nif.shapes}
+            delta = np.asarray(by_name[name].verts)-np.asarray(by_name[source].verts)
+            offset = hashlib.sha256(np.asarray(delta, dtype='<f4').tobytes()).hexdigest()
+        prepared.append({'file': path.name, 'shape': name, 'source_shape': source, 'role': 'outline',
+                         'offset_sha256': offset, 'control': relative, 'parameters': parameters,
+                         'source_material': material.get('name'), 'face': face, **extra})
+    for path in sorted(paths):
+        outlines = [e for e in prepared if e['file'] == path.name and e.get('role') == 'outline']
+        if outlines:
+            order_hulls(path, outlines)
+    remember_prepared(output, paths)
     report = {'prototype': 1, 'enabled': True, 'materials': prepared, 'game_verified': False}
-    report['authored_shapes'] = sum(e.get('profile') == 'authored_material' for e in prepared)
-    report['authored_face_shapes'] = sum(e.get('profile') == 'authored_material' and e['face'] for e in prepared)
+    report['authored_shapes'] = sum(e.get('profile') == 'authored_material' and e.get('role') != 'outline' for e in prepared)
+    report['outline_shapes'] = len(pending_hulls)
+    report['authored_face_shapes'] = sum(e.get('profile') == 'authored_material' and e['face'] and e.get('role') != 'outline' for e in prepared)
     (output/'toon.json').write_text(json.dumps(report, indent=2), encoding='utf8')
     validate_toon(output)
     logging.info('Toon prototype: %d source shapes; zero emission, original alpha/skin retained', len(prepared))
@@ -285,6 +325,11 @@ def validate_toon(output):
         raise ValueError('Toon material report disagrees with settings')
     seen, checked_shades = set(), set()
     for entry in report['materials']:
+        from toon_outlines import PREFIX
+        if entry['shape'].startswith(PREFIX) != (entry.get('role') == 'outline'):
+            raise ValueError('MToon outline role/shape ownership mismatch')
+        if entry.get('metadata_version') == 3 and bool(entry['effects']['outline']) != (entry.get('role') == 'outline'):
+            raise ValueError('MToon outline role/control mismatch')
         key = (entry['file'], entry['shape'])
         if key in seen:
             raise ValueError('Duplicate toon material declaration')
@@ -295,19 +340,31 @@ def validate_toon(output):
             raise ValueError('Toon control is not private to this follower')
         data = (output/'mod'/relative).read_bytes()
         if entry.get('profile') in {'authored_face', 'authored_material'}:
-            from toon_shade import validate_shade
-            expected = {key: entry.get(key) for key in ['parameters', 'size', 'source_size', 'wrap', 'format', 'metadata_version']}
+            expected = {key: entry.get(key) for key in ['parameters', 'size', 'source_size', 'wrap', 'format',
+                                                       'metadata_version', 'rectangles', 'effects']}
             shade_key = (relative, json.dumps(expected, sort_keys=True), entry['sha256'])
             if shade_key not in checked_shades:
-                validate_shade(output/'mod'/relative, entry['parameters'], entry['size'], entry['sha256'],
-                               entry.get('source_size') if entry.get('metadata_version') == 2 else None,
-                               entry.get('wrap'), entry.get('format', 'BC7_UNORM'))
+                if entry.get('metadata_version') == 3:
+                    from toon_effects import validate_material
+                    validate_material(output/'mod'/relative, entry['parameters'], entry)
+                else:
+                    from toon_shade import validate_shade
+                    validate_shade(output/'mod'/relative, entry['parameters'], entry['size'], entry['sha256'],
+                                   entry.get('source_size') if entry.get('metadata_version') == 2 else None,
+                                   entry.get('wrap'), entry.get('format', 'BC7_UNORM'))
                 checked_shades.add(shade_key)
         else:
             if data != control_bytes(entry['parameters']):
                 raise ValueError('Toon DDS parameters changed: '+entry['shape'])
             validate_dds(output/'mod'/relative, (8, 4), 'R8G8B8A8_UNORM')
         with NifFile(str(path.resolve())) as nif:
+            if entry.get('role') == 'outline':
+                from toon_outlines import validate_hull
+                source_key = (entry['file'], entry['source_shape'])
+                owner = next((e for e in report['materials'] if (e['file'], e['shape']) == source_key), None)
+                if owner is None or owner.get('role') == 'outline' or owner['source_material'] != entry['source_material']:
+                    raise ValueError('MToon outline has no declared source material owner')
+                validate_hull(nif, entry)
             shape = next(s for s in nif.shapes if s.name == entry['shape'])
             p = shape.shader.properties
             if (p.Shader_Type != 2 or not p.Shader_Flags_1 & (1 << 22)

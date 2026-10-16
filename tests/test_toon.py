@@ -24,6 +24,7 @@ class ToonTests(unittest.TestCase):
         # Exercise packaging separately from the full Windows FXC/GPU checks.
         source = (b'#\tinclude "Common/LightingEval.hlsli"\n'
                   b'\tPS_OUTPUT psout;\n\tfloat4 color = 0;\n'
+                  b'\tfloat3 worldNormal = normalize(mul(tbn, normal.xyz));\n'
                   b'#\tif !defined(DEFERRED)\n\tcolor.xyz = Color::IrradianceToLinear(color.xyz);\n'
                   b'\t// Stored as 1 - vertexAO so the cleared default (0) means no occlusion\n'
                   b'\treturn psout;\n')
@@ -46,12 +47,12 @@ class ToonTests(unittest.TestCase):
                     self.assertTrue(all(name.startswith('Shaders/') for name in package.namelist()))
                     self.assertFalse(any(name.endswith(('.dll', '.pso', '.cso')) for name in package.namelist()))
                     metadata = json.loads(package.read('Shaders/VRM2Skyrim/adapter.json'))
-                    self.assertEqual(metadata['prototype'], 5)
+                    self.assertEqual(metadata['prototype'], 6)
                     self.assertEqual(metadata['diagnostic'], is_diagnostic)
                     lighting = package.read('Shaders/Lighting.hlsl')
                     self.assertEqual(hashlib.sha256(lighting).hexdigest(), metadata['patched_lighting_sha256'])
                     self.assertIn(f'#define V2S_TOON_DIAGNOSTIC {int(is_diagnostic)}'.encode(), lighting)
-                    self.assertEqual(len(package.namelist()), 9)
+                    self.assertEqual(len(package.namelist()), 10)
                     self.assertNotIn(b'defined(SKINNED)', lighting)
                     self.assertEqual(hashlib.sha256(package.read('Shaders/DeferredCompositeCS.hlsl')).hexdigest(),
                                      metadata['patched_composite_sha256'])

@@ -82,6 +82,27 @@ def normalize_material_colors(document):
         texture = properties.get('textureProperties', {}).get('_ShadeTexture')
         if texture is not None and texture >= 0:
             mtoon['shadeMultiplyTexture'] = {'index': texture}
+        vectors = properties.get('vectorProperties', {})
+        textures = properties.get('textureProperties', {})
+        def linear_rgb(key, default):
+            return [v/12.92 if v <= .04045 else ((v+.055)/1.055)**2.4 for v in vectors.get(key, default)[:3]]
+        mtoon['parametricRimColorFactor'] = linear_rgb('_RimColor', [0, 0, 0, 1])
+        mtoon['parametricRimFresnelPowerFactor'] = props.get('_RimFresnelPower', 5.)
+        mtoon['parametricRimLiftFactor'] = props.get('_RimLift', 0.)
+        # UniVRM migration fixes this to 1 because VRM1 combines rim and MatCap.
+        mtoon['rimLightingMixFactor'] = 1.
+        for legacy_key, key in [('_SphereAdd', 'matcapTexture'), ('_RimTexture', 'rimMultiplyTexture'),
+                                ('_OutlineWidthTexture', 'outlineWidthMultiplyTexture')]:
+            if textures.get(legacy_key, -1) >= 0:
+                mtoon[key] = {'index': textures[legacy_key]}
+        mtoon['matcapFactor'] = [1, 1, 1] if 'matcapTexture' in mtoon else [0, 0, 0]
+        outline_mode = int(props.get('_OutlineWidthMode', 0))
+        mtoon['outlineWidthMode'] = {0: 'none', 1: 'worldCoordinates', 2: 'screenCoordinates'}[outline_mode]
+        mtoon['outlineWidthFactor'] = props.get('_OutlineWidth', 0.) * (.01 if outline_mode == 1 else .005)
+        mtoon['outlineColorFactor'] = linear_rgb('_OutlineColor', [0, 0, 0, 1])
+        mtoon['outlineLightingMixFactor'] = props.get('_OutlineLightingMix', 1.)
+        if textures.get('_BumpMap', -1) >= 0:
+            material['normalTexture'] = {'index': textures['_BumpMap'], 'scale': props.get('_BumpScale', 1.)}
 
 
 def lighting_flags_2(material):

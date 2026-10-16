@@ -24,6 +24,8 @@ def geometry(path):
     with NifFile(str(path.resolve())) as nif:
         result = {}
         for shape in nif.shapes:
+            if shape.name.startswith('V2SOutline_'):
+                continue  # Separately validated against its explicit source owner.
             data = b''.join(np.asarray(v).tobytes() for v in [shape.verts, shape.tris, shape.normals, shape.uvs])
             data += json.dumps([shape.bone_names, shape.bone_weights], sort_keys=True).encode()
             data += bytes(shape.global_to_skin)
@@ -71,7 +73,7 @@ def build(source, output):
     if set(changed) != expected:
         raise ValueError('Patch changes differ from authored material owners: '+str(changed))
     selected = set(changed) | {e['control'] for e in entries}
-    archive = output/(settings.mod_id+'-Toon-Materials-5.zip')
+    archive = output/(settings.mod_id+'-Toon-Materials-6.zip')
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
         for relative in sorted(selected):
             package.write(output/'mod'/relative, relative)
@@ -79,8 +81,9 @@ def build(source, output):
         assert package.testzip() is None and set(package.namelist()) == selected
     record = {'source': str(source), 'patch': str(archive), 'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
               'size': archive.stat().st_size, 'files': sorted(selected),
-              'geometry_normals_uvs_unchanged': True, 'authored_shapes': len(entries),
+              'geometry_normals_uvs_unchanged': True, 'authored_shapes': report['authored_shapes'],
               'authored_face_shapes': report['authored_face_shapes']}
+    record['outline_shapes'] = report['outline_shapes']
     record['skin_weights_bind_transforms_unchanged'] = True
     (output/'material-patch-verification.json').write_text(json.dumps(record, indent=2), encoding='utf8')
     print(json.dumps(record, indent=2))

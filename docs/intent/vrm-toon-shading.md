@@ -1,5 +1,52 @@
 # VRM-only toon shading prototype
 
+## Prototype 6: authored MatCap, rim, normals and outlines
+
+Prototype 5 is confirmed in game and pushed to main at 7d44c34. Implement the
+next effects together on codex/toon-material-effects, then deliver one shader
+update for one game comparison. Do not edit the deployed game or its cache.
+
+Read real VRM0/1 inputs and UniVRM migration/lighting definitions. Preserve
+author-defined effect colours, strengths, masks and disabled settings. Keep
+legacy/face-v1/source-domain-v2 markers readable and ordinary objects unchanged.
+Use the proven t6 texture binding for a padded, per-region source atlas and
+versioned metadata rather than assuming additional engine texture slots work.
+Retain each image's resolution, addressing, colour space and normal strength.
+Reconstruct tangent-space perturbation from source UV derivatives and the native
+surface basis, checking orientation with an independent analytic reference.
+
+Outlines belong to each source shape's own NIF/slot, including retained skin and
+head-visibility variants. Generate a skinned inverted hull with source world
+width/mask and unchanged original geometry, copying weights, bind transforms,
+partitions and alpha. Source units are explicitly 70 Skyrim units per metre.
+Keep generated hulls out of source triangle counts and physics/contact input;
+validate their complete ownership, geometry, culling and animation separately.
+None means no hull. Current Quon/Erys inputs use world widths; unsupported
+screen-width semantics must be explicit rather than silently becoming world
+widths. Repeated preparation must not add hulls or reuse stale originals.
+
+Test positive effect controls plus disabled/missing maps, view/light changes,
+darkness, non-target/fallback, native deferred SSGI, alpha and all four real
+avatars through final validation/packaging. Inspect complete heads and full
+bodies. Do not publish/merge this next prototype before user acceptance.
+
+Verification: the complete suite passes 169 tests; 33 hardware pixel-reference
+cases cover atlas addressing, controls, source normal orientation, rim and
+MatCap axes. Four separate production-CS positive controls visibly change the
+render. Legacy/v1/v2 material output remains byte-identical between adapters.
+Quon completes real conversion, FSMP, final validation, 75 sampled animation
+frames and ZIP creation. Four follower patches preserve original geometry,
+normals, UVs and skin; only Quon/Erys add source-enabled world-width shells.
+
+The user's Erys hairline observation exposed an invalid verification renderer:
+it discarded transparent ZBUFFER_WRITE and rendered raw child order instead of
+opaque/transparent phases. Fix the fixture, not source geometry. Preserve the
+native depth flag and phases, reproduce both with overlapping-layer positive
+controls, and inspect full heads against the user's normal Unity reference.
+Independent Gemini image comparison rejected the initial and intermediate
+frames; the corrected front/left/right comparison passed. This proves the
+offline comparison's quality, not final game acceptance.
+
 ## Authored shading on every source MToon material
 
 The user confirmed Prototype 4's face in game. Extend the same conversion to

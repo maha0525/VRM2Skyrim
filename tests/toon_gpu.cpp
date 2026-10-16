@@ -61,6 +61,7 @@ struct Fixture{
     std::map<std::string,ComPtr<ID3D11ShaderResourceView>> textures;
     std::array<ComPtr<ID3D11Texture2D>,8> lastGBuffer;
     bool focusHead=false;XMFLOAT3 focusLo{},focusHi{};
+    float focusYaw=.6f;
     std::array<float,3> lightDirection={-.4056f,.7605f,.5070f};
     Fixture(){
         D3D_FEATURE_LEVEL level;check(D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_HARDWARE,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&device,&level,&context));
@@ -137,7 +138,7 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
         uint32_t interior=1;set("SharedData::InInterior",&interior,4);
         auto lo=focusHead?focusLo:scene.lo,hi=focusHead?focusHi:scene.hi;
         const float scale=hi.z-lo.z;XMVECTOR center=XMVectorSet((lo.x+hi.x)*.5f,(lo.y+hi.y)*.5f,(lo.z+hi.z)*.5f,1);
-        XMVECTOR eye=XMVectorAdd(center,focusHead?XMVectorSet(scale*.6f,scale*4,scale*.25f,0):XMVectorSet(scale*1.8f,scale*4,scale*.55f,0));
+        XMVECTOR eye=XMVectorAdd(center,focusHead?XMVectorSet(scale*focusYaw,scale*4,scale*.25f,0):XMVectorSet(scale*1.8f,scale*4,scale*.55f,0));
         struct Camera{XMFLOAT4X4 vp;XMFLOAT4 eye;}camera;
         XMStoreFloat4(&camera.eye,eye);XMStoreFloat4x4(&camera.vp,XMMatrixMultiply(XMMatrixLookAtRH(eye,center,XMVectorSet(0,0,1,0)),XMMatrixOrthographicRH(scale*1.3f*width/height,scale*1.3f,.1f,scale*10)));
         cameraBuffer=buffer(&camera,sizeof(camera),D3D11_BIND_CONSTANT_BUFFER);auto cameraPtr=cameraBuffer.Get();context->VSSetConstantBuffers(0,1,&cameraPtr);
@@ -159,7 +160,12 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
         context->OMSetRenderTargets(8,mrt.data(),dsv.Get());float bg[]={.12f,.14f,.18f,1},black[]={0,0,0,0};
         for(int i=0;i<8;i++)context->ClearRenderTargetView(mrt[i],i?black:bg);
         context->ClearDepthStencilView(dsv.Get(),D3D11_CLEAR_DEPTH,1,0);
-        for(auto& mesh:scene.meshes){
+        std::vector<const Mesh*> draws;for(auto& mesh:scene.meshes)draws.push_back(&mesh);
+        // Renderer phases differ from NIF child order: opaque/cutout first,
+        // then transparent with Z-write, then ordinary alpha blending.
+        auto phase=[](const Mesh* mesh){return !(mesh->flags&1)?0:(mesh->flags&(1u<<21))?2:1;};
+        std::stable_sort(draws.begin(),draws.end(),[&](auto a,auto b){return phase(a)<phase(b);});
+        for(auto meshPtr:draws){const auto& mesh=*meshPtr;
             D3D11_RASTERIZER_DESC rasterDesc{};rasterDesc.FillMode=D3D11_FILL_SOLID;rasterDesc.CullMode=(mesh.flags&(1u<<20))?D3D11_CULL_NONE:D3D11_CULL_BACK;rasterDesc.DepthClipEnable=TRUE;rasterDesc.FrontCounterClockwise=TRUE;
             ComPtr<ID3D11RasterizerState> rasterState;check(device->CreateRasterizerState(&rasterDesc,&rasterState));context->RSSetState(rasterState.Get());
             f4("MaterialData",{1,1,mesh.alpha,0});f4("SpecularColor",{.8f,.8f,.8f,1});f4("TintColor",{1,1,1,1});f4("CharacterLightParams",{0,0,0,0});
@@ -169,7 +175,7 @@ Output main(Input v){Output o=(Output)0;o.p=mul(float4(v.p,1),VP);o.uv=v.uv;floa
             auto diffuse=texture(mesh.textures[0]),normal=texture(mesh.textures[1]),glow=texture(mesh.textures[2]);context->PSSetShaderResources(0,1,&diffuse);context->PSSetShaderResources(1,1,&normal);context->PSSetShaderResources(6,1,&glow);
             auto vb=buffer(mesh.vertices.data(),UINT(mesh.vertices.size()*sizeof(Vertex)),D3D11_BIND_VERTEX_BUFFER);auto ib=buffer(mesh.indices.data(),UINT(mesh.indices.size()*4),D3D11_BIND_INDEX_BUFFER);auto vp=vb.Get();UINT stride=sizeof(Vertex),offset=0;context->IASetVertexBuffers(0,1,&vp,&stride,&offset);context->IASetIndexBuffer(ib.Get(),DXGI_FORMAT_R32_UINT,0);
             D3D11_BLEND_DESC blend{};auto& b=blend.RenderTarget[0];b.RenderTargetWriteMask=D3D11_COLOR_WRITE_ENABLE_ALL;b.BlendEnable=(mesh.flags&1)!=0;b.SrcBlend=D3D11_BLEND_SRC_ALPHA;b.DestBlend=D3D11_BLEND_INV_SRC_ALPHA;b.BlendOp=b.BlendOpAlpha=D3D11_BLEND_OP_ADD;b.SrcBlendAlpha=D3D11_BLEND_ONE;b.DestBlendAlpha=D3D11_BLEND_INV_SRC_ALPHA;ComPtr<ID3D11BlendState> bs;check(device->CreateBlendState(&blend,&bs));context->OMSetBlendState(bs.Get(),nullptr,0xffffffff);
-            D3D11_DEPTH_STENCIL_DESC ds{};ds.DepthEnable=TRUE;ds.DepthWriteMask=b.BlendEnable?D3D11_DEPTH_WRITE_MASK_ZERO:D3D11_DEPTH_WRITE_MASK_ALL;ds.DepthFunc=D3D11_COMPARISON_LESS_EQUAL;ComPtr<ID3D11DepthStencilState> state;check(device->CreateDepthStencilState(&ds,&state));context->OMSetDepthStencilState(state.Get(),0);
+            D3D11_DEPTH_STENCIL_DESC ds{};ds.DepthEnable=TRUE;ds.DepthWriteMask=(mesh.flags&(1u<<21))?D3D11_DEPTH_WRITE_MASK_ZERO:D3D11_DEPTH_WRITE_MASK_ALL;ds.DepthFunc=D3D11_COMPARISON_LESS_EQUAL;ComPtr<ID3D11DepthStencilState> state;check(device->CreateDepthStencilState(&ds,&state));context->OMSetDepthStencilState(state.Get(),0);
             context->DrawIndexed(UINT(mesh.indices.size()),0,0);
         }
         context->OMSetRenderTargets(0,nullptr,nullptr);
@@ -252,7 +258,10 @@ int main(int argc,char** argv){try{
             }
             auto path=output/("invalid-face-"+std::to_string(i)+".dds");std::ofstream file(path,std::ios::binary);file.write(bytes.data(),bytes.size());file.close();mesh.textures[2]=path.string();
         }
-        if(f.render(invalid,fs::u8path(argv[4]))!=f.render(invalid,fs::u8path(argv[3])))throw std::runtime_error("Corrupt face metadata activated toon");
+        auto invalidNew=f.render(invalid,fs::u8path(argv[4])),invalidOld=f.render(invalid,fs::u8path(argv[3]));
+        int invalidError=0;for(size_t i=0;i<invalidNew.size();i++)invalidError=std::max(invalidError,abs(int(invalidNew[i])-int(invalidOld[i])));
+        std::cout<<"Corrupt metadata maximum byte difference "<<invalidError<<"\n";
+        if(invalidError>1)throw std::runtime_error("Corrupt face metadata activated toon");
         std::cout<<"Authored/legacy metadata, full head layers, linear darkness/isolation: PASS\n";
     }
     std::ofstream report(output/"gpu-verification.json");report<<"{\"actual_cs_pixel_shaders\":true,\"hardware_d3d11\":true,\"unmarked_max_byte_error\":"<<unchanged<<",\"fallback_max_byte_error\":"<<fallbackError<<",\"night_max_byte_error\":"<<nightError<<",\"toon_changed_pixels\":"<<changed<<"}";

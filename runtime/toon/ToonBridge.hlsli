@@ -17,11 +17,15 @@ float V2SToonData(uint index)
     return TexGlowSampler.Load(int3(pixel, 0)).a;
 }
 
+#include "VRM2Skyrim/ToonEffects.hlsli"
+
 void V2SInitializeToon()
 {
     V2SToonEnabled = false;
     V2SToonAuthored = false;
     V2SToonSourceDomain = false;
+    V2SToonEffects = false;
+    V2SToonRimDirectSum = 0;
     V2SToonDirectSum = 0;
     V2SToonUnshadedSum = 0;
     uint shaderTechnique = (Permutation::PixelShaderDescriptor >> 24) & 0x3F;
@@ -41,7 +45,7 @@ void V2SInitializeToon()
         return;
     if (V2SToonAuthored) {
         uint version = (uint)round(V2SToonData(8) * 255.0);
-        V2SToonSourceDomain = version == 128;
+        V2SToonSourceDomain = version == 128 || version == 64;
         if (version != 255 && !V2SToonSourceDomain) return;
         if (V2SToonSourceDomain) {
             V2SToonSourceSize = uint2(round(V2SToonData(9)*255.0) + round(V2SToonData(10)*255.0)*256.0,
@@ -49,6 +53,10 @@ void V2SInitializeToon()
             V2SToonWrap = uint2(round(V2SToonData(13)*255.0), round(V2SToonData(14)*255.0));
             if (any(V2SToonSourceSize == 0) || V2SToonSourceSize.x + 8 > width || V2SToonSourceSize.y + 12 > height) return;
             if (any((V2SToonWrap != 0) && (V2SToonWrap != 128) && (V2SToonWrap != 255))) return;
+        }
+        if (version == 64) {
+            if (!V2SInitializeEffects()) return;
+            V2SToonEffects = true;
         }
     }
     V2SToon.shade = V2SToonShade(float3(V2SToonData(2), V2SToonData(3), V2SToonData(4)));
@@ -93,4 +101,5 @@ void EvaluateLighting(DirectContext context, MaterialProperties material, float3
     lightingOutput.diffuse *= Color::VanillaNormalization();
     V2SToonDirectSum += lightingOutput.diffuse;
     V2SToonUnshadedSum += max(context.lightColor, 0.0) * Color::VanillaNormalization();
+    V2SToonRimDirectSum += max(context.lightColor,0)*saturate(min(context.detailedShadow,context.softShadow))*Color::VanillaNormalization();
 }

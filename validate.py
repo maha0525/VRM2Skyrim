@@ -32,9 +32,12 @@ def validate(output, skeleton=None):
     output = Path(output).resolve()
     mod = output / "mod"
     settings = load_settings(output)
+    outlines = set()
     if settings.toon_enabled:
         from toon import validate_toon
         validate_toon(output)
+        toon_report = json.loads((output/'toon.json').read_text(encoding='utf8'))
+        outlines = {(e['file'], e['shape']) for e in toon_report['materials'] if e.get('role') == 'outline'}
     if settings.physics_enabled:
         from fsmp import validate_physics, PROXY, ARM_PROXY, SECONDARY_PROXY
         validate_physics(output)
@@ -60,6 +63,8 @@ def validate(output, skeleton=None):
             if policies:
                 validate_alpha_order(nif, policies)
             for shape in nif.shapes:
+                if (part['file'], shape.name) in outlines:
+                    continue  # Owner, topology, skin and marker were verified by validate_toon.
                 if settings.physics_enabled and shape.name in {PROXY, ARM_PROXY, SECONDARY_PROXY}:
                     continue  # Checked separately by validate_physics, never rendered.
                 if part.get('retained_skin') and shape.name.startswith('V2SClothingSkin_'):
