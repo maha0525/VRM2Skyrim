@@ -1,10 +1,10 @@
-# Experimental VRM-only toon shading
+# VRM2Skyrim Toon
 
 [English](#english) | [日本語](#日本語)
 
 ## 日本語
 
-試作6は、元VRMのMToon材質に設定された影色・MatCap・リムライト・輪郭線・ノーマルマップを、顔・身体・髪・衣服に反映します。背景、通常NPC、体型合わせしたSkyrim装備は従来の描画を使います。Skyrim向けの照明調整を含む試作で、MToon完全互換ではありません。
+トゥーン描画は初期ONで、STEP 01から切り替えられます。元VRMのMToon材質に設定された影色・MatCap・リムライト・輪郭線・ノーマルマップを、顔・身体・髪・衣服に反映します。背景、通常NPC、体型合わせしたSkyrim装備は従来の描画を使います。Skyrim向けの照明調整を含みます。
 
 ### 対応する表現
 
@@ -16,37 +16,38 @@
 
 ### 導入
 
-**試作6の効果には、更新した本体で再出力したフォロワーと、シェーダー試作6の両方が必要です。** 配布された材質更新パッチがある場合は、該当するフォロワーを再出力する代わりに使えます。旧8x4マーカー、顔専用の試作4、全身対応の試作5の材質も、新しいシェーダーで使えます。
+**トゥーン描画には、トゥーン描画を有効にして出力したフォロワーと、VRM2Skyrim Toonの両方が必要です。** 配布された材質更新パッチがある場合は、該当するフォロワーを再出力する代わりに使えます。旧8x4マーカー、顔専用の試作4、全身対応の試作5の材質も、新しいシェーダーで使えます。
 
 1. Skyrimを終了します。
-2. 更新した本体のSTEP 02で「実験的なトゥーン描画」を有効にし、フォロワーを再出力してVortex / MO2へ導入します。同じMOD IDの旧版を置き換えます。材質更新パッチを使う場合は元フォロワーより優先します。
-3. 以前のシェーダー試作MODと材質更新パッチを無効化し、`VRM2Skyrim-Toon-Shader-Prototype-6.zip` を導入します。Community Shadersより優先させ、VortexではDeployします。
-4. ゲーム終了中に実際の `Data/ShaderCache` を別名へ退避します（例：`ShaderCache-before-toon6`）。MO2でOverwriteへ出している場合は、そのキャッシュを退避します。`Data/Shaders` は移動しません。
+2. 更新した本体のSTEP 01の「トゥーン描画」を有効にして、フォロワーを再出力してVortex / MO2へ導入します。同じMOD IDの旧版を置き換えます。材質更新パッチを使う場合は元フォロワーより優先します。
+3. 以前のシェーダー試作MODと材質更新パッチを無効化し、`VRM2Skyrim-Toon-Shader-0.13.0.zip` を導入します。Community Shadersより優先させ、VortexではDeployします。
+4. ゲーム終了中に実際の `Data/ShaderCache` を別名へ退避します（例：`ShaderCache-before-toon`）。MO2でOverwriteへ出している場合は、そのキャッシュを退避します。`Data/Shaders` は移動しません。
 5. SKSEから起動し、コンパイル終了後に確認します。Screen Space GIは有効のまま使えます。初回はコンパイルに時間がかかります。
 
 通常のBlenderプレビューはこのシェーダーを使いません。
 
-戻す場合は、材質パッチとシェーダーを両方とも以前の組み合わせへ戻し、Deploy・キャッシュ退避・SKSE再起動を行います。Community Shaders本体を更新する場合は、先にこの試作を無効化します。
+試作6を導入済みなら、そのシェーダーと材質パッチを引き続き使えます。0.13.0への更新に伴うシェーダーの入れ替えやキャッシュの作り直しは不要です。
+
+戻す場合は、材質パッチとシェーダーを両方とも以前の組み合わせへ戻し、Deploy・キャッシュ退避・SKSE再起動を行います。Community Shaders本体を更新する場合は、先にVRM2Skyrim Toonを無効化します。
 
 ### シェーダーZIPの生成
 
 検証対象は **Community Shaders DLL 1.9.0.0** と対応するシェーダーソースです。同じDLL版でもソースが異なる場合があるため、SHA256で照合し、未検証の版を拒否します。
 
 ```powershell
-.\.venv\Scripts\python.exe toon.py --shader-root "<元のCommunity Shaders MOD>/Shaders" --output build/toon-prototype
+.\.venv\Scripts\python.exe toon.py --shader-root "<元のCommunity Shaders MOD>/Shaders" --output build/toon-shader
 ```
 
-`build/toon-prototype/VRM2Skyrim-Toon-Shader-Prototype-6.zip` を生成します。導入済みの改変されたシェーダーではなく、元のCS MODを指定します。ZIPはDLLを含まず、このコマンドでゲームへは配置しません。
+`build/toon-shader/VRM2Skyrim-Toon-Shader-0.13.0.zip` を生成します。導入済みの改変されたシェーダーではなく、元のCS MODを指定します。ZIPはDLLを含まず、このコマンドでゲームへは配置しません。
 
 `--diagnostic` を付けると確認専用ZIPを生成します。通常版の代わりに入れると、対象VRMが陰影のないピンクになります。普段の使用には通常版を使ってください。
 
 ## English
 
-Prototype 6 carries source MToon shade colours, MatCaps, parametric rim lighting,
+Toon shading is enabled by default and can be changed in STEP 01. It carries source MToon shade colours, MatCaps, parametric rim lighting,
 world-space outlines and normal maps into opted-in VRM face, body, hair and
 clothing materials. Backgrounds, ordinary NPCs and fitted Skyrim equipment keep
-their existing rendering. This is an artistic Skyrim adaptation, not full MToon
-compatibility.
+their existing rendering. Lighting is adapted for Skyrim.
 
 Authored effect colours, masks, normal strength and lighting mix are retained.
 Absent effects stay absent. Source image resolution and repeat, clamp-to-edge
@@ -61,9 +62,9 @@ supported. Screen-coordinate widths are rejected explicitly during conversion.
 Legacy 8x4, Prototype 4 face and Prototype 5 material markers remain readable.
 
 To use all new effects, re-export the follower with the updated converter and
-the experimental toon option enabled, or install a supplied material update
+toon shading enabled in STEP 01, or install a supplied material update
 patch for that exact follower. Disable older shader prototypes and material
-patches. Install `VRM2Skyrim-Toon-Shader-Prototype-6.zip` after Community Shaders,
+patches. Install `VRM2Skyrim-Toon-Shader-0.13.0.zip` after Community Shaders,
 deploy, back up the actual shader cache while Skyrim is closed, and restart
 through SKSE. Keep Screen Space GI enabled. Shader compilation can take time.
 Blender previews do not run this adapter.
@@ -71,13 +72,16 @@ Blender previews do not run this adapter.
 To revert, restore the previous material-and-shader pair, deploy, back up the
 cache again and restart. Disable the adapter before updating Community Shaders.
 
+The verified Prototype 6 shader and material patches remain compatible. If you
+already use them, no shader replacement or cache rebuild is needed for 0.13.0.
+
 Build the adapter from the original Community Shaders MOD's `Shaders` folder:
 
 ```powershell
-.\.venv\Scripts\python.exe toon.py --shader-root "<Original Community Shaders MOD>/Shaders" --output build/toon-prototype
+.\.venv\Scripts\python.exe toon.py --shader-root "<Original Community Shaders MOD>/Shaders" --output build/toon-shader
 ```
 
-It produces `build/toon-prototype/VRM2Skyrim-Toon-Shader-Prototype-6.zip` without
+It produces `build/toon-shader/VRM2Skyrim-Toon-Shader-0.13.0.zip` without
 installing it. The tested adapter is pinned to DLL 1.9.0.0 and exact Lighting and
 DeferredComposite source hashes. Unsupported or already-modified sources are
 rejected. The optional `--diagnostic` package paints marked VRM surfaces magenta;

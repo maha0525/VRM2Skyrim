@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import re
 
-VERSION = "0.12.0"
+VERSION = "0.13.0"
 
 
 def identifier(name):
@@ -69,7 +69,7 @@ class FollowerSettings:
     physics_nodes: list = field(default_factory=list)  # [] selects assigned hair/clothing automatically
     physics_source_sha256: str = ""
     physics_stiffness: float = 1.0
-    toon_enabled: bool = False
+    toon_enabled: bool = True
 
     def __post_init__(self):
         if not isinstance(self.mod_id, str) or not isinstance(self.author, str):

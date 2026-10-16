@@ -23,6 +23,10 @@
         <p class="eyebrow">STEP 01</p><h2>連れていくアバターを選ぶ</h2><p class="lead">人型のVRM 0 / 1に対応。元の衣装でフォロワーを作ります。</p>
         <label class="dropzone" for="source"><svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 8v22m-8-14 8-8 8 8M10 29v11h28V29" stroke="currentColor" stroke-width="2"/></svg><strong>VRMファイルを選択</strong><span>クリック、またはここへドラッグ</span><input id="source" type="file" accept=".vrm" aria-label="VRMファイル"></label>
         <p id="source-status" class="source-status" aria-live="polite">まだ選択されていません</p>
+        <div id="toon-settings">
+          <label class="checkbox"><input id="toon_enabled" type="checkbox" checked>トゥーン描画</label>
+          <p class="hint">VRM2Skyrim Toonと対応するCommunity Shadersが必要です。プレビューには反映されません。</p>
+        </div>
         <label>衣服・防具の扱い<select id="armor_support"><option value="false">対応なし：元の衣服を着脱しない</option><option value="true">対応あり：身体・下着・衣服を分けて着脱</option></select></label>
         <div id="wardrobe-editor" hidden>
           <label class="checkbox"><input id="fit-enabled" type="checkbox" aria-describedby="catalog-status">既存装備をこの身体に合わせる</label>
@@ -67,7 +71,6 @@
         <p class="eyebrow">STEP 02</p><h2>名前と声を決める</h2>
         <div class="grid"><label>NPC名<input id="npc_name" required maxlength="128"></label><label>MOD名<input id="mod_name" required maxlength="128"></label><label>MOD ID<input id="mod_id" required pattern="[A-Za-z][A-Za-z0-9_]{0,63}"><small>英数字と_。ほかのMODと異なるIDにしてください。</small></label><label>作者名<input id="author" maxlength="128" placeholder="任意"></label><label>性別<select id="sex"><option value="female">女性</option><option value="male">男性</option></select></label><label>ボイス<select id="voice"></select><small>標準のフォロワー会話を持つボイスから選択。</small></label></div>
         <div class="note">NPC名・MOD名は日本語も使えます。</div>
-        <details><summary>実験的なトゥーン描画</summary><label class="checkbox"><input id="toon_enabled" type="checkbox">VRMキャラだけにトゥーン風の陰影を付ける</label><p class="hint">VRM2Skyrim Toonと対応するCommunity Shadersが必要です。プレビューには反映されません。</p></details>
       </section>
       <section data-step="2" hidden>
         <p class="eyebrow">STEP 03</p><h2>冒険での役割を決める</h2><p class="lead">プリセットから始めて、好みに合わせて調整できます。</p>

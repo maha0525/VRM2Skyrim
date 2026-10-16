@@ -1,4 +1,22 @@
-# VRM-only toon shading prototype
+# VRM-only toon shading
+
+## 0.13.0: regular feature, enabled by default
+
+On 2026-10-17 the user accepted the complete material-effects build in Skyrim,
+reported a Unity-equivalent appearance, and requested promotion to a regular
+feature. Enable toon shading by default in shared settings and fresh wizard
+pages, move its visible checkbox to STEP 01 beside other appearance settings,
+and remove experimental wording from Japanese/English UI, conversion progress,
+generated instructions and current documentation. Preserve an explicit saved
+false; settings without the key use the new shared default, including after an
+earlier import turned the checkbox off. Show the effective choice in review.
+
+Use versioned shader adapter ZIP names. The existing Prototype 6 shaders and
+material updates remain compatible: do not change HLSL or force another game
+shader compilation for this promotion. Keep supported CS source/version checks
+and real installation requirements. Verify both languages, page placement,
+navigation, JSON downloads/imports and final submitted settings, then merge the
+accepted effects and this promotion into main and push.
 
 ## Prototype 6: authored MatCap, rim, normals and outlines
 

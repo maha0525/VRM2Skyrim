@@ -13,7 +13,7 @@ import zipfile
 import numpy as np
 
 from nif_materials import normalize_material_colors
-from settings import FollowerSettings
+from settings import FollowerSettings, VERSION
 from toon import SIGNATURE, control_bytes, parameters_for, patch_composite, patch_lighting, prepare_materials, shader_package, validate_toon
 
 NATIVE = os.name == 'nt' and (Path(__file__).resolve().parents[1]/'dependencies/io_scene_nifly/NiflyDLL.dll').is_file()
@@ -48,6 +48,8 @@ class ToonTests(unittest.TestCase):
                     self.assertFalse(any(name.endswith(('.dll', '.pso', '.cso')) for name in package.namelist()))
                     metadata = json.loads(package.read('Shaders/VRM2Skyrim/adapter.json'))
                     self.assertEqual(metadata['prototype'], 6)
+                    self.assertEqual(metadata['version'], VERSION)
+                    self.assertEqual(path.name, f'VRM2Skyrim-Toon-Shader-{VERSION}'+('-Diagnostic' if is_diagnostic else '')+'.zip')
                     self.assertEqual(metadata['diagnostic'], is_diagnostic)
                     lighting = package.read('Shaders/Lighting.hlsl')
                     self.assertEqual(hashlib.sha256(lighting).hexdigest(), metadata['patched_lighting_sha256'])
@@ -112,11 +114,13 @@ class ToonTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'bindings changed'):
                 exported_shapes(mesh/'body.nif', {'WrongName': sources[0]})
 
-    def test_default_opt_out_and_explicit_setting(self):
-        self.assertFalse(FollowerSettings().toon_enabled)
+    def test_default_enabled_and_explicit_saved_choices(self):
+        self.assertTrue(FollowerSettings().toon_enabled)
+        self.assertTrue(FollowerSettings.from_dict({}).toon_enabled)
         with self.assertRaises(ValueError):
             FollowerSettings(toon_enabled='true')
         self.assertTrue(FollowerSettings.from_dict({'toon_enabled': True}).toon_enabled)
+        self.assertFalse(FollowerSettings.from_dict({'toon_enabled': False}).toon_enabled)
 
     def test_shadow_multiplier_is_not_applied_twice(self):
         material = {'pbrMetallicRoughness': {'baseColorFactor': [.5, .8, 0, 1]},

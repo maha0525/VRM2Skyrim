@@ -12,9 +12,9 @@ Materials retain the original VRM's single/double-sided rendering and transparen
 
 Followers start **inside the Temple of Kynareth in Whiterun**. The tool sets up the vanilla follower factions, a friendly relationship with the player, a recruitment-compatible voice, and a persistent placed reference, so the NPC can be recruited through dialogue.
 
-This development version is **0.12.0** (SkyPatcher armor registration). It includes a Japanese/English wizard, optional hair/cloth physics, removable original VRM headwear, seated height correction, material fidelity fixes, and class growth details with categorized Perks/spells. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
+This development version is **0.13.0** (toon shading enabled by default). It includes a Japanese/English wizard, optional hair/cloth physics, removable original VRM headwear, seated height correction, material fidelity fixes, and class growth details with categorized Perks/spells. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
 
-An **experimental, off-by-default** option adds MToon-like lighting for converted avatars using a separate Community Shaders adapter. The adapter is pinned to a verified shader source and is not a general replacement for other CS versions. See [adapter creation, installation, removal and verification](docs/TOON.md).
+**Toon shading is enabled by default.** It preserves the source MToon shade colours, MatCaps, rim lighting, world-space outlines and normal maps on converted avatars. Change it in **STEP 01**. The separate VRM2Skyrim Toon adapter and its supported Community Shaders build are required. See [installation and supported effects](docs/TOON.md).
 
 For optional physics, enable **髪・布を揺らす** in the wizard, select the meshes, and start with the calm default. Garment roots and arm-adjacent sleeve attachments follow the body animation, while distal cloth moves independently. Geometry-scaled inertia and damping, restricted twist, and hidden single-owner contact patches reduce persistent oscillation in sleeves, hair, skirts, and capes. Original visible geometry and weights are preserved. Update the complete follower ZIP, including NIFs and XMLs. Generated followers require [Faster HDT-SMP](https://www.nexusmods.com/skyrimspecialedition/mods/57339) and matching SKSE64 when physics is enabled. See [physics setup and implementation](docs/FSMP.md).
 
@@ -41,7 +41,7 @@ Processing runs on your PC. Models are not uploaded to external services. The to
 
 If the wizard's port is already in use, the launcher selects a free port and opens that instance's URL. Use the newly opened page or the URL printed in its terminal; an older tab can still point to an older process. Existing processes are not stopped automatically.
 
-Install Blender separately from its [official website](https://www.blender.org/download/lts/). Generated MODs with headgear face/hair switching or seated height correction require [SKSE64](https://skse.silverlock.org/). With both options and physics disabled, fixed appearance and original-outfit separation do not require SKSE64. Creation Kit, RaceMenu, and XPMSSE are not mandatory.
+Install Blender separately from its [official website](https://www.blender.org/download/lts/). Toon shading, headgear face/hair switching, seated height correction and physics require [SKSE64](https://skse.silverlock.org/). With all four disabled, generated followers do not require SKSE64. Creation Kit, RaceMenu, and XPMSSE are not mandatory.
 
 Version 0.9.6 adds **seated height correction** in STEP 03. Automatic calculation uses the official sitting pose and the original avatar proportions, with an optional manual adjustment. It preserves standing proportions and corrects sinking into base-game chairs and benches. Generated MODs with this option enabled require SKSE64. See [settings and supported furniture](docs/SEATING.md).
 
@@ -179,7 +179,7 @@ Fitted equipment requires [SkyPatcher](https://www.nexusmods.com/skyrimspecialed
 
 **Migration from 0.11.x:** re-export and replace ALL followers that use fitted equipment, then disable/remove the old `VRM2SkyrimArmorPatch.esp`. Do not disable the old patch while still relying on it for followers you have not migrated. New exports do not produce that shared ESP or a separate patch ZIP. The wizard detects an old patch and explains the migration.
 
-Lip sync, blinking, and hair/clothing physics are not supported. MToon shading and outlines are not reproduced. Fingers without finger bones are fixed to the hands. Ragdoll dimensions and constraints for falls/death are derived from the standard skeleton; avatar-specific adjustment and validation remain necessary.
+Lip sync and blinking are not supported. Toon shading and optional hair/clothing physics are available as described above. Fingers without finger bones are fixed to the hands. Ragdoll dimensions and constraints for falls/death are derived from the standard skeleton; avatar-specific adjustment and validation remain necessary.
 
 The temple CELL record is included as a copy preserving the base-game contents so the follower can be placed there. MODs changing lighting or other properties of the same CELL may require normal load-order or compatibility-patch adjustments.
 

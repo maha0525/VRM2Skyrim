@@ -179,7 +179,7 @@ Install this ZIP with Vortex or Mod Organizer 2. Enable {settings.plugin_name}.
 Restart Skyrim. Meet {settings.npc_name} inside the Temple of Kynareth in Whiterun.
 The standard 'Follow me. I need your help.' dialogue recruits this follower.
 Standard wait, dismiss and inventory dialogue use Skyrim's follower system.
-{('Physics requires Faster HDT-SMP and matching SKSE64; launch through skse64_loader.exe.' if settings.physics_enabled else 'Headgear visibility and seated correction use SKSE64; launch Skyrim through skse64_loader.exe.' if settings.head_switch_enabled or settings.sitting_enabled else 'No additional prerequisite MOD is required.')}
+{('Physics requires Faster HDT-SMP and matching SKSE64; launch through skse64_loader.exe.' if settings.physics_enabled else 'Headgear visibility and seated correction use SKSE64; launch Skyrim through skse64_loader.exe.' if settings.head_switch_enabled or settings.sitting_enabled else 'Launch Skyrim through skse64_loader.exe.' if settings.toon_enabled else 'No additional prerequisite MOD is required.')}
 
 To locate the placed follower using the console:
   help "{settings.prefix}FollowerREF" 4
@@ -192,7 +192,7 @@ The original VRM appearance uses a private race/skeleton.
 {wardrobe_help}
 {fitting_help}
 {seating_help}
-{('Experimental VRM-only toon shading is enabled. Install the separate VRM2Skyrim Toon shader prototype for the verified Community Shaders build. This is MToon-like shading, not a full MToon implementation. Ordinary Blender previews do not use the runtime toon shader.' if settings.toon_enabled else '')}
+{('Toon shading requires VRM2Skyrim Toon and its supported Community Shaders build. Blender previews do not display toon shading.' if settings.toon_enabled else '')}
 Lip sync and blinking are not included. {('Optional FSMP hair/cloth physics is enabled.' if settings.physics_enabled else 'Hair/cloth physics is disabled.')} Equipment supported by
 this build is listed above; the all-official option includes installed DLC and Creations.
 Ragdoll collision shapes/constraints still require fitting to the avatar.
@@ -316,7 +316,7 @@ def convert(source, game, blender, output, settings, progress=None):
         from head_visibility import write_head_assets
         write_head_assets(output, settings)
         if settings.toon_enabled:
-            stage('実験的なVRM専用トゥーン材質')
+            stage('VRM専用トゥーン材質')
             from toon import prepare_materials
             prepare_materials(output)
         if settings.fitting_enabled:

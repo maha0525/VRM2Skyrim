@@ -72,6 +72,32 @@ const source={source_id:'physics',sha256:'a'.repeat(64),filename:'physics.vrm',m
   await page.locator('#again').click();await page.locator('[data-step="0"]').waitFor({state:'visible'});
   assert.equal(await page.locator('#physics-meshes input').count(),0);
   await sourceFile();assert.equal(await mesh(2).isChecked(),false,'new follower cannot inherit old mesh selections');
+  // The appearance control is visible in STEP 01, enabled by the shared
+  // default, and an explicit OFF survives language/navigation/JSON roundtrips.
+  await start();
+  const toon=page.locator('#toon_enabled');
+  assert.equal(await toon.isVisible(),true);assert.equal(await toon.isChecked(),true);
+  assert.equal(await toon.evaluate(e=>e.closest('[data-step]').dataset.step),'0');
+  assert.equal(await page.locator('[data-step="1"] #toon_enabled').count(),0);
+  await sourceFile();await toon.uncheck();await page.locator('#language').selectOption('en');
+  assert.equal(await toon.isChecked(),false);assert.match(await toon.locator('..').textContent(),/Toon shading/);
+  await page.screenshot({path:path.join(fixture,'toon-step01-en.png'),fullPage:true});
+  await review();const toonOff=await save();assert.equal(toonOff.toon_enabled,false);
+  assert.equal(submitted.at(-1).toon_enabled,false);
+  const toonSummary=()=>page.locator('#summary dt').filter({hasText:/^(Toon shading|トゥーン描画)$/}).locator('xpath=following-sibling::dd[1]');
+  assert.equal(await toonSummary().textContent(),'Disabled');
+  await page.locator('#language').selectOption('ja');assert.equal(await toonSummary().textContent(),'無効');
+  await start();await importJSON(toonOff);await page.waitForFunction(()=>!document.querySelector('#toon_enabled').checked);
+  assert.equal(await toon.isChecked(),false);
+  // An older JSON without this key follows the default, even after importing OFF.
+  const oldJSON={...toonOff};delete oldJSON.toon_enabled;await importJSON(oldJSON);
+  await page.waitForFunction(()=>document.querySelector('#toon_enabled').checked);
+  assert.match(await toon.locator('..').textContent(),/トゥーン描画/);
+  await sourceFile();await review();assert.equal((await save()).toon_enabled,true);
+  assert.equal(await toonSummary().textContent(),'有効');
+  for(let step=3;step>=0;step--){await page.locator('#back').click();await page.locator(`[data-step="${step}"]`).waitFor({state:'visible'});}
+  await page.screenshot({path:path.join(fixture,'toon-step01-ja.png'),fullPage:true});
+  assert.equal(await toon.isChecked(),true);
   assert.deepEqual(errors,[]);console.log('PASS physics mesh persistence: navigation, downloaded JSON, both import orders, source guards and localization');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

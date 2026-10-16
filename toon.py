@@ -1,4 +1,4 @@
-"""Opt-in material metadata and a version-checked Community Shaders prototype.
+"""Source MToon materials and a version-checked Community Shaders adapter.
 
 The metadata uses a zero-emission glow texture: the native Glowmap material
 binds it at t6. The unmodified renderer therefore retains ordinary lighting.
@@ -13,7 +13,7 @@ import struct
 import zipfile
 
 from dds import validate_dds
-from settings import load_settings
+from settings import VERSION, load_settings
 
 ROOT = Path(__file__).resolve().parent
 SIGNATURE = bytes((255, 0, 255, 255, 0, 255, 0, 255))
@@ -170,7 +170,7 @@ def shader_package(shader_root, output, diagnostic=False):
     shutil.copy2(shader_root/'LICENSE', target/'VRM2Skyrim/CommunityShaders-LICENSE.txt')
     shutil.copy2(ROOT/'docs/TOON.md', target/'VRM2Skyrim/README.md')
     shutil.copy2(ROOT/'LICENSE', target/'VRM2Skyrim/VRM2Skyrim-LICENSE.txt')
-    metadata = {'prototype': 6, 'diagnostic': diagnostic, 'community_shaders_dll_version': '1.9.0.0',
+    metadata = {'prototype': 6, 'version': VERSION, 'diagnostic': diagnostic, 'community_shaders_dll_version': '1.9.0.0',
                 'lighting_sha256': SUPPORTED_LIGHTING,
                 'patched_lighting_sha256': hashlib.sha256(patched).hexdigest(),
                 'composite_sha256': SUPPORTED_COMPOSITE,
@@ -181,12 +181,12 @@ def shader_package(shader_root, output, diagnostic=False):
                 'original_evaluation_for_unmarked_materials': True}
     (target/'VRM2Skyrim/adapter.json').write_text(json.dumps(metadata, indent=2), encoding='utf8')
     suffix = '-Diagnostic' if diagnostic else ''
-    archive = output/f'VRM2Skyrim-Toon-Shader-Prototype-6{suffix}.zip'
+    archive = output/f'VRM2Skyrim-Toon-Shader-{VERSION}{suffix}.zip'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
         for path in sorted((output/folder).rglob('*')):
             if path.is_file():
                 package.write(path, path.relative_to(output/folder).as_posix())
-    logging.info('Toon shader prototype: %s; original shader SHA256 %s', archive, SUPPORTED_LIGHTING)
+    logging.info('Toon shader adapter: %s; original shader SHA256 %s', archive, SUPPORTED_LIGHTING)
     return archive
 
 
@@ -309,7 +309,7 @@ def prepare_materials(output, strength=.15):
     report['authored_face_shapes'] = sum(e.get('profile') == 'authored_material' and e['face'] and e.get('role') != 'outline' for e in prepared)
     (output/'toon.json').write_text(json.dumps(report, indent=2), encoding='utf8')
     validate_toon(output)
-    logging.info('Toon prototype: %d source shapes; zero emission, original alpha/skin retained', len(prepared))
+    logging.info('Toon materials: %d shapes; zero emission, original alpha/skin retained', len(prepared))
     logging.info('Authored MToon shading: %d shapes (%d face); source shade RGB and lit-colour ambient',
                  report['authored_shapes'], report['authored_face_shapes'])
     return report
