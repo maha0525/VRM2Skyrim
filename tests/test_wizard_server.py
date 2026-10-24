@@ -1,13 +1,17 @@
 """Version mismatch rejects mutations before uploads or conversion can start."""
+from dataclasses import asdict
 import errno
+import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import tempfile
 from pathlib import Path
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
+from urllib.parse import quote
 from urllib.request import Request, urlopen, build_opener, ProxyHandler
 
 from wizard import WizardApplication, handler_for, BOOT_FINGERPRINT, WizardHTTPServer, make_server, main, port_is_listening
@@ -199,3 +203,161 @@ class WizardServerTests(unittest.TestCase):
                 worker.join()
                 server.server_close()
                 app.close()
+
+
+class WeaponServerTests(unittest.TestCase):
+    """GLB upload, base sizes, weapon previews and the conversion hand-off; no Blender or game data."""
+
+    def setUp(self):
+        from inspect_vrm import write_glb
+        from tests.test_original_weapon import glb_document
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        document, binary = glb_document([{}], [])
+        self.glb = self.root / 'staff.glb'
+        write_glb(self.glb, document, binary)
+        self.app = WizardApplication(self.root / 'workspace')
+        self.addCleanup(self.app.close)
+        self.server = ThreadingHTTPServer(('127.0.0.1', 0), handler_for(self.app))
+        self.worker = threading.Thread(target=self.server.serve_forever)
+        self.worker.start()
+        self.addCleanup(self.stop)
+        self.base = 'http://127.0.0.1:' + str(self.server.server_address[1])
+        self.opener = build_opener(ProxyHandler({}))
+        source = self.root / 'avatar.vrm'
+        source.write_bytes(b'vrm')
+        self.app.sources['avatar'] = source
+        self.app.source_reports['avatar'] = {'parts': [], 'sha256': 'f' * 64}
+        self.catalog = SimpleNamespace(validate_settings=lambda settings: None,
+                                       require=lambda key, kind: SimpleNamespace(key=key),
+                                       original_weapon_kind=lambda record: 'staff' if record.key == 'StaffFlames' else None)
+
+    def stop(self):
+        self.server.shutdown()
+        self.worker.join()
+        self.server.server_close()
+
+    def post(self, route, data, headers=None):
+        body = data if isinstance(data, bytes) else json.dumps(data).encode()
+        try:
+            response = self.opener.open(Request(self.base + route, data=body, headers=headers or {}), timeout=10)
+            return response.status, json.load(response)
+        except HTTPError as error:
+            return error.code, json.load(error)
+
+    def upload(self, name='staff.glb', blob=None):
+        return self.post('/api/weapon-glb', blob if blob is not None else self.glb.read_bytes(),
+                         {'X-Filename': quote(name), 'Content-Type': 'application/octet-stream'})
+
+    def settings(self, uploaded, **changes):
+        weapon = {'sha256': uploaded['sha256'], 'filename': uploaded['filename'], 'kind': 'staff',
+                  'base': 'StaffFlames', 'name': '三日月の杖', 'grip': .44, 'length': 120.7, 'flip': False, 'roll': 0}
+        return {**asdict(FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapon=weapon)), **changes}
+
+    def test_glb_upload_reports_counts_and_rejects_other_files(self):
+        status, uploaded = self.upload()
+        self.assertEqual(status, 200)
+        self.assertEqual((uploaded['filename'], uploaded['triangles'], uploaded['vertices'], uploaded['materials']),
+                         ('staff.glb', 1, 3, 1))
+        self.assertEqual(uploaded['sha256'], hashlib.sha256(self.glb.read_bytes()).hexdigest())
+        stored = self.app.weapons[uploaded['weapon_id']]['path']
+        self.assertEqual(stored.parent, self.app.workspace / 'inputs')
+        self.assertEqual(stored.read_bytes(), self.glb.read_bytes())
+        status, result = self.upload('staff.vrm')
+        self.assertEqual((status, result['error']), (400, 'GLBファイルを選んでください'))
+        status, result = self.upload('broken.glb', b'not a glb')
+        self.assertEqual(status, 400)
+        self.assertTrue(result['error'].startswith('GLBを読み込めませんでした: '))
+        self.assertEqual(sorted((self.app.workspace / 'inputs').iterdir()), [stored])
+        with self.assertRaisesRegex(ValueError, 'VRM'):
+            self.app.upload('staff.glb', self.glb.read_bytes())
+
+    def test_validation_requires_the_same_glb_only_when_asked(self):
+        _, uploaded = self.upload()
+        settings = self.settings(uploaded)
+        with patch.object(self.app, 'catalog', return_value=self.catalog):
+            request = {'source_id': 'avatar', 'game': str(self.root), 'settings': settings}
+            self.assertEqual(self.post('/api/validate', {**request, 'check_weapon': False})[0], 200)
+            status, result = self.post('/api/validate', request)
+            self.assertEqual((status, result['error']), (400, 'オリジナル武器のGLBを選んでください'))
+            status, result = self.post('/api/validate', {**request, 'weapon_id': uploaded['weapon_id']})
+            self.assertEqual(status, 200)
+            self.assertEqual(result['settings']['original_weapon'], settings['original_weapon'])
+            other = self.settings({**uploaded, 'sha256': '0' * 64})
+            status, result = self.post('/api/validate', {**request, 'settings': other, 'weapon_id': uploaded['weapon_id']})
+            self.assertEqual(status, 400)
+            self.assertIn('別のファイル', result['error'])
+            official = {**settings, 'weapon_mode': 'official'}
+            self.assertEqual(self.post('/api/validate', {**request, 'settings': official})[0], 200)
+
+    def test_conversion_receives_the_glb_path_but_settings_do_not(self):
+        _, uploaded = self.upload()
+        captured = {}
+
+        def fake_convert(source, game, blender, output, settings, progress=None, weapon_glb=None):
+            captured.update(weapon_glb=weapon_glb, settings=asdict(settings))
+            output.mkdir(parents=True)
+            archive = output / 'Probe.zip'
+            archive.write_bytes(b'zip')
+            return archive
+
+        with patch.object(self.app, 'catalog', return_value=self.catalog), \
+                patch('wizard.doctor', return_value={'ready': True}), patch('wizard.convert', fake_convert):
+            request = {'source_id': 'avatar', 'game': str(self.root), 'blender': str(self.root),
+                       'settings': self.settings(uploaded)}
+            status, result = self.post('/api/jobs', request)
+            self.assertEqual((status, result['error']), (400, 'オリジナル武器のGLBを選んでください'))
+            status, result = self.post('/api/jobs', {**request, 'weapon_id': uploaded['weapon_id']})
+            self.assertEqual(status, 202)
+            self.app.executor.submit(lambda: None).result(timeout=10)
+        job = self.app.snapshot(result['job_id'])
+        self.assertEqual((job['status'], job['weapon_mode']), ('complete', 'original'), job.get('error'))
+        self.assertEqual(captured['weapon_glb'], self.app.weapons[uploaded['weapon_id']]['path'])
+        saved = json.dumps(captured['settings'], ensure_ascii=False)
+        self.assertNotIn(str(self.app.workspace), saved)
+        self.assertNotIn(uploaded['weapon_id'], saved)
+        self.assertEqual(captured['settings']['original_weapon']['sha256'], uploaded['sha256'])
+
+    def test_base_size_is_measured_once_per_game(self):
+        game = self.root / 'game'
+        (game / 'Data').mkdir(parents=True)
+        (game / 'Data/Skyrim.esm').write_bytes(b'master')
+        measured = []
+
+        def measure(workspace, data, catalog, base):
+            measured.append(base)
+            return {'base': base, 'kind': 'staff', 'model': 'x.nif', 'length': 134., 'grip': .52}
+
+        with patch.object(self.app, 'catalog', return_value=self.catalog), patch('weapon_preview.base_dimensions', measure):
+            for _ in range(2):
+                status, result = self.post('/api/weapon-base', {'game': str(game), 'base': 'StaffFlames'})
+                self.assertEqual((status, result['length'], result['grip']), (200, 134., .52))
+        self.assertEqual(measured, ['StaffFlames'])
+
+    def test_weapon_preview_job_passes_the_uploaded_glb(self):
+        _, uploaded = self.upload()
+        calls = []
+
+        def fake_preview(workspace, source, glb, game, blender, settings, catalog, progress):
+            progress('武器を持たせて描画しています…')
+            calls.append((glb, settings.original_weapon))
+            return {'output': str(workspace), 'previews': ['previews/weapon-x-drawn.png'], 'views': ['drawn']}
+
+        with patch.object(self.app, 'catalog', return_value=self.catalog), patch('weapon_preview.preview', fake_preview):
+            request = {'source_id': 'avatar', 'game': str(self.root), 'blender': str(self.root),
+                       'settings': self.settings(uploaded), 'weapon_id': uploaded['weapon_id']}
+            official = self.settings(uploaded, weapon_mode='official')
+            status, result = self.post('/api/weapon-preview', {**request, 'settings': official})
+            self.assertEqual((status, result['error']), (400, 'オリジナル武器を選んでください'))
+            wrong = self.settings(uploaded)
+            wrong['original_weapon'] = {**wrong['original_weapon'], 'base': 'Torch'}
+            self.assertEqual(self.post('/api/weapon-preview', {**request, 'settings': wrong})[0], 400)
+            status, result = self.post('/api/weapon-preview', request)
+            self.assertEqual(status, 202)
+            self.app.executor.submit(lambda: None).result(timeout=10)
+        job = self.app.snapshot(result['job_id'])
+        self.assertEqual((job['kind'], job['status'], job['stage']),
+                         ('weapon_preview', 'complete', '武器のプレビューを更新しました'))
+        self.assertEqual(calls, [(self.app.weapons[uploaded['weapon_id']]['path'], self.settings(uploaded)['original_weapon'])])
+        self.assertEqual(job['previews'], ['previews/weapon-x-drawn.png'])

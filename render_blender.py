@@ -20,11 +20,89 @@ def aim(obj, point):
     obj.rotation_euler = (Vector(point) - obj.location).to_track_quat("-Z", "Y").to_euler()
 
 
+def import_original_weapon(nif, textures):
+    """Import the original weapon NIF with the PNGs decoded from its delivered DDS."""
+    from blender_meshes import preview_face_culling
+    existing = set(bpy.context.scene.objects)
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.objects.active = None
+    bpy.ops.import_scene.pynifly(filepath=str(nif), rename_bones=False, import_animations=False,
+                                 import_collisions=False)
+    imported = [obj for obj in bpy.context.scene.objects if obj not in existing]
+    for obj in [o for o in imported if o.type not in ("MESH", "EMPTY")]:
+        imported.remove(obj)  # BSInvMarker imports as an inventory camera
+        bpy.data.objects.remove(obj, do_unlink=True)
+    meshes = [obj for obj in imported if obj.type == "MESH"]
+    if not meshes:
+        raise ValueError(f"Original weapon NIF has no shapes: {nif}")
+    attachment = bpy.data.objects.new("Original weapon attachment", None)
+    bpy.context.scene.collection.objects.link(attachment)
+    for obj in imported:
+        if obj.parent is None:
+            obj.parent = attachment
+    for obj in meshes:
+        material = obj.active_material
+        images = [n for n in material.node_tree.nodes if n.type == "TEX_IMAGE" and n.image] if material else []
+        if not any(n.name == "Diffuse_Texture" for n in images):
+            raise ValueError(f"Original weapon shape imported without its diffuse texture: {obj.name}")
+        preview_face_culling(material, 'DOUBLE_SIDED' in material.pyn_shader.Shader_Flags_2)
+        for node in images:
+            png = Path(textures) / (Path(node.image.filepath).stem + ".png")
+            if not png.is_file():
+                raise FileNotFoundError(f"Decoded original weapon texture is missing: {png}")
+            node.image.filepath = str(png)
+            node.image.reload()
+    return attachment, meshes
+
+
+def attachment_node(skeleton_file, name):
+    from custom_skeleton import matrix
+    node = skeleton_file.nodes[name]
+    return node.parent.name, Matrix(matrix(node.global_transform).tolist())
+
+
+def attach(weapon, rig, node):
+    """Place a weapon on a skeleton node through its posed parent bone."""
+    bone_name, rest = node
+    bone = rig.pose.bones.get(bone_name)
+    posed = bone.matrix @ bone.bone.matrix_local.inverted() if bone else Matrix.Identity(4)
+    weapon.matrix_world = rig.matrix_world @ posed @ rest
+    bpy.context.view_layer.update()
+
+
+def sheath_view(weapon, rig, kind):
+    """View direction showing the sheathed weapon: from behind for the back, from its side for the hips."""
+    from weapon_nif import SHEATH_NODES
+    side = 1 if (weapon.matrix_world.translation - rig.matrix_world.translation).x >= 0 else -1
+    return (side * 1.6, -2.6, .6) if SHEATH_NODES[kind] == 'WeaponBack' else (side * 3, -1, .5)
+
+
+def frame_camera(camera, objects, direction, margin=1.15):
+    """Orthographic view of the objects' bounds from a direction in world space."""
+    points = [obj.matrix_world @ Vector(corner) for obj in objects for corner in obj.bound_box]
+    low = Vector(tuple(min(p[i] for p in points) for i in range(3)))
+    high = Vector(tuple(max(p[i] for p in points) for i in range(3)))
+    center, size = (low + high) / 2, max((high - low).length, .2)
+    camera.location = center + Vector(direction).normalized() * size * 3
+    aim(camera, center)
+    bpy.context.view_layer.update()  # matrix_world is stale until the view layer updates
+    view = camera.matrix_world.to_3x3().inverted()
+    local = [view @ (p - center) for p in points]
+    width = max(p.x for p in local) - min(p.x for p in local)
+    height = max(p.y for p in local) - min(p.y for p in local)
+    camera.data.ortho_scale = max(height, width * 900 / 720) * margin  # portrait: the scale is the height
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--animation", choices=("original", "rest", "walk", "attack"), default="rest")
+    parser.add_argument("--animation", choices=("original", "rest", "walk", "attack", "sheathed"), default="rest")
+    # Original weapon outside this output (wizard preview); by default the delivered weapon.nif.
+    parser.add_argument('--weapon-nif', type=Path)
+    parser.add_argument('--weapon-textures', type=Path, help='PNGs decoded from the weapon DDS')
+    parser.add_argument('--weapon-kind')
+    parser.add_argument('--weapon-preview', help='render weapon-<name>-{drawn,hand,sheathed}.png only')
     parser.add_argument("--wardrobe", default="initial", help="initial, all, underwear, without:<garment-id>")
     parser.add_argument('--hide-face', action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument('--hide-hair', action=argparse.BooleanOptionalAction, default=None)
@@ -35,6 +113,21 @@ def main():
     output = args.output.resolve()
     settings = load_settings(output)
     refs = reference_root(output)
+    original_weapon = None
+    if args.weapon_nif:
+        original_weapon = {'nif': args.weapon_nif.resolve(), 'textures': args.weapon_textures.resolve(),
+                           'kind': args.weapon_kind}
+    elif settings.weapon_mode == 'original':
+        original_weapon = {'nif': output / 'mod/meshes' / settings.asset_dir / 'weapon.nif',
+                           'textures': output / 'dds-preview', 'kind': settings.original_weapon['kind']}
+    if (args.animation == 'sheathed' or args.weapon_preview) and original_weapon is None:
+        raise ValueError('Sheathed and weapon previews need an original weapon')
+    if args.weapon_preview and (args.animation != 'rest' or args.wardrobe != 'initial'):
+        raise ValueError('Weapon previews use the initial wardrobe and their own poses')
+    if original_weapon is not None:
+        from weapon_nif import SHEATH_NODES
+        if original_weapon['kind'] not in SHEATH_NODES:
+            raise ValueError('Unknown original weapon kind: ' + str(original_weapon['kind']))
     previews = output / "previews"
     previews.mkdir(exist_ok=True)
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -200,18 +293,31 @@ def main():
                 if path.exists():
                     image.filepath = str(path)
                     image.reload()
-    elif args.animation != "rest":
+    elif args.animation in ("walk", "attack") or args.weapon_preview:
         bpy.ops.object.select_all(action="DESELECT")
         rig.select_set(True)
         bpy.context.view_layer.objects.active = rig
         base = refs / "meshes/actors/character"
-        animation = base / (f"animations/{settings.sex}/mt_walkforward.hkx" if args.animation == "walk"
-                            else "animations/1hm_attackright.hkx")
+        if args.weapon_preview:
+            from weapon_nif import DRAWN_IDLES
+            animation = base / "animations" / DRAWN_IDLES[original_weapon['kind']]
+        else:
+            animation = base / (f"animations/{settings.sex}/mt_walkforward.hkx" if args.animation == "walk"
+                                else "animations/1hm_attackright.hkx")
         bpy.ops.import_scene.pynifly_hkx(filepath=str(animation), rename_bones=False,
                                        reference_skel=str(base / "character assets/skeleton.hkx"))
-        frames = [1, 8, 16, 24] if args.animation == "walk" else [1, 5, 10, 16]
-    weapon = None
-    if args.animation == "attack":
+        frames = [1] if args.weapon_preview else [1, 8, 16, 24] if args.animation == "walk" else [1, 5, 10, 16]
+    weapon = weapon_meshes = weapon_node_name = None
+    if original_weapon is not None and (args.animation in ("attack", "sheathed") or args.weapon_preview):
+        from custom_skeleton import NifFile
+        from weapon_nif import HOLD_NODE, SHEATH_NODES
+        with NifFile(str(skel)) as skeleton_file:
+            hold_node = attachment_node(skeleton_file, HOLD_NODE)
+            sheath_node = attachment_node(skeleton_file, SHEATH_NODES[original_weapon['kind']])
+        weapon, weapon_meshes = import_original_weapon(original_weapon['nif'], original_weapon['textures'])
+        weapon_node = sheath_node if args.animation == "sheathed" else hold_node
+        weapon_node_name = SHEATH_NODES[original_weapon['kind']] if args.animation == "sheathed" else HOLD_NODE
+    elif args.animation == "attack":
         from custom_skeleton import NifFile, matrix
         with NifFile(str(skel)) as skeleton_file:
             weapon_rest = Matrix(matrix(skeleton_file.nodes["WEAPON"].global_transform).tolist())
@@ -236,6 +342,9 @@ def main():
                 obj.data.materials.append(metal)
             if obj.parent is None:
                 obj.parent = weapon
+        # The mesh importer omits unweighted attachment bones. Recover the
+        # actual attachment from the delivered skeleton, then pose its hand.
+        weapon_node, weapon_node_name = ("NPC R Hand [RHnd]", weapon_rest), "WEAPON"
     # Scale the whole hierarchy for lighting; keep imported bone bind transforms.
     physics_sample = None
     if args.physics_frame is not None:
@@ -293,6 +402,42 @@ def main():
     prefix = args.animation if wardrobe == "initial" else "wardrobe-" + wardrobe.replace(":", "-") + "-" + args.animation
     if args.physics_frame is not None:
         prefix = 'physics-'+str(args.physics_frame)
+    from blender_meshes import render_material_queues
+    weapon_report = {"steel_sword_geometry": weapon is not None and original_weapon is None,
+                     "original_weapon": str(original_weapon['nif']) if weapon is not None and original_weapon else None,
+                     "weapon_attachment": weapon_node_name, "weapon_material": None if weapon is None else
+                     "neutral metal preview" if original_weapon is None else "decoded delivered weapon DDS"}
+    if args.weapon_preview:
+        name = args.weapon_preview
+        scene.frame_set(frames[0])
+        attach(weapon, rig, hold_node)
+        frame_camera(camera, meshes + weapon_meshes, (1.8, 4, .55))
+        scene.render.filepath = str(previews / f"weapon-{name}-drawn.png")
+        render_material_queues(scene)
+        hand = rig.pose.bones[hold_node[0]]
+        center = rig.matrix_world @ hand.head
+        camera.location = center + Vector((.5, 1.0, .35))
+        camera.data.ortho_scale = .32
+        aim(camera, center)
+        scene.render.filepath = str(previews / f"weapon-{name}-hand.png")
+        render_material_queues(scene)
+        rig.animation_data_clear()
+        for bone in rig.pose.bones:
+            bone.matrix_basis = Matrix.Identity(4)
+        attach(weapon, rig, sheath_node)
+        frame_camera(camera, meshes + weapon_meshes, sheath_view(weapon, rig, original_weapon['kind']))
+        scene.render.filepath = str(previews / f"weapon-{name}-sheathed.png")
+        render_material_queues(scene)
+        (previews / f"weapon-{name}.json").write_text(json.dumps({
+            "nifs": nifs, "weapon_nif": str(original_weapon['nif']), "kind": original_weapon['kind'],
+            "drawn_animation": animation.name, "frame": frames[0], "hold_node": HOLD_NODE,
+            "sheath_node": SHEATH_NODES[original_weapon['kind']],
+            "images": [f"weapon-{name}-{view}.png" for view in ("drawn", "hand", "sheathed")],
+            "weapon_material": "decoded delivered weapon DDS", "game_verified": False}, indent=2), encoding="utf-8")
+        return
+    if args.animation == "sheathed":
+        attach(weapon, rig, weapon_node)
+        frame_camera(camera, meshes + weapon_meshes, sheath_view(weapon, rig, original_weapon['kind']))
     for frame in frames:
         scene.frame_set(frame)
         if physics_sample is not None:
@@ -303,21 +448,13 @@ def main():
                     bone.matrix = Matrix(physics_sample[bone.name]) @ bone.bone.matrix_local
                     bpy.context.view_layer.update()
         if weapon is not None:
-            hand = rig.pose.bones["NPC R Hand [RHnd]"]
-            # The mesh importer omits unweighted attachment bones. Recover the
-            # actual attachment from the delivered skeleton, then pose its hand.
-            weapon.matrix_world = (rig.matrix_world @ hand.matrix
-                                   @ hand.bone.matrix_local.inverted() @ weapon_rest)
-            bpy.context.view_layer.update()
+            attach(weapon, rig, weapon_node)
         scene.render.filepath = str(previews / f"{prefix}-{frame:02}.png")
-        from blender_meshes import render_material_queues
         render_material_queues(scene)
-    if weapon is not None:
+    if weapon is not None and args.animation == "attack":
         scene.frame_set(10)
-        hand = rig.pose.bones["NPC R Hand [RHnd]"]
-        weapon.matrix_world = (rig.matrix_world @ hand.matrix
-                               @ hand.bone.matrix_local.inverted() @ weapon_rest)
-        bpy.context.view_layer.update()
+        hand = rig.pose.bones[weapon_node[0]]
+        attach(weapon, rig, weapon_node)
         center = rig.matrix_world @ hand.head
         camera.location = center + Vector((.5, 1.0, .35))
         camera.data.ortho_scale = .32
@@ -326,10 +463,7 @@ def main():
         render_material_queues(scene)
     (previews / f"{prefix}.json").write_text(json.dumps({
         "nifs": nifs, "animation": args.animation, "frames": frames, "wardrobe": wardrobe,
-        "meshes": [obj.name for obj in meshes], "game_verified": False,
-        "steel_sword_geometry": weapon is not None,
-        "weapon_attachment": "WEAPON" if weapon else None,
-        "weapon_material": "neutral metal preview" if weapon else None,
+        "meshes": [obj.name for obj in meshes], "game_verified": False, **weapon_report,
     }, indent=2), encoding="utf-8")
     bpy.ops.wm.save_as_mainfile(filepath=str(output / f"preview-{prefix}.blend"))
 

@@ -30,6 +30,16 @@ METAL_SHADER = {'Shader_Type': 1, 'Shader_Flags_1': 0x82400381, 'Shader_Flags_2'
                 'Glossiness': 80., 'Env_Map_Scale': 1.}
 PLAIN_SHADER = {'Shader_Type': 0, 'Shader_Flags_1': 0x82400301, 'Shader_Flags_2': 0x8001,
                 'Glossiness': 48., 'Env_Map_Scale': 1.}
+# Preview poses. The drawn weapon follows the skeleton's WEAPON node (right hand);
+# sheathed weapons follow these skeleton nodes. The staff on WeaponBack is not
+# confirmed in game (the vanilla skeleton has no staff node).
+HOLD_NODE = 'WEAPON'
+SHEATH_NODES = {'sword': 'WeaponSword', 'dagger': 'WeaponDagger', 'waraxe': 'WeaponAxe', 'mace': 'WeaponMace',
+                'greatsword': 'WeaponBack', 'battleaxe': 'WeaponBack', 'warhammer': 'WeaponBack', 'staff': 'WeaponBack'}
+# Vanilla combat idles (Skyrim - Animations.bsa) used for the drawn-weapon preview.
+DRAWN_IDLES = {'sword': '1hm_idle.hkx', 'dagger': '1hm_idle.hkx', 'waraxe': '1hm_idle.hkx', 'mace': '1hm_idle.hkx',
+               'greatsword': '2hm_idle.hkx', 'battleaxe': '2hw_idle.hkx', 'warhammer': '2hw_idle.hkx',
+               'staff': 'staffright_idle.hkx'}
 
 
 def axis_map(points):

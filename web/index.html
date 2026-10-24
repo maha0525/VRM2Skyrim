@@ -75,7 +75,23 @@
       <section data-step="2" hidden>
         <p class="eyebrow">STEP 03</p><h2>冒険での役割を決める</h2><p class="lead">プリセットから始めて、好みに合わせて調整できます。</p>
         <label>戦闘プリセット<select id="preset"><option value="warrior">片手武器の戦士</option><option value="twohand">両手武器の戦士</option><option value="archer">弓使い</option><option value="mage">破壊魔法の使い手</option><option value="conjurer">召喚魔法の使い手</option><option value="custom">個別に設定</option></select></label>
-        <div class="grid"><label>能力の成長タイプ（クラス）<select id="combat_class"></select></label><label>戦闘スタイル<select id="combat_style"></select></label><label>開始武器<select id="weapon"></select></label><label>矢・弾（100本）<select id="ammunition"></select></label><label>レベル<select id="level_mode"><option value="player">プレイヤーのレベルに追従</option><option value="fixed">固定レベル</option></select></label><label id="fixed-level">固定レベル<input id="level" type="number" min="1" max="1000"></label><label id="mult-level">追従倍率<input id="level_multiplier" type="number" min=".1" max="10" step=".1"></label><label>最低レベル<input id="min_level" type="number" min="1" max="1000"></label><label>能力の計算<select id="auto_calculate"><option value="true">クラスとレベルから自動成長</option><option value="false">個別スキルを手動指定</option></select></label><label>最高レベル<input id="max_level" type="number" min="1" max="1000"></label></div>
+        <div class="grid"><label>能力の成長タイプ（クラス）<select id="combat_class"></select></label><label>戦闘スタイル<select id="combat_style"></select></label><label>開始武器<select id="weapon_mode"><option value="official">公式の武器</option><option value="original">オリジナル武器</option></select></label><label id="official-weapon">公式の武器<select id="weapon"></select></label><label>矢・弾（100本）<select id="ammunition"></select></label><label>レベル<select id="level_mode"><option value="player">プレイヤーのレベルに追従</option><option value="fixed">固定レベル</option></select></label><label id="fixed-level">固定レベル<input id="level" type="number" min="1" max="1000"></label><label id="mult-level">追従倍率<input id="level_multiplier" type="number" min=".1" max="10" step=".1"></label><label>最低レベル<input id="min_level" type="number" min="1" max="1000"></label><label>能力の計算<select id="auto_calculate"><option value="true">クラスとレベルから自動成長</option><option value="false">個別スキルを手動指定</option></select></label><label>最高レベル<input id="max_level" type="number" min="1" max="1000"></label></div>
+        <section id="original-weapon-panel" class="original-weapon-panel" hidden>
+          <h3>オリジナル武器</h3>
+          <p class="hint">GLBファイルの武器を、このフォロワー専用の武器にします。攻撃力・音・付呪・持ち方は、元にする公式の武器から受け継ぎます。</p>
+          <label>武器のGLBファイル<input id="weapon-glb" type="file" accept=".glb"></label>
+          <p id="weapon-glb-status" class="source-status" aria-live="polite">まだ選択されていません</p>
+          <div id="weapon-glb-mismatch" class="note" role="alert" hidden><span id="weapon-glb-mismatch-text"></span><button type="button" id="weapon-glb-forget" class="secondary">設定のGLBを使わず、別のGLBにする</button></div>
+          <p class="hint">公式の武器の三角形ポリゴン数は、およそ366〜2,066です。それよりずっと多い武器は、ゲームが重くなる場合があります。ポリゴン数は自動では減らしません。</p>
+          <div class="grid"><label>武器の種類<select id="weapon-kind"></select></label><label>元にする公式の武器<select id="weapon-base"></select><small>この武器の性能を受け継ぎます。</small></label><label>ゲームでの表示名<input id="weapon-name" maxlength="128"></label><label>握る位置（下端からの割合、%）<input id="weapon-grip" type="number" min="0.1" max="99.9" step="0.1"></label><label>全長<input id="weapon-length" type="number" min="1" max="999" step="0.1"><small>Skyrimの長さの単位。1単位は約1.43cmです。</small></label><label>回転（度）<input id="weapon-roll" type="number" min="0" max="359" step="1"><small>長い向きを軸に回します。刃の向きを変えるときに使います。</small></label><label class="checkbox"><input id="weapon-flip" type="checkbox">上下を反転する</label></div>
+          <p id="weapon-base-status" class="hint" role="status"></p>
+          <button type="button" id="weapon-reset-size" class="secondary">握る位置と全長を元の武器に合わせる</button>
+          <h3>プレビュー</h3>
+          <p class="hint">値を変えたら、プレビューを描き直してください。初回はアバターの準備に数分かかる場合があります。</p>
+          <button type="button" id="weapon-preview" class="secondary">武器を持たせてプレビュー</button>
+          <p id="weapon-preview-status" class="hint" role="status" aria-live="polite"></p>
+          <div id="weapon-preview-images" class="preview-grid"></div>
+        </section>
         <div id="class-details" class="note" aria-live="polite"></div><label class="checkbox"><input id="all-styles" type="checkbox">動物・怪物向けを含む、すべての戦闘スタイルを表示</label><p id="style-details" class="hint" aria-live="polite"></p><p class="hint">動物・怪物用のスタイルは、人型で正常に動かない場合があります。</p>
         <section class="combat-style-panel">
           <label>戦闘スタイルの使い方<select id="combat_style_mode"><option value="existing">既存スタイルをそのまま使う</option><option value="custom">このフォロワー専用に調整する</option></select></label>
@@ -121,5 +137,5 @@
     </section>
   </main>
 </div>
-<script src="translations.js"></script><script src="i18n.js"></script><script src="wardrobe.js"></script><script src="combat-style.js"></script><script src="wizard.js"></script>
+<script src="translations.js"></script><script src="i18n.js"></script><script src="wardrobe.js"></script><script src="combat-style.js"></script><script src="weapon.js"></script><script src="wizard.js"></script>
 </body></html>

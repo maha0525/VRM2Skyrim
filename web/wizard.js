@@ -30,6 +30,7 @@ function applySettings(settings) {
   if(state.source)wardrobeLoad(state.source,settings);
   loadPhysics(settings);
   if(state.choices)updateStyles(settings.combat_style);
+  loadWeapon(settings);
   updateLevel(); updateMarriage(); renderChoices();
 }
 function collect() {
@@ -49,6 +50,7 @@ function collect() {
   if(settings.fit_mode==='all_official')settings.fit_armors=[];
   settings.physics_nodes=[...(state.physicsNodes||[])];
   settings.physics_source_sha256=state.physicsHash||'';
+  settings.original_weapon=originalWeaponSettings(settings.weapon_mode==='original');
   if(settings.armor_support&&$('fit-enabled').checked&&settings.fit_mode==='selected'&&!settings.fit_armors.length)throw new Error(tr("体型合わせする装備を選んでください")); return settings;
 }
 async function updateId() {
@@ -118,6 +120,7 @@ function setupChoices(choices, localizing=false) {
   renderChoices();
   setupFitting(!localizing);
   renderCombatStyle();
+  setupWeapon();
 }
 function catalogIdentity(){return JSON.stringify([$('game').value,$('blender').value,$('sex').value]);}
 function renderCatalogStatus(){
@@ -252,6 +255,7 @@ function summarize(settings) {
   const rows=[[tr("アバター"),state.source.filename],[tr("NPC名"),settings.npc_name],['MOD',settings.mod_name+' / '+settings.mod_id+'.esp'],[tr("ボイス"),recordLabel(voice)||settings.voice],[tr("戦闘"),settings.combat_class+' / '+settings.combat_style],[tr("レベル"),settings.level_mode==='player'?tr("プレイヤー×{0}（{1}〜{2}）", settings.level_multiplier, settings.min_level, settings.max_level):String(settings.level)],[tr("生存"),{'protected':tr("保護"),'essential':tr("不死"),'mortal':tr("通常")}[settings.protection]],[tr("体力 / マジカ / スタミナ"),`${settings.health} / ${settings.magicka} / ${settings.stamina}${settings.auto_calculate?tr("（自動成長の補正に使用）"):''}`],[tr("Perk / 魔法"),`${settings.perks.length} / ${settings.spells.length}`],[tr("初期配置"),tr("ホワイトラン · キナレス聖堂")]];
   rows.push([tr("衣服"),settings.armor_support?tr("{0}品を着脱可能（初期装備{1}品）", settings.appearance_parts.garments.length, settings.appearance_parts.garments.filter(g=>g.equipped).length):tr("元の衣服を着脱しない")]);
   rows.push([tr("トゥーン描画"),settings.toon_enabled?tr("有効"):tr("無効")]);
+  rows.push([tr("開始武器"),weaponSummary(settings)]);
   if(settings.combat_style_mode==='custom')rows.push([tr('専用戦闘スタイル'),tr('コピー元: {0}',settings.combat_style_custom.source)]);
   rows.push([tr("髪・布の物理演算"),settings.physics_enabled?tr("FSMPを使用 · 硬さ{0} · {1}", settings.physics_stiffness, settings.physics_nodes.length?settings.physics_nodes.length+tr("メッシュを選択"):tr("髪・衣服を自動選択")):tr("固定")]);
   const fitting=settings.armor_support&&(settings.fit_mode==='all_official'||settings.fit_armors.length>0);
@@ -261,11 +265,11 @@ function summarize(settings) {
 }
 async function next() {
   error(); const current=document.querySelector(`[data-step="${state.step}"]`);
-  for(const field of current.querySelectorAll('input,select'))if(!field.checkValidity()){field.reportValidity();return;}
+  for(const field of current.querySelectorAll('input,select'))if(!field.closest('[hidden]')&&!field.checkValidity()){field.reportValidity();return;}
   state.navigationLoading=true;$('next').disabled=true;
   try {
     if(state.step===0){if(!state.source)throw new Error(tr("VRMファイルを選択してください"));const result=await loadCatalog();$('checks').replaceChildren();for(const [key,value]of Object.entries(result.checks)){const badge=document.createElement('span');badge.textContent=key+(value?' ✓':tr(" 未準備"));badge.className=value?'':'missing';$('checks').append(badge);}if(Object.values(result.checks).some(value=>!value))throw new Error(tr("環境が未準備です。パスを確認し、初回はSetup.cmdを実行してください。"));}
-    const result=await api('/api/validate',{source_id:state.source.source_id,game:$('game').value,settings:collect()});if(state.step===3)summarize(result.settings);
+    const result=await api('/api/validate',{source_id:state.source.source_id,game:$('game').value,settings:collect(),weapon_id:state.weaponGlb?.weapon_id,check_weapon:state.step>=2});if(state.step===3)summarize(result.settings);
     showStep(state.step+1);
   }catch(e){error(e.message);}finally{state.navigationLoading=false;renderCatalogStatus();}
 }
@@ -279,7 +283,8 @@ function showResult(job) {
 }
 function renderResultAppearance(job) {
   $('progress').hidden=true;$('result').hidden=false;$('result-title').textContent=tr('{0}を、スカイリムへ。',job.npc_name);$('download').href=fileURL(job.id,job.archive);$('download').download=job.archive;$('plugin-name').textContent=job.plugin_name;$('output-folder').textContent=tr("出力フォルダ: ")+job.output;
-  const names=['original-01.png','rest-01.png','walk-08.png','attack-10.png','attack-hand-10.png']; const labels=[tr("元VRM（姿勢合わせ）"),tr("出力NIF"),tr("標準歩行"),tr("標準の剣攻撃"),tr("手と剣の近接確認")];$('previews').replaceChildren();
+  const original=job.weapon_mode==='original';
+  const names=['original-01.png','rest-01.png','walk-08.png','attack-10.png','attack-hand-10.png','sheathed-01.png']; const labels=[tr("元VRM（姿勢合わせ）"),tr("出力NIF"),tr("標準歩行"),original?tr("オリジナル武器で攻撃"):tr("標準の剣攻撃"),original?tr("手とオリジナル武器の近接確認"):tr("手と剣の近接確認"),tr("武器を収めた姿")];$('previews').replaceChildren();
   for(let i=0;i<names.length;i++){const path=job.previews.find(path=>path.endsWith('/'+names[i]));if(!path)continue;const figure=document.createElement('figure');const image=document.createElement('img');image.src=fileURL(job.id,path);image.alt=labels[i];const caption=document.createElement('figcaption');caption.textContent=labels[i];figure.append(image,caption);$('previews').append(figure);}
   if(job.armor_support){const extra=[['wardrobe-underwear-rest-01.png',tr("服を外した状態")],['wardrobe-underwear-walk-08.png',tr("下着状態で歩行")],['wardrobe-underwear-attack-10.png',tr("下着状態で剣攻撃")],...(job.garments||[]).map(g=>['wardrobe-without-'+g.id+'-rest-01.png',tr('{0}だけ外した状態',g.name)])];for(const [name,label]of extra){const path=job.previews.find(p=>p.endsWith('/'+name));if(!path)continue;const figure=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption');img.src=fileURL(job.id,path);img.alt=label;caption.textContent=label;figure.append(img,caption);$('previews').append(figure);}}
   if(job.fit_armors?.length){for(const [name,label] of [['wardrobe-armor-all-rest-01.png',tr("体型を合わせた装備")],['wardrobe-armor-all-walk-08.png',tr("装備して歩行")],['wardrobe-armor-all-attack-10.png',tr("装備して剣攻撃")]]){const path=job.previews.find(p=>p.endsWith('/'+name));if(!path)continue;const figure=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption');img.src=fileURL(job.id,path);img.alt=label;caption.textContent=label;figure.append(img,caption);$('previews').append(figure);}}
@@ -293,7 +298,7 @@ async function poll() {
 }
 async function create() {
   error();$('create').disabled=true;
-  try {const result=await api('/api/jobs',{source_id:state.source.source_id,game:$('game').value,blender:$('blender').value,settings:collect()});state.job=result.job_id;$('wizard').hidden=true;$('progress').hidden=false;$('failure').hidden=true;$('progress').querySelector('.progress-bar').hidden=false;poll();}
+  try {const result=await api('/api/jobs',{source_id:state.source.source_id,game:$('game').value,blender:$('blender').value,settings:collect(),weapon_id:state.weaponGlb?.weapon_id});state.job=result.job_id;$('wizard').hidden=true;$('progress').hidden=false;$('failure').hidden=true;$('progress').querySelector('.progress-bar').hidden=false;poll();}
   catch(e){error(e.message);}finally{$('create').disabled=false;}
 }
 function preset() {
@@ -309,7 +314,7 @@ async function refreshSavedResults(preferred=$('saved-job').value) {
   $('saved-results').hidden=saved.jobs.length===0;
 }
 async function init() {
-  initCombatStyle();
+  initCombatStyle();initWeapon();
   for(let i=0;i<skills.length;i++){const label=document.createElement('label');label.textContent=tr(skillLabels[i]);const input=document.createElement('input');input.id='skill-'+skills[i];input.type='number';input.min='0';input.max='100';input.value='20';label.append(input);$('skills').append(label);}
   const env=await api('/api/environment');
   const expected=document.querySelector('meta[name="converter-version"]').content;
@@ -350,6 +355,7 @@ document.addEventListener('languagechange',()=>{
     setupChoices(state.choices,true);
   }
   renderWardrobe();renderPhysics();updateLevel();renderCatalogStatus();
+  renderWeaponGlb();renderWeaponBaseStatus();if(state.weaponPreview&&!state.weaponPreviewLoading)renderWeaponPreview();
   if(state.source)$('source-status').textContent=tr('{0} · {1}メッシュ · {2}三角形',state.source.filename,state.source.mesh_count,state.source.triangles.toLocaleString(i18n.language));
   if(state.step===4&&state.reviewSettings)summarize(state.reviewSettings);
   if(state.completedJob&&!$('result').hidden)renderResultAppearance(state.completedJob);

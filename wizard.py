@@ -10,6 +10,7 @@ import hashlib
 import logging
 import mimetypes
 import socket
+import struct
 import sys
 from pathlib import Path
 import threading
@@ -94,6 +95,8 @@ class WizardApplication:
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.sources = {}
         self.source_reports = {}
+        self.weapons = {}  # weapon_id -> {'path', 'report'}; the path never enters settings
+        self.weapon_bases = {}
         self.jobs = {}
         self.catalogs = {}
         self.lock = threading.Lock()
@@ -137,6 +140,42 @@ class WizardApplication:
                 "suggested_name": report.get("vrm_meta", {}).get("name") or report.get("vrm_meta", {}).get("title") or Path(name).stem,
                 "has_morphs": any(mesh["morphs"] for mesh in report["meshes"])}
 
+    def upload_weapon(self, name, blob):
+        if Path(name).suffix.lower() != '.glb':
+            raise ValueError('GLBファイルを選んでください')
+        from weapon import inspect_glb
+        weapon_id = uuid.uuid4().hex
+        path = self.workspace / 'inputs' / (weapon_id + '.glb')
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(blob)
+        try:
+            report = inspect_glb(path)
+        except (ValueError, KeyError, IndexError, TypeError, struct.error) as error:
+            path.unlink(missing_ok=True)
+            raise ValueError('GLBを読み込めませんでした: ' + str(error)) from error
+        self.weapons[weapon_id] = {'path': path, 'report': report}
+        return {'weapon_id': weapon_id, 'filename': Path(name).name, **{k: report[k] for k in (
+            'sha256', 'triangles', 'vertices', 'materials', 'extensions')}}
+
+    def weapon_source(self, request, settings):
+        """Uploaded GLB for an original-weapon settings; None in official mode."""
+        if settings.weapon_mode != 'original':
+            return None
+        weapon = self.weapons.get(request.get('weapon_id'))
+        if weapon is None:
+            raise ValueError('オリジナル武器のGLBを選んでください')
+        if weapon['report']['sha256'] != settings.original_weapon['sha256']:
+            raise ValueError('選んだGLBは、設定に保存したオリジナル武器と別のファイルです。設定したときと同じGLBを選んでください')
+        return weapon['path']
+
+    def weapon_base(self, game, base):
+        data = Path(game).resolve() / 'Data'
+        key = (str(data), (data / 'Skyrim.esm').stat().st_mtime_ns, base)
+        if key not in self.weapon_bases:
+            from weapon_preview import base_dimensions
+            self.weapon_bases[key] = base_dimensions(self.workspace, data, self.catalog(game), base)
+        return self.weapon_bases[key]
+
     def start(self, request):
         source = self.sources.get(request.get("source_id"))
         if source is None:
@@ -145,6 +184,7 @@ class WizardApplication:
         validate_source(settings, self.source_reports[request["source_id"]])
         game, blender = Path(request["game"]), Path(request["blender"])
         self.catalog(game).validate_settings(settings)
+        weapon_glb = self.weapon_source(request, settings)
         checks = doctor(game, blender)
         if not all(checks.values()):
             raise ValueError("必要な環境が未設定です: " + ", ".join(key for key, value in checks.items() if not value))
@@ -157,9 +197,52 @@ class WizardApplication:
                    "npc_name": settings.npc_name, "plugin_name": settings.plugin_name, "events": []}
             job["armor_support"] = settings.armor_support
             job["garments"] = [{"id": g["id"], "name": g["name"]} for g in settings.appearance_parts.get("garments", [])] if settings.armor_support else []
+            job["weapon_mode"] = settings.weapon_mode
             self.jobs[job_id] = job
-        self.executor.submit(self._run, job, source, game, blender, output, settings)
+        self.executor.submit(self._run, job, source, game, blender, output, settings, weapon_glb)
         return {"job_id": job_id}
+
+    def start_weapon_preview(self, request):
+        source_id = request.get('source_id')
+        if source_id not in self.sources:
+            raise ValueError('先にVRMを選択してください')
+        settings = FollowerSettings.from_dict(request['settings'])
+        if settings.weapon_mode != 'original':
+            raise ValueError('オリジナル武器を選んでください')
+        validate_source(settings, self.source_reports[source_id])
+        glb = self.weapon_source(request, settings)
+        game, blender = Path(request['game']), Path(request['blender'])
+        catalog = self.catalog(game)
+        weapon = settings.original_weapon
+        if catalog.original_weapon_kind(catalog.require(weapon['base'], b'WEAP')) != weapon['kind']:
+            raise ValueError(f"Original weapon base {weapon['base']} is not a playable Skyrim.esm {weapon['kind']}")
+        with self.lock:
+            if any(j['status'] in ('queued', 'running') for j in self.jobs.values()):
+                raise ValueError('変換・プレビューの完了を待ってください')
+            job_id = uuid.uuid4().hex
+            job = dict(id=job_id, kind='weapon_preview', status='queued', output=str(self.workspace/'weapon-preview-cache'),
+                       stage='武器のプレビューを準備しています…', events=[])
+            self.jobs[job_id] = job
+        self.executor.submit(self._run_weapon_preview, job, self.sources[source_id], glb, game, blender, settings, catalog)
+        return {'job_id': job_id}
+
+    def _run_weapon_preview(self, job, source, glb, game, blender, settings, catalog):
+        job['status'] = 'running'
+        try:
+            from weapon_preview import preview
+
+            def progress(stage):
+                with self.lock:
+                    job['stage'] = stage
+                logging.info('Weapon preview stage: %s', stage)
+
+            result = preview(self.workspace, source, glb, game, blender, settings, catalog, progress)
+            with self.lock:
+                job.update(result, status='complete', stage='武器のプレビューを更新しました')
+        except Exception as error:
+            logging.exception('Weapon preview failed')
+            with self.lock:
+                job.update(status='failed', error=str(error))
 
     def start_preview(self, request):
         source_id = request.get("source_id")
@@ -284,7 +367,7 @@ class WizardApplication:
             with self.lock:
                 job.update(status="failed", error=str(error))
 
-    def _run(self, job, source, game, blender, output, settings):
+    def _run(self, job, source, game, blender, output, settings, weapon_glb=None):
         job["status"] = "running"
 
         def progress(name):
@@ -293,7 +376,7 @@ class WizardApplication:
                 job["events"].append(name)
 
         try:
-            archive = convert(source, game, blender, output, settings, progress)
+            archive = convert(source, game, blender, output, settings, progress, weapon_glb=weapon_glb)
             with self.lock:
                 job.update(status="complete", archive=archive.name,
                            previews=sorted(path.relative_to(output).as_posix() for path in (output / "previews").glob("*.png")),
@@ -407,7 +490,7 @@ def handler_for(app):
                     return self.reply({'error': '更新を反映するため、ウィザードのターミナルで Ctrl+C を押し、Launch.cmd を開き直してください。',
                                        'restart_required': True}, 409)
                 size = int(self.headers.get("Content-Length", "0"))
-                limit = 512 * 1024 * 1024 if self.path in ('/api/source', '/api/equipment-edit') else 1024 * 1024
+                limit = 512 * 1024 * 1024 if self.path in ('/api/source', '/api/equipment-edit', '/api/weapon-glb') else 1024 * 1024
                 if not 0 < size <= limit:
                     raise ValueError("File/request exceeds size limit")
                 blob = self.rfile.read(size)
@@ -418,6 +501,8 @@ def handler_for(app):
                                                      unquote(self.headers.get('X-Blender', ''))), 202)
                 if self.path == "/api/source":
                     return self.reply(app.upload(unquote(self.headers.get("X-Filename", "avatar.vrm")), blob))
+                if self.path == '/api/weapon-glb':
+                    return self.reply(app.upload_weapon(unquote(self.headers.get('X-Filename', 'weapon.glb')), blob))
                 request = json.loads(blob)
                 if self.path == "/api/catalog":
                     catalog = app.catalog(request["game"])
@@ -430,7 +515,13 @@ def handler_for(app):
                             raise ValueError("先にVRMを選択してください")
                         validate_source(settings, app.source_reports[source_id])
                     app.catalog(request["game"]).validate_settings(settings)
+                    if request.get('check_weapon', True):  # the GLB is chosen in STEP 03
+                        app.weapon_source(request, settings)
                     return self.reply({"settings": asdict(settings)})
+                if self.path == '/api/weapon-base':
+                    return self.reply(app.weapon_base(request['game'], request['base']))
+                if self.path == '/api/weapon-preview':
+                    return self.reply(app.start_weapon_preview(request), 202)
                 if self.path == "/api/jobs":
                     return self.reply(app.start(request), 202)
                 if self.path == "/api/appearance-preview":

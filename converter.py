@@ -355,6 +355,9 @@ def convert(source, game, blender, output, settings, progress=None, weapon_glb=N
             for animation in ("original", "rest", "walk", "attack"):
                 stage("プレビュー: " + animation)
                 run_blender(blender, "render_blender.py", ["--output", output, "--animation", animation], output, "Render " + animation)
+            if settings.weapon_mode == 'original':
+                stage("プレビュー: sheathed")
+                run_blender(blender, "render_blender.py", ["--output", output, "--animation", "sheathed"], output, "Render sheathed")
             if settings.armor_support:
                 for animation in ("rest", "walk", "attack"):
                     stage("下着状態のプレビュー: " + animation)

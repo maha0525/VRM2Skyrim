@@ -67,7 +67,7 @@ After updating the tool, press **Ctrl+C** in its terminal and reopen **Launch.cm
 | Clothing separation | Enable/disable support; assign meshes to body, underwear, always-visible parts, or garments; preview the original VRM assignments |
 | Original outfit equipment | Combine into one item or split into items; names, occupied slots, clothing/light/heavy armor, armor rating, weight, value, and initial equipment |
 | Name and voice | NPC name, MOD name, unique MOD ID, author, sex, and 17 voice types with vanilla follower dialogue |
-| Combat and abilities | Warrior/two-handed/archer/destruction/conjuration presets, class, combat style, starting weapon, and ammunition |
+| Combat and abilities | Warrior/two-handed/archer/destruction/conjuration presets, class, combat style, starting weapon (official, or an original weapon from a GLB), and ammunition |
 | Growth and personality | Fixed/player-scaled level, multiplier and limits, automatic/manual stats, health/magicka/stamina, 18 skills, essential/protected/normal status, confidence, aggression, and crime behavior |
 | Details | Uniform overall size multiplier, marriage eligibility with supported voices, and placement offset inside the temple |
 | Perks and spells | Skill/school categories, labeled Perk stages, filtering by category/name/ID/description |
@@ -194,7 +194,7 @@ python converter.py avatar.vrm --settings my-follower.json --game 'E:\SteamLibra
 python wizard.py --no-browser --port 8768
 ```
 
-Settings with `"weapon_mode": "original"` also need the weapon GLB whose SHA256 is saved in `original_weapon`: add `--weapon-glb staff.glb`. The GLB is not included in the ZIP.
+Settings with `"weapon_mode": "original"` also need the weapon GLB whose SHA256 is saved in `original_weapon`: add `--weapon-glb staff.glb`. The GLB is not included in the ZIP. In the wizard, choose **Original weapon** (`オリジナル武器`) for the starting weapon in STEP 03, then the GLB, weapon type, base weapon, grip and length; **Preview with the weapon** draws the follower holding it, the sheathed weapon, and a same-scale comparison with the base weapon. Imported settings ask for the same GLB again and refuse a different file.
 
 If you used `.venv` during setup, run `.venv\Scripts\python.exe`. You can also drag a VRM onto `Convert-VRM.cmd`. Outputs are written under `build/`, and previous conversions are not overwritten. An explicitly specified `--output` must be an empty folder.
 
