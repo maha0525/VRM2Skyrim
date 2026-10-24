@@ -35,6 +35,7 @@
 - ポリゴン数の自動削減は入れない。
 - 弓とクロスボウは最初は対象外にする。
 - 性能 (攻撃力など) を変更できる機能は欲しいが、ゲームにオリジナル武器を出せることを確かめてから検討する。
+- 収めた杖は背中に見えるようにする (2026-10-25、下の「収めた杖」の節)。
 - 最初に試す `aifi-crescent-staff.glb` は、三角形ポリゴン数 19,999 のまま使う。公式の武器 (三角形ポリゴン数 366〜2,066) より細かいので重くなる可能性はあるが、まずゲームに出せることを確かめる。
 
 ## 受け取る GLB ファイルの条件
@@ -82,7 +83,8 @@ STEP 03 の「開始武器」の欄に、「公式の武器」と「オリジナ
 - 書き出す NIF は、公式の武器と同じく、一番上の親ノードを `BSFadeNode` にして、その下に部品の `BSTriShape` を置く形にする。
 - 一人称視点のモデルにも同じ NIF を使う。公式の武器には一人称用に別のファイルを持つものが多いが、形は三人称とほぼ同じで (三角形ポリゴン数が多いものはある)、位置と大きさは三人称と一致していた (鋼鉄の剣・メイス・両手剣・二本の杖で実測)。公式の狩猟用の弓では、一人称用のレコードにも三人称と同じ `SteelBow.nif` が指定されている。
 - 公式の剣とメイスは、鞘のモデル (`Scb`) を同じ NIF の中に持っている。オリジナル武器では鞘を作らない。剣を腰に収めると、抜き身のまま腰に下がる見た目になる。
-- 公式の武器には、弓を除いて当たり判定のデータ (`bhkCollisionObject`) が入っている。地面に落とした武器が床で止まるのはこのデータがあるからなので、オリジナル武器にも当たり判定を付ける。公式の武器の当たり判定は、`bhkCollisionObject` (flags 129) の下に `bhkRigidBody` (衝突の層 5、motionSystem 3、qualityType 4、重さは鋼鉄の剣で 10、フォースウォーンの杖で 9) を置き、形を `bhkConvexVerticesShape` (モデルの外側を大まかに包む形 (凸包)。頂点 12〜19 個) にしていた (竜司祭の杖だけは `bhkCapsuleShape`)。オリジナル武器では、`bhkRigidBody` の値は元にする公式の武器のものをそのまま使い、形はオリジナル武器のモデルから作った凸包を、頂点数を公式の武器と同じくらい (数十個以下) に減らして入れる。PyNifly はこの形を書き出せる (Blender からの書き出しは `export_bhkConvexVerticesShape`、Blender を通さない書き出しは `add_collision` と `add_shape`)。
+- 公式の武器には、弓を除いて当たり判定のデータ (`bhkCollisionObject`) が入っている。地面に落とした武器が床で止まるのはこのデータがあるからなので、オリジナル武器にも当たり判定を付ける。公式の武器の当たり判定は、`bhkCollisionObject` (flags 129) の下に `bhkRigidBody` (衝突の層 5、motionSystem 3、qualityType 4、重さは鋼鉄の剣で 10、フォースウォーンの杖で 9) を置き、形を `bhkConvexVerticesShape` (モデルの外側を大まかに包む形 (凸包)。頂点 12〜19 個) にしていた (竜司祭の杖だけは `bhkCapsuleShape`)。オリジナル武器では、剛体は常に位置と回転を持たない `bhkRigidBody` として書き、元にする公式の武器からは数値の物理の値 (衝突の層・重さ・摩擦・跳ね返り・減衰・運動と品質の種別) だけを写す。公式の武器には位置と回転を持つ `bhkRigidBodyT` や、形を複数まとめた `bhkListShape` のものもあり (候補の約半数が `bhkListShape`)、それらの位置や形の値を写すと当たり判定が見た目からずれたり、変換が落ちたりする (2026-10-25 の敵対レビューで判明)。重心は新しい凸包から計算する。形はオリジナル武器のモデルから作った凸包を、頂点数を公式の武器と同じくらい (数十個以下) に減らして入れる。PyNifly はこの形を書き出せる (Blender からの書き出しは `export_bhkConvexVerticesShape`、Blender を通さない書き出しは `add_collision` と `add_shape`)。
+- 収めた杖: 武器を収めたときにどこへ下げるかは、NIF の中の `Prn` という文字列が骨格のノードの名前で指定している (`SteelSword.nif` などの剣は `WeaponSword`)。公式の杖の `Prn` は `WeaponStaff` だが、公式の骨格 (`skeleton.nif`・`skeleton_female.nif`) には `WeaponDagger`・`WeaponAxe`・`WeaponSword`・`WeaponMace`・`WEAPON`・`SHIELD`・`WeaponBack`・`WeaponBow` しか無く、`WeaponStaff` が無かった (2026-10-25 実測)。だから公式の杖は、収めると体に表示されない可能性が高い (ゲームでは未確認。フォースウォーンの杖だけは `Prn` が `SHIELD` で、盾の位置に下がる)。まはーの決定で、オリジナル武器の杖は収めたときに背中に見せる。種類が杖のときは、オリジナル武器の NIF の `Prn` を元にする公式の杖に関係なく `WeaponStaff` にし、フォロワー専用の骨格に `WeaponStaff` ノードを足す。足し方は、既存の専用骨格が補助ノードを足しているのと同じく、アニメーションで動かないノードとして `WeaponBack` と同じ親の下に置き、杖が背中に斜めに収まる位置と向きを与える。位置と向きの値はプレビューで決め、ゲームでまはーに見てもらって調整する。
 - ファイルは `meshes/<asset_dir>/weapon.nif` と `textures/<asset_dir>/weapon*.dds` に置く。`asset_dir` はフォロワーごとに違うので、複数のフォロワーの MOD を同時に入れてもファイルが衝突しない ([package-coexistence.md](package-coexistence.md))。既存のファイル名 (`avatar`・`skeleton`・`garment_*`・`fitted_*`・`tex_NNN_*`・`flat_n` など) とも衝突しない。
 
 ## テクスチャ
@@ -112,7 +114,8 @@ glTF の PBR テクスチャを、公式の金属の武器と同じ組み合わ�
 - マスターの番号の付け替え: 体型合わせを使うと、フォロワーの ESP のマスターに DLC のファイルが足される (`build_npc.py` の `extra_masters`)。そのとき、自前のレコードを指す FormID のうち、`follower_plugin.py` の `REFS` に載った項目だけが付け替えられる。新しい `WEAP` の `WNAM` は自前の `STAT` を指すので、元にする公式の武器を `Skyrim.esm` に限っても、`REFS` に `WEAP` の `WNAM` を足す必要がある。`WEAP` と `STAT` の `MODL` はファイルのパスの文字列なので、`REFS` に足してはいけない (`ARMO` の `MODL` は FormID なので載っている。同じ名前で中身が違う)。最終検査 (`plugin_validation.py`) の参照の検査にも、`WEAP` の `WNAM` と、所持品に入れた新しい武器を足す。
 - オリジナル武器を一本、フォロワーの所持品 (`CNTO`) に入れる。オリジナル武器を選んでいるときは、`settings.weapon` の公式武器を所持品に入れない。`settings.weapon` の値は設定に残す (公式の武器に戻したときに使う)。`game_catalog.py` の `validate_settings` では、公式の武器を選んでいるときだけその値を検査する。
 - 最終検査 (`plugin_validation.py`) では自前のレコードの数を厳密に照合しているので、オリジナル武器を選んだときの 2 件 (`WEAP` と `STAT`) を、期待する数に足す。
-- 元にする公式の武器は、最初は `Skyrim.esm` の武器に限る。DLC の武器を元にするには、二つを片付ける必要がある。一つは、`GameCatalog` で候補を読み込む対象が今は `Skyrim.esm` だけになっていること。もう一つは、`WEAP` の中の DLC への参照を内部の番号に直す処理 (`armor_patch.py` や `official_catalog.py` にあるのと同じ種類の処理) が要ること。
+- 写す値は、ゲームが実際に使っている値にする。`Skyrim.esm` の武器のうち 19 件は `Update.esm` で上書きされている (既定の `SteelDagger` も、振ったときの音 `NAM8`・`NAM9` と `DNAM` が違う。2026-10-25 の敵対レビューで判明)。だから `WEAP` と `STAT` は、`Update.esm` の上書きを当ててからコピーする。上書きの中の参照が `Skyrim.esm` 以外のレコードを指す候補は、マスターが増えるので候補から外す。
+- 元にする公式の武器は、最初は `Skyrim.esm` (と、それを上書きする `Update.esm`) の武器に限る。DLC の武器を元にするには、二つを片付ける必要がある。一つは、`GameCatalog` で候補を読み込む対象が今は `Skyrim.esm` だけになっていること。もう一つは、`WEAP` の中の DLC への参照を内部の番号に直す処理 (`armor_patch.py` や `official_catalog.py` にあるのと同じ種類の処理) が要ること。
 - 公式の武器のレコードは上書きしない。
 
 ## 設定
