@@ -175,12 +175,53 @@ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42
   await page.locator('#back').click();await page.locator('#weapon_mode').selectOption('original');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await page.locator('#original-weapon-panel').screenshot({path:path.join(fixture,'original-weapon-mobile.png')});
+  await page.setViewportSize({width:1440,height:1100});
+  // STEP 01/02 do not require the original weapon, which is completed in STEP 03.
+  await start();
+  await page.locator('#weapon_mode').selectOption('original');
+  for(let step=1;step>=0;step--){await page.locator('#back').click();await page.locator(`[data-step="${step}"]`).waitFor({state:'visible'});}
+  await page.locator('#next').click();await page.locator('[data-step="1"]').waitFor({state:'visible'});
+  assert.equal(await page.locator('#error').isHidden(),true);
+  assert.deepEqual([requests.validate.at(-1).settings.weapon_mode,requests.validate.at(-1).check_weapon],['official',false]);
+  await page.locator('#next').click();await page.locator('[data-step="2"]').waitFor({state:'visible'});
+  assert.equal(await value('weapon_mode'),'original');
+  await page.locator('#next').click();
+  assert.match(await page.locator('#error').textContent(),/オリジナル武器のGLBを選んでください/);
+  // Imported values finer than a 0.1 step stay valid; forgetting the saved GLB clears the shown file.
+  const fine={...exported,original_weapon:{...exported.original_weapon,grip:.44123,length:120.55,roll:12.5}};
+  await start(fine);
+  assert.deepEqual([await value('weapon-grip'),await value('weapon-length'),await value('weapon-roll')],['44.123','120.55','12.5']);
+  await uploadGlb('crescent-staff.glb');
+  await page.waitForFunction(()=>document.querySelector('#weapon-glb-status').textContent.includes('19,999'));
+  await uploadGlb('other.glb');
+  await page.locator('#weapon-glb-mismatch').waitFor({state:'visible'});
+  const chooser=page.waitForEvent('filechooser');
+  await page.locator('#weapon-glb-forget').click();await chooser;
+  assert.equal(await page.locator('#weapon-glb-status').textContent(),'まだ選択されていません');
+  assert.equal(await page.locator('#weapon-glb-mismatch').isHidden(),true);
+  assert.equal(await page.locator('#weapon-glb').evaluate(input=>input.files.length),0);
+  for(let step=1;step>=0;step--){await page.locator('#back').click();await page.locator(`[data-step="${step}"]`).waitFor({state:'visible'});}
+  for(let step=1;step<=2;step++){await page.locator('#next').click();await page.locator(`[data-step="${step}"]`).waitFor({state:'visible'});}
+  assert.equal(await page.locator('#error').isHidden(),true);
+  await uploadGlb('other.glb');
+  await page.waitForFunction(()=>document.querySelector('#weapon-glb-status').textContent.includes('other.glb'));
+  await page.locator('#next').click();await page.locator('[data-step="3"]').waitFor({state:'visible'});
+  assert.deepEqual(requests.validate.at(-1).settings.original_weapon,{...fine.original_weapon,sha256:other,filename:'other.glb'});
+  // The drawn preview goes stale when an appearance input it was drawn with changes in STEP 02.
+  await page.locator('#back').click();await page.locator('[data-step="2"]').waitFor({state:'visible'});
+  await page.locator('#weapon-preview').click();
+  await page.locator('#weapon-preview-images figure').nth(3).waitFor();
+  assert.match(await page.locator('#weapon-preview-status').textContent(),/Blenderでの確認用/);
+  await page.locator('#back').click();await page.locator('[data-step="1"]').waitFor({state:'visible'});
+  await page.locator('#sex').selectOption('male');
+  await page.locator('#next').click();await page.locator('[data-step="2"]').waitFor({state:'visible'});
+  assert.match(await page.locator('#weapon-preview-status').textContent(),/もう一度描いてください/);
   // Older settings without weapon fields load as the official weapon.
   const legacy={...defaults};delete legacy.weapon_mode;delete legacy.original_weapon;
   await start(legacy);
   assert.equal(await value('weapon_mode'),'official');
   assert.equal(await page.locator('#original-weapon-panel').isHidden(),true);
   assert.deepEqual(errors,[]);
-  console.log('PASS: mode switch, GLB counts, kind/base defaults, base size fill and edits, preset preservation, preview, JA/EN, review, export/import, GLB re-selection and mismatch refusal, mobile layout');
+  console.log('PASS: mode switch, GLB counts, kind/base defaults, base size fill and edits, preset preservation, preview, JA/EN, review, export/import, GLB re-selection and mismatch refusal, mobile layout, STEP 01 without the weapon, fine imported values, forgetting the saved GLB, stale preview after an appearance change');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

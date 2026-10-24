@@ -117,9 +117,16 @@ class WizardApplication:
             raise ValueError('Completed output is outside the wizard workspace')
         (output/'wizard-job.json').write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding='utf8')
 
+    @staticmethod
+    def master(game):
+        path = Path(game).resolve() / 'Data/Skyrim.esm'
+        if not path.is_file():
+            raise ValueError('Skyrim.esmが見つかりません。Skyrim Special Editionのフォルダを確認してください: ' + str(path.parent))
+        return path
+
     def catalog(self, game):
         path = Path(game).resolve() / "Data"
-        key = (str(path), (path / "Skyrim.esm").stat().st_mtime_ns)
+        key = (str(path), self.master(game).stat().st_mtime_ns)
         if key not in self.catalogs:
             self.catalogs[key] = GameCatalog(path)
         return self.catalogs[key]
@@ -150,7 +157,7 @@ class WizardApplication:
         path.write_bytes(blob)
         try:
             report = inspect_glb(path)
-        except (ValueError, KeyError, IndexError, TypeError, struct.error) as error:
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError, struct.error) as error:
             path.unlink(missing_ok=True)
             raise ValueError('GLBを読み込めませんでした: ' + str(error)) from error
         self.weapons[weapon_id] = {'path': path, 'report': report}
@@ -170,7 +177,7 @@ class WizardApplication:
 
     def weapon_base(self, game, base):
         data = Path(game).resolve() / 'Data'
-        key = (str(data), (data / 'Skyrim.esm').stat().st_mtime_ns, base)
+        key = (str(data), self.master(game).stat().st_mtime_ns, base)
         if key not in self.weapon_bases:
             from weapon_preview import base_dimensions
             self.weapon_bases[key] = base_dimensions(self.workspace, data, self.catalog(game), base)
@@ -189,7 +196,11 @@ class WizardApplication:
         if not all(checks.values()):
             raise ValueError("必要な環境が未設定です: " + ", ".join(key for key, value in checks.items() if not value))
         with self.lock:
-            if any(job["status"] in ("queued", "running") for job in self.jobs.values()):
+            running = [job for job in self.jobs.values() if job["status"] in ("queued", "running")]
+            # Previews and edits run the same Blender steps over shared caches; one job at a time.
+            if running and running[0].get('kind'):
+                raise ValueError('プレビューまたは装備の編集を処理中です。完了してから変換してください')
+            if running:
                 raise ValueError("変換中です。完了してから次のモデルを変換してください")
             job_id = uuid.uuid4().hex
             output = self.workspace / f"{settings.mod_id}_{datetime.now():%Y%m%d_%H%M%S}_{job_id[:8]}"

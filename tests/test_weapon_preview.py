@@ -35,7 +35,7 @@ class WeaponPreviewTests(unittest.TestCase):
         self.blender.write_bytes(b'blender')
         self.refs = self.root / 'refs'
         self.settings = FollowerSettings(weapon_mode='original', original_weapon=original(self.sha))
-        self.calls = dict(avatar=0, weapon=0, compare=0, render=0, animation=0)
+        self.calls = dict(avatar=0, weapon=0, textures=0, decode=0, compare=0, render=0, animation=0)
         stack = ExitStack()
         self.addCleanup(stack.close)
         for name, value in [('doctor', lambda *a: {'ready': True}), ('prepare_source', self.prepare),
@@ -59,6 +59,8 @@ class WeaponPreviewTests(unittest.TestCase):
         texture.write_bytes(b'dds')
 
     def decode(self, texture, preview):
+        if 'weapon' in texture.name:
+            self.calls['decode'] += 1
         preview.mkdir(parents=True, exist_ok=True)
         Image.new('RGB', (2, 2)).save(preview / (texture.stem + '.png'))
 
@@ -66,16 +68,24 @@ class WeaponPreviewTests(unittest.TestCase):
         self.calls['animation'] += 1
         self.assertEqual((refs, kind), (self.refs, 'staff'))
 
-    def convert_weapon(self, glb, data, blender, output, settings, catalog):
+    def convert_weapon(self, glb, data, blender, output, settings, catalog, textures=None):
+        from weapon import reuse_textures
         self.calls['weapon'] += 1
         self.assertEqual(Path(glb), self.glb)
         self.assertEqual(settings.original_weapon, self.current)
         nif = f'meshes/{settings.asset_dir}/weapon.nif'
         (output / 'mod' / nif).parent.mkdir(parents=True)
         (output / 'mod' / nif).write_bytes(b'nif')
-        texture = output / 'mod/textures' / settings.asset_dir / 'weapon.dds'
-        texture.parent.mkdir(parents=True)
-        texture.write_bytes(b'dds')
+        if textures is None:
+            self.calls['textures'] += 1
+            report = {'glb': self.sha, 'asset_dir': settings.asset_dir, 'materials': {}, 'policies': {}, 'coverage': {},
+                      'shared': [], 'textures': [f'textures/{settings.asset_dir}/weapon.dds']}
+            texture = output / 'mod' / report['textures'][0]
+            texture.parent.mkdir(parents=True)
+            texture.write_bytes(b'dds')
+        else:
+            report = reuse_textures(textures, output, self.sha, settings)
+        (output / 'weapon-textures-report.json').write_text(json.dumps(report), encoding='utf8')
         (output / 'weapon-plan.json').write_text(json.dumps({'nif': nif, 'base_nif': str(output / 'base.nif')}), encoding='utf8')
         (output / 'weapon.json').write_text(json.dumps({'source': {'triangles': 19999},
                                                         'base_dimensions': {'length': 134., 'grip': .52}}), encoding='utf8')
@@ -90,6 +100,7 @@ class WeaponPreviewTests(unittest.TestCase):
             name = arguments[arguments.index('--weapon-preview') + 1]
             self.assertEqual(arguments[arguments.index('--weapon-kind') + 1], 'staff')
             self.assertTrue(Path(arguments[arguments.index('--weapon-nif') + 1]).is_file())
+            self.assertTrue((Path(arguments[arguments.index('--weapon-textures') + 1]) / 'weapon.png').is_file())
             (output / 'previews').mkdir(exist_ok=True)
             for view in ('drawn', 'hand', 'sheathed'):
                 Image.new('RGB', (2, 2)).save(output / 'previews' / f'weapon-{name}-{view}.png')
@@ -103,17 +114,21 @@ class WeaponPreviewTests(unittest.TestCase):
                                       settings, SimpleNamespace(), lambda stage: None)
 
     def test_size_changes_rebuild_only_the_weapon_and_render(self):
+        reused = ('avatar_reused', 'textures_reused', 'weapon_reused', 'render_reused')
         first = self.run_preview()
         self.assertEqual(first['views'], ['drawn', 'hand', 'sheathed', 'compare'])
         for path in first['previews']:
             self.assertTrue((Path(first['output']) / path).is_file(), path)
-        self.assertEqual((first['avatar_reused'], first['weapon_reused'], first['render_reused']), (False, False, False))
+        self.assertEqual(tuple(first[k] for k in reused), (False, False, False, False))
         again = self.run_preview()
-        self.assertEqual((again['avatar_reused'], again['weapon_reused'], again['render_reused']), (True, True, True))
-        longer = self.run_preview(length=100.)
-        self.assertEqual((longer['avatar_reused'], longer['weapon_reused'], longer['render_reused']), (True, False, False))
-        self.assertNotEqual(longer['previews'], first['previews'])
-        self.assertEqual(self.calls, dict(avatar=1, weapon=2, compare=2, render=2, animation=2))
+        self.assertEqual(tuple(again[k] for k in reused), (True, True, True, True))
+        # Grip, length and roll changes rebuild the NIF and renders but reuse the converted textures.
+        for changes in (dict(length=100.), dict(grip=.3), dict(roll=90), dict(base='Staff01')):
+            with self.subTest(changes=changes):
+                changed = self.run_preview(**changes)
+                self.assertEqual(tuple(changed[k] for k in reused), (True, True, False, False))
+                self.assertNotEqual(changed['previews'], first['previews'])
+        self.assertEqual(self.calls, dict(avatar=1, weapon=5, textures=1, decode=1, compare=5, render=5, animation=5))
         self.package.assert_not_called()
         self.assertEqual(list((self.root / 'cache').rglob('*.esp')) + list((self.root / 'cache').rglob('*.zip')), [])
 
@@ -124,6 +139,12 @@ class WeaponPreviewTests(unittest.TestCase):
         weapon_dir = next((self.root / 'cache/weapon-preview-cache/weapons').iterdir())
         (weapon_dir / 'compare.png').unlink()
         self.assertFalse(self.run_preview()['weapon_reused'])
+        # A damaged texture entry is rebuilt, and placements are not reused without it.
+        texture_dir = next((self.root / 'cache/weapon-preview-cache/weapon-textures').iterdir())
+        (texture_dir / 'dds-preview/weapon.png').unlink()
+        result = self.run_preview()
+        self.assertEqual((result['textures_reused'], result['weapon_reused']), (False, False))
+        self.assertEqual(self.calls['textures'], 2)
 
     def test_different_glb_and_official_mode_are_refused(self):
         with self.assertRaisesRegex(ValueError, '別のGLB'):

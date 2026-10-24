@@ -70,11 +70,11 @@ def attach(weapon, rig, node):
     bpy.context.view_layer.update()
 
 
-def sheath_view(weapon, rig, kind):
-    """View direction showing the sheathed weapon: from behind for the back, from its side for the hips."""
-    from weapon_nif import SHEATH_NODES
-    side = 1 if (weapon.matrix_world.translation - rig.matrix_world.translation).x >= 0 else -1
-    return (side * 1.6, -2.6, .6) if SHEATH_NODES[kind] == 'WeaponBack' else (side * 3, -1, .5)
+# View directions for the sheathed weapon (actors face +Y, +X is their right): from behind
+# for back nodes, from the side of the vanilla hip node (WeaponSword/WeaponDagger left,
+# WeaponAxe/WeaponMace right).
+SHEATH_VIEWS = {'sword': (-3, -1, .5), 'dagger': (-3, -1, .5), 'waraxe': (3, -1, .5), 'mace': (3, -1, .5),
+                'greatsword': (.8, -3, .6), 'battleaxe': (.8, -3, .6), 'warhammer': (.8, -3, .6), 'staff': (.8, -3, .6)}
 
 
 def frame_camera(camera, objects, direction, margin=1.15):
@@ -425,7 +425,7 @@ def main():
         for bone in rig.pose.bones:
             bone.matrix_basis = Matrix.Identity(4)
         attach(weapon, rig, sheath_node)
-        frame_camera(camera, meshes + weapon_meshes, sheath_view(weapon, rig, original_weapon['kind']))
+        frame_camera(camera, meshes + weapon_meshes, SHEATH_VIEWS[original_weapon['kind']])
         scene.render.filepath = str(previews / f"weapon-{name}-sheathed.png")
         render_material_queues(scene)
         (previews / f"weapon-{name}.json").write_text(json.dumps({
@@ -437,7 +437,7 @@ def main():
         return
     if args.animation == "sheathed":
         attach(weapon, rig, weapon_node)
-        frame_camera(camera, meshes + weapon_meshes, sheath_view(weapon, rig, original_weapon['kind']))
+        frame_camera(camera, meshes + weapon_meshes, SHEATH_VIEWS[original_weapon['kind']])
     for frame in frames:
         scene.frame_set(frame)
         if physics_sample is not None:

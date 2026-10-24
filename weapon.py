@@ -6,6 +6,7 @@ import json
 import logging
 import math
 from pathlib import Path
+import shutil
 import struct
 
 import numpy as np
@@ -63,14 +64,86 @@ def used_materials(document):
     return sorted(used, key=lambda index: (index is None, index or 0))
 
 
+def check_document(document):
+    """ValueError unless the glTF JSON has the shape the weapon steps index into (uploads are untrusted)."""
+    if not isinstance(document, dict):
+        raise ValueError('The GLB JSON is not an object')
+
+    def items(key):
+        value = document.get(key, [])
+        if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+            raise ValueError(f'glTF {key} must be a list of objects')
+        return value
+
+    def index(value, collection, name):
+        if type(value) is not int or not 0 <= value < len(collection):
+            raise ValueError(f'glTF {name} index is invalid')
+
+    def texture(info):
+        if not isinstance(info, dict):
+            raise ValueError('glTF texture reference must be an object')
+        index(info.get('index'), textures, 'texture')
+
+    scenes, nodes, meshes, accessors, views = (items(k) for k in ('scenes', 'nodes', 'meshes', 'accessors', 'bufferViews'))
+    buffers, materials, textures, images = (items(k) for k in ('buffers', 'materials', 'textures', 'images'))
+    if scenes:
+        index(document.get('scene', 0), scenes, 'scene')
+    for scene in scenes:
+        if not isinstance(scene.get('nodes', []), list):
+            raise ValueError('glTF scene nodes must be a list')
+        for node in scene.get('nodes', []):
+            index(node, nodes, 'node')
+    for node in nodes:
+        if not isinstance(node.get('children', []), list):
+            raise ValueError('glTF node children must be a list')
+        for child in node.get('children', []):
+            index(child, nodes, 'node')
+        if 'mesh' in node:
+            index(node['mesh'], meshes, 'mesh')
+    for mesh in meshes:
+        primitives = mesh.get('primitives')
+        if not isinstance(primitives, list) or not all(isinstance(p, dict) for p in primitives):
+            raise ValueError('glTF mesh primitives must be a list of objects')
+        for primitive in primitives:
+            if not isinstance(primitive.get('attributes'), dict):
+                raise ValueError('glTF primitive attributes must be an object')
+            index(primitive['attributes'].get('POSITION'), accessors, 'POSITION accessor')
+            for key, collection in (('indices', accessors), ('material', materials)):
+                if key in primitive:
+                    index(primitive[key], collection, key)
+    for accessor in accessors:
+        if type(accessor.get('count')) is not int or accessor['count'] < 0:
+            raise ValueError('glTF accessor count is invalid')
+        if 'bufferView' in accessor:
+            index(accessor['bufferView'], views, 'bufferView')
+    for view in views:
+        index(view.get('buffer'), buffers, 'buffer')
+        if type(view.get('byteLength')) is not int or type(view.get('byteOffset', 0)) is not int:
+            raise ValueError('glTF bufferView range is invalid')
+    for item in textures:
+        if 'source' in item:
+            index(item['source'], images, 'image')
+    for image in images:
+        if 'bufferView' in image:
+            index(image['bufferView'], views, 'bufferView')
+    for material in materials:
+        pbr = material.get('pbrMetallicRoughness', {})
+        if not isinstance(pbr, dict):
+            raise ValueError('glTF pbrMetallicRoughness must be an object')
+        for info in [pbr.get(k) for k in ('baseColorTexture', 'metallicRoughnessTexture')] + [material.get('normalTexture')]:
+            if info is not None:
+                texture(info)
+
+
 def inspect_glb(path):
     """Counts shown before conversion; no polygon reduction is applied."""
     document, _ = read_glb(path)
+    check_document(document)
     primitives = scene_primitives(document)
     if not primitives:
         raise ValueError('The GLB contains no mesh')
     for resource in document.get('buffers', []) + document.get('images', []):
-        if 'uri' in resource and not resource['uri'].startswith('data:'):
+        if 'uri' in resource and not str(resource['uri']).startswith('data:'):
             raise ValueError('The GLB must embed its textures and buffers')
     return {'sha256': sha256(path), 'generator': document.get('asset', {}).get('generator'),
             'triangles': sum(primitive_triangles(document, p) for _, p in primitives),
@@ -201,11 +274,37 @@ def validate_shared(output):
     return result
 
 
-def convert_weapon(glb, game_data, blender, output, settings, catalog):
+def readme_text(output, settings):
+    """README lines for the original weapon; the environment map line only when a metal mask uses it."""
+    shared = validate_shared(output)
+    weapon = settings.original_weapon
+    text = (f"Original weapon: {weapon['name']} ({settings.prefix}OriginalWeapon, local FormID 0008D0),\n"
+            f"converted from {weapon['filename']} with the stats, sounds and enchantment of {weapon['base']}.\n")
+    if shared:
+        text += "Its environment map uses the game's textures\\cubemaps\\ShinyDull_e.dds.\n"
+    return text
+
+
+def reuse_textures(source, output, digest, settings):
+    """Texture results of an earlier convert_weapon output for the same GLB and asset_dir."""
+    source = Path(source)
+    report = json.loads((source / 'weapon-textures-report.json').read_text(encoding='utf8'))
+    if report['glb'] != digest or report['asset_dir'] != settings.asset_dir:
+        raise ValueError('Reused weapon textures were converted from another GLB or folder')
+    for relative in report['textures']:
+        target = Path(output) / 'mod' / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source / 'mod' / relative, target)
+    return report
+
+
+def convert_weapon(glb, game_data, blender, output, settings, catalog, textures=None):
+    """Build the weapon NIF and DDS into output. textures: an earlier output of this function
+    for the same GLB and asset_dir whose DDS are copied instead of converted (wizard previews)."""
     from converter import run_blender
     from game_assets import GameAssets
     from textures import convert_textures
-    from weapon_nif import base_dimensions, read_weapon
+    from weapon_nif import SHEATH_NODES, base_dimensions, read_weapon
     output, game_data = Path(output).resolve(), Path(game_data).resolve()
     weapon = settings.original_weapon
     glb = Path(glb).resolve()
@@ -226,14 +325,22 @@ def convert_weapon(glb, game_data, blender, output, settings, catalog):
     model = base.values(b'MODL')[0].rstrip(b'\0').decode('utf8')
     base_nif = GameAssets(game_data, [], output / 'weapon-reference').extract(model)
     dimensions = base_dimensions(base_nif)
-    manifest, materials, policies, coverage = prepare_textures(document, binary, output, settings)
-    shared = [shared_environment(game_data, output)] if any(m['metal'] for m in materials.values()) else []
+    if textures is None:
+        manifest, materials, policies, coverage = prepare_textures(document, binary, output, settings)
+        shared = [shared_environment(game_data, output)] if any(m['metal'] for m in materials.values()) else []
+        texture_report = {'glb': digest, 'asset_dir': settings.asset_dir, 'materials': materials, 'policies': policies,
+                          'coverage': coverage, 'shared': shared, 'textures': [e['relative'] for e in manifest]}
+    else:
+        texture_report = reuse_textures(textures, output, digest, settings)
     nif = f'meshes/{settings.asset_dir}/weapon.nif'
     plan = {'glb': str(work), 'nif': nif, 'base_nif': str(base_nif), 'grip': weapon['grip'], 'length': weapon['length'],
-            'flip': weapon['flip'], 'roll': weapon['roll'], 'materials': materials, 'policies': policies}
+            'flip': weapon['flip'], 'roll': weapon['roll'], 'prn': SHEATH_NODES[weapon['kind']],
+            'materials': texture_report['materials'], 'policies': texture_report['policies']}
     (output / 'weapon-plan.json').write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding='utf8')
     run_blender(blender, 'weapon_blender.py', ['--output', output], output, 'Original weapon')
-    convert_textures(output, 'weapon-textures.json')
+    if textures is None:
+        convert_textures(output, 'weapon-textures.json')
+    (output / 'weapon-textures-report.json').write_text(json.dumps(texture_report, indent=2), encoding='utf8')
     built = json.loads((output / 'weapon-nif.json').read_text(encoding='utf8'))
     points = np.concatenate([s['points'] for s in read_weapon(output / 'mod' / nif)['shapes']])
     report = {'schema': 1, 'source': summary, 'filename': weapon['filename'], 'kind': weapon['kind'],
@@ -241,8 +348,8 @@ def convert_weapon(glb, game_data, blender, output, settings, catalog):
               'grip': weapon['grip'], 'length': weapon['length'], 'flip': weapon['flip'], 'roll': weapon['roll'],
               'nif': nif, 'bounds': [points.min(0).tolist(), points.max(0).tolist()],
               'placement': built['placement'], 'shapes': built['shapes'], 'collision': built['collision'],
-              'metal_coverage': coverage, 'textures': [entry['relative'] for entry in manifest],
-              'shared_textures': shared, 'game_data': str(game_data), 'game_verified': False}
+              'metal_coverage': texture_report['coverage'], 'textures': texture_report['textures'],
+              'shared_textures': texture_report['shared'], 'game_data': str(game_data), 'game_verified': False}
     (output / 'weapon.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf8')
     validate_weapon_model(output, settings)
     if sha256(glb) != digest:
@@ -341,7 +448,7 @@ def validate_weapon_records(generated, settings, npc_report=None):
 
 def validate_weapon_model(output, settings):
     """Read the delivered weapon NIF back: axes, grip origin, length, shapes, textures, collision."""
-    from weapon_nif import read_weapon
+    from weapon_nif import HULL_COVERAGE, SHEATH_NODES, read_weapon
     output = Path(output)
     mod = (output / 'mod').resolve()
     report = json.loads((output / 'weapon.json').read_text(encoding='utf8'))
@@ -349,6 +456,8 @@ def validate_weapon_model(output, settings):
     nif = read_weapon(mod / report['nif'])
     if nif['game'] != 'SKYRIMSE' or nif['root'] != 'BSFadeNode' or not nif['shapes']:
         raise ValueError('Weapon NIF needs a SKYRIMSE BSFadeNode root with shapes')
+    if nif['prn'] != [SHEATH_NODES[weapon['kind']]]:
+        raise ValueError(f"Weapon NIF sheathes at {nif['prn']}, not {SHEATH_NODES[weapon['kind']]}")
     shared = {e['path'] for e in validate_shared(output).values()}
     textures = set()
     for shape in nif['shapes']:
@@ -376,21 +485,39 @@ def validate_weapon_model(output, settings):
         raise ValueError(f"Weapon origin is not at grip {weapon['grip']}: lowest Y {low[1]:.4f}")
     if weapon['roll'] % 90 == 0 and extent[1] + tolerance < max(extent[0], extent[2]):
         raise ValueError('Weapon length does not run along +Y')
+    # A plain bhkRigidBody places its shape in the NIF frame; bhkRigidBodyT bases offset it.
     if (nif['collision'] != 'bhkCollisionObject' or nif['collision_flags'] != report['collision']['flags']
-            or nif['body'] not in ('bhkRigidBody', 'bhkRigidBodyT') or nif['shape'] != 'bhkConvexVerticesShape'):
+            or nif['body'] != 'bhkRigidBody' or nif['shape'] != 'bhkConvexVerticesShape'):
         raise ValueError('Weapon NIF lacks bhkCollisionObject/bhkRigidBody/bhkConvexVerticesShape collision')
-    if not 4 <= len(nif['hull']) <= 64 or nif['hull_planes'] < 4:
+    if np.abs(nif['body_translation']).max() > 1e-4 or np.abs(nif['body_rotation'] - [0, 0, 0, 1]).max() > 1e-6:
+        raise ValueError('Weapon rigid body must not move or rotate its collision shape')
+    planes = nif['hull_planes']
+    if not 4 <= len(nif['hull']) <= 64 or len(planes) < 4:
         raise ValueError('Weapon collision hull has an unexpected size')
-    if (np.abs(nif['hull'].min(0) - low).max() > .01 or np.abs(nif['hull'].max(0) - high).max() > .01):
+    outside = float((points @ planes[:, :3].T - planes[:, 3]).max())
+    if (np.abs(nif['hull'].min(0) - low).max() > .01 or np.abs(nif['hull'].max(0) - high).max() > .01
+            or outside > HULL_COVERAGE * extent.max() + .01):
         raise ValueError('Weapon collision hull does not cover the weapon geometry')
+    if np.any(nif['body_center'] < low - .01) or np.any(nif['body_center'] > high + .01):
+        raise ValueError('Weapon centre of mass lies outside its collision hull')
     result = {'shapes': [{k: s[k] for k in ('name', 'vertices', 'triangles', 'textures')} for s in nif['shapes']],
               'triangles': sum(s['triangles'] for s in nif['shapes']), 'bounds': [low.tolist(), high.tolist()],
-              'length': float(extent[1]), 'grip': float(-low[1] / extent[1]),
+              'length': float(extent[1]), 'grip': float(-low[1] / extent[1]), 'prn': nif['prn'],
               'collision': {'object': nif['collision'], 'flags': nif['collision_flags'], 'body': nif['body'],
                             'layer': nif['layer'], 'mass': nif['mass'], 'shape': nif['shape'],
-                            'hull_vertices': len(nif['hull']), 'hull_planes': nif['hull_planes']},
+                            'center': nif['body_center'].tolist(),
+                            'hull_vertices': len(nif['hull']), 'hull_planes': len(planes)},
               'shared_textures': sorted(shared), 'game_verified': False}
     return result, textures
+
+
+def check_bounds(generated, bounds):
+    """WEAP and first-person STAT OBND equal the measured NIF bounds as weapon_records rounds them."""
+    by_id = {r.form_id: r for r in generated}
+    expected = [struct.pack('<6h', *object_bounds(bounds))]
+    for form_id in (WEAPON_ID, FIRST_PERSON_ID):
+        if form_id not in by_id or by_id[form_id].values(b'OBND') != expected:
+            raise ValueError('Original weapon OBND differs from the weapon NIF bounds')
 
 
 def npc_report(settings, catalog, base, description):

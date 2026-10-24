@@ -14,6 +14,34 @@ from pyn.niflydll import nifly  # noqa: E402
 from pyn.structs import TransformBuf  # noqa: E402
 
 
+def staff_local(tilt=35., translation=(0., -9., 4.)):
+    """WeaponStaff in the frame of WeaponBack's parent (NPC Spine2): the staff's +Y (head)
+    tilts from the spine's up axis toward the right shoulder; its +Z faces forward."""
+    angle = np.radians(tilt)
+    result = np.eye(4)
+    result[:3, :3] = [[-np.cos(angle), np.sin(angle), 0], [0, 0, 1], [np.sin(angle), np.cos(angle), 0]]
+    result[:3, 3] = translation
+    return result
+
+
+# Unanimated nodes the vanilla skeleton lacks: name -> (node whose parent they share, local
+# transform in that parent's frame). They follow the parent's animated bone. WeaponStaff holds
+# the sheathed staff (weapon_nif.SHEATH_NODES); values chosen from previews, not seen in game.
+HELPER_NODES = {'WeaponStaff': ('WeaponBack', staff_local())}
+
+
+def add_helper_nodes(file, parents, nodes):
+    """Add HELPER_NODES whose sibling exists; returns {name: (parent, local)}."""
+    added = {}
+    for name, (sibling, local) in HELPER_NODES.items():
+        if sibling not in nodes or name in file.nodes:
+            continue
+        parent = parents[sibling]
+        file.add_node(name, rigid_buffer(local), nodes[parent])
+        added[name] = (parent, local)
+    return added
+
+
 def matrix(transform):
     result = np.eye(4)
     result[:3, :3] = np.array(transform.rotation) * transform.scale
@@ -104,6 +132,7 @@ def create_skeleton(source, destination, positions, extra_bones=None):
 
         for name in extra_bones:
             add_extra(name)
+        helpers = add_helper_nodes(file, parents, original)
         npc = file.nodes.get('NPC')
         if npc and (npc.parent is None or npc.parent.id != file.rootNode.id):
             raise ValueError('Preserve NPC directly under the original skeleton root')
@@ -123,12 +152,17 @@ def create_skeleton(source, destination, positions, extra_bones=None):
         for name, info in extra_bones.items():
             if not np.allclose(matrix(file.nodes[name].global_transform), info['matrix'], atol=5e-4):
                 raise ValueError(f'Physics bone transform changed: {name}')
+        for name, (parent, local) in helpers.items():
+            if (file.nodes[name].parent.name != parent or
+                    not np.allclose(matrix(file.nodes[name].global_transform), desired[parent] @ local, atol=5e-4)):
+                raise ValueError(f'Helper node transform changed: {name}')
     if errors:
         raise ValueError(f"Custom skeleton hierarchy mismatch: {errors}")
     report = {"source": str(source), "skeleton": str(destination), "nodes": node_count,
               "proxy_offsets": offsets, "joint_positions": {key: list(value) for key, value in positions.items()},
               "animation_local_transforms_unchanged": True, "bone_scale": 1.0,
               "physics_bones": extra_bones,
+              "helper_nodes": {name: {"parent": parent, "local": local.tolist()} for name, (parent, local) in helpers.items()},
               "game_verified": False, "ragdoll_fit_verified": False}
     logging.info("Custom skeleton: %s nodes, %s rigid offsets", node_count, len(offsets))
     return report

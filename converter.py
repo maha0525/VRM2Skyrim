@@ -86,12 +86,8 @@ def package(output, settings=None):
         validate_shared(output)
     weapon_help = ""
     if settings.weapon_mode == 'original':
-        from weapon import validate_shared as validate_weapon_textures
-        validate_weapon_textures(output)
-        weapon = settings.original_weapon
-        weapon_help = (f"Original weapon: {weapon['name']} ({settings.prefix}OriginalWeapon, local FormID 0008D0),\n"
-                       f"converted from {weapon['filename']} with the stats, sounds and enchantment of {weapon['base']}.\n"
-                       "Its environment map uses the game's textures\\cubemaps\\ShinyDull_e.dds.\n")
+        from weapon import readme_text
+        weapon_help = readme_text(output, settings)
     metadata = mod / settings.asset_dir
     metadata.mkdir(parents=True, exist_ok=True)
     appearance_description = "Original outfit stays together; clothing is not removable."
@@ -290,6 +286,8 @@ def convert(source, game, blender, output, settings, progress=None, weapon_glb=N
         raise ValueError("Use an empty output folder; previous builds are retained")
     if settings.weapon_mode == 'original' and weapon_glb is None:
         raise ValueError("オリジナル武器のGLBを指定してください")
+    if settings.weapon_mode != 'original' and weapon_glb is not None:
+        raise ValueError('オリジナル武器のGLB (--weapon-glb) は、weapon_mode が "original" の設定でだけ使います')
     output.mkdir(parents=True, exist_ok=True)
     run = {"version": VERSION, "state": "converting", "game_verified": False}
     try:

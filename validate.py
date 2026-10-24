@@ -293,8 +293,9 @@ def validate(output, skeleton=None):
         )
     weapon_report = None
     if settings.weapon_mode == 'original':
-        from weapon import validate_weapon_model
+        from weapon import check_bounds, validate_weapon_model
         weapon_report, weapon_textures = validate_weapon_model(output, settings)
+        check_bounds(generated, weapon_report['bounds'])
         textures |= weapon_textures
     preview = output / "dds-preview"
     preview.mkdir(exist_ok=True)

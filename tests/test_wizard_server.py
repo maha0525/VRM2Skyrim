@@ -273,6 +273,56 @@ class WeaponServerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'VRM'):
             self.app.upload('staff.glb', self.glb.read_bytes())
 
+    def test_glb_with_a_non_object_document_is_refused_and_removed(self):
+        from inspect_vrm import write_glb
+        for name, document in (('array.glb', []), ('mesh.glb', {'meshes': [{'primitives': [1]}]}),
+                               ('accessors.glb', {'meshes': [{'primitives': [{'attributes': {'POSITION': 0}}]}],
+                                                  'accessors': [[]]})):
+            with self.subTest(name=name):
+                path = self.root / name
+                write_glb(path, document, b'')
+                status, result = self.upload(name, path.read_bytes())
+                self.assertEqual(status, 400)
+                self.assertTrue(result['error'].startswith('GLBを読み込めませんでした: '), result)
+                self.assertEqual(list((self.app.workspace / 'inputs').glob('*')), [])
+
+    def test_weapon_base_without_skyrim_esm_says_so(self):
+        game = self.root / 'empty-game'
+        (game / 'Data').mkdir(parents=True)
+        status, result = self.post('/api/weapon-base', {'game': str(game), 'base': 'StaffFlames'})
+        self.assertEqual(status, 400)
+        self.assertTrue(result['error'].startswith('Skyrim.esmが見つかりません。'), result)
+
+    def test_conversion_and_weapon_preview_never_run_together(self):
+        _, uploaded = self.upload()
+        release = threading.Event()
+
+        def slow(*args, **kwargs):
+            release.wait(10)
+            return {'output': str(self.root), 'previews': [], 'views': []}
+
+        def fake_convert(source, game, blender, output, settings, progress=None, weapon_glb=None):
+            release.wait(10)
+            output.mkdir(parents=True)
+            (output / 'Probe.zip').write_bytes(b'zip')
+            return output / 'Probe.zip'
+
+        request = {'source_id': 'avatar', 'game': str(self.root), 'blender': str(self.root),
+                   'settings': self.settings(uploaded), 'weapon_id': uploaded['weapon_id']}
+        with patch.object(self.app, 'catalog', return_value=self.catalog), patch('weapon_preview.preview', slow), \
+                patch('wizard.doctor', return_value={'ready': True}), patch('wizard.convert', fake_convert):
+            self.assertEqual(self.post('/api/weapon-preview', request)[0], 202)
+            status, result = self.post('/api/jobs', request)
+            self.assertEqual((status, result['error']), (400, 'プレビューまたは装備の編集を処理中です。完了してから変換してください'))
+            release.set()
+            self.app.executor.submit(lambda: None).result(timeout=10)
+            release.clear()
+            self.assertEqual(self.post('/api/jobs', request)[0], 202)
+            status, result = self.post('/api/weapon-preview', request)
+            self.assertEqual((status, result['error']), (400, '変換・プレビューの完了を待ってください'))
+            release.set()
+            self.app.executor.submit(lambda: None).result(timeout=10)
+
     def test_validation_requires_the_same_glb_only_when_asked(self):
         _, uploaded = self.upload()
         settings = self.settings(uploaded)

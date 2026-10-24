@@ -125,12 +125,13 @@ def main():
     shapes.sort(key=lambda s: s['name'])
     nif = output / 'mod' / plan['nif']
     nif.parent.mkdir(parents=True, exist_ok=True)
-    collision = write_weapon_nif(nif, shapes, plan['base_nif'])
+    collision = write_weapon_nif(nif, shapes, plan['base_nif'], plan['prn'])
     policies = {s['name']: plan['policies'][s['material']] for s in shapes}
     from nif_materials import apply_alpha
     apply_alpha(nif, policies)
     readback = read_weapon(nif)
-    if readback['collision'] != 'bhkCollisionObject' or readback['shape'] != 'bhkConvexVerticesShape':
+    if (readback['collision'] != 'bhkCollisionObject' or readback['body'] != 'bhkRigidBody'
+            or readback['shape'] != 'bhkConvexVerticesShape'):
         raise RuntimeError('Weapon collision did not survive export')
     if hashlib.sha256(source.read_bytes()).hexdigest() != source_hash:
         raise RuntimeError('Weapon GLB changed during conversion')

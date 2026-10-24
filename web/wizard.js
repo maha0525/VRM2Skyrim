@@ -50,7 +50,9 @@ function collect() {
   if(settings.fit_mode==='all_official')settings.fit_armors=[];
   settings.physics_nodes=[...(state.physicsNodes||[])];
   settings.physics_source_sha256=state.physicsHash||'';
-  settings.original_weapon=originalWeaponSettings(settings.weapon_mode==='original');
+  // The original weapon is chosen in STEP 03; earlier steps send it only when complete (as check_weapon).
+  settings.original_weapon=originalWeaponSettings(settings.weapon_mode==='original'&&state.step>=2);
+  if(settings.weapon_mode==='original'&&!Object.keys(settings.original_weapon).length)settings.weapon_mode='official';
   if(settings.armor_support&&$('fit-enabled').checked&&settings.fit_mode==='selected'&&!settings.fit_armors.length)throw new Error(tr("体型合わせする装備を選んでください")); return settings;
 }
 async function updateId() {
@@ -248,6 +250,7 @@ function showStep(step) {
   state.step=step;error(); document.querySelectorAll('[data-step]').forEach(section=>section.hidden=Number(section.dataset.step)!==step);
   [...$('steps').children].forEach((li,index)=>{li.classList.toggle('active',index===step);li.classList.toggle('done',index<step);});
   $('back').hidden=step===0;$('next').hidden=step===4;$('create').hidden=step!==4;window.scrollTo(0,0);
+  if(step===2)markWeaponPreviewStale();  // appearance inputs of STEP 01/02 are part of the preview
 }
 function summarize(settings) {
   state.reviewSettings=settings;

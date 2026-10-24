@@ -61,7 +61,15 @@ sword 1/WeapTypeSword, dagger 2/WeapTypeDagger, war axe 3/WeapTypeWarAxe, mace
 4/WeapTypeMace, greatsword 5/WeapTypeGreatsword, battleaxe 6/WeapTypeBattleaxe,
 warhammer 6/WeapTypeWarhammer, staff 8/WeapTypeStaff. Defaults are SteelSword,
 SteelDagger, SteelWarAxe, SteelMace, SteelGreatsword, SteelBattleaxe,
-SteelWarhammer and StaffFlames.
+SteelWarhammer and StaffFlames; a kind whose default is missing uses its first
+candidate (logged).
+
+Base WEAP and first-person STAT records are read with Update.esm's overrides of
+Skyrim.esm records applied (20 candidates, 19 with different values, in the
+installed Update.esm, e.g. SteelDagger NAM8/NAM9/DNAM). An override is refused as a base when any FormID in it
+has an Update.esm master index other than 0 (Skyrim.esm), when it has a field
+outside the known WEAP/STAT FormID table (`game_catalog.references`), or when it
+changes FULL/DESC (Update.esm string IDs). The follower plugin's masters are unchanged.
 
 The copy replaces EDID (`<prefix>OriginalWeapon`), FULL (inline string), MODL,
 WNAM and OBND, resolves a localized DESC to an inline string, and removes MODT and
@@ -71,10 +79,18 @@ the new OBND, no MODT and its DNAM retained. WEAP WNAM is a FormID and is remapp
 with the follower's own-file index; WEAP/STAT MODL are path strings and are not.
 
 `meshes/<asset_dir>/weapon.nif` has a BSFadeNode root, BSTriShape children placed
-by their vertices, the base NIF's BSXFlags, `Prn` attach node and BSInvMarker, and
-`bhkCollisionObject` (base flags, 129 on official weapons) → `bhkRigidBody` (all
-base values, including mass, layer, center and inertia) → `bhkConvexVerticesShape`
-(base havok material and radius). The hull is the exact hull of at most 48 GLB
+by their vertices, the base NIF's BSXFlags and BSInvMarker, a `Prn` naming the
+sheath node of the kind (`weapon_nif.SHEATH_NODES`: the bases' own Prn for every
+kind except the staff, which uses `WeaponStaff`), and `bhkCollisionObject` (base
+flags, 129 on official weapons) → plain `bhkRigidBody` with zero translation and
+identity rotation (base numeric values only: collision filter, mass, damping,
+friction, restitution, motion/quality/deactivator/solver, maximum velocities,
+penetration depth; centre of mass = volume centroid of the new hull; inertia =
+mass × box inertia of the hull's bounding box) → `bhkConvexVerticesShape`. Its havok
+material and convex radius come from the base shape when it is a convex vertices,
+box or convex transform shape, or from the first such child of a `bhkListShape`
+(about half the candidates); otherwise the list's material (or SOLID_METAL) and
+Havok's default radius 0.05. The hull is the exact hull of at most 48 GLB
 vertices: extremes in 26 directions, then the farthest outside vertex until every
 vertex is within 0.5% of the model size. The longest GLB bounding-box axis becomes
 +Y with its low end at -Y; flip turns 180° about Z, roll turns about Y; the
@@ -166,7 +182,10 @@ The binary field layouts follow [xEdit's TES5 definitions](https://github.com/TE
   or metadata; resolve such overrides through ordinary mod load-order/patching.
 
 The skeleton keeps animation-controlled local transforms and adds unanimated
-rigid parent nodes. This follows the proxy-node mechanism described in the
+rigid parent nodes, plus `WeaponStaff` (absent from the vanilla skeletons): a
+child of WeaponBack's parent (NPC Spine2) at (0, −9, 4) in that bone's frame,
+with the staff's +Y tilted 35° from the spine's up axis toward the right
+shoulder and its +Z forward (`custom_skeleton.HELPER_NODES`). This follows the proxy-node mechanism described in the
 [Beyond Skyrim animation skeleton tutorial](https://wiki.beyondskyrim.org/wiki/Arcane_University:Editing_Animation_Skeletons).
 The mesh is posed using rotations, with no per-limb fitting scale, and rebound
 to the custom skeleton. The static result is checked against an independent

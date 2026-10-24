@@ -484,5 +484,7 @@ Object.assign(englishUI, {
   "武器のプレビューを更新しました": "Weapon preview updated",
   "オリジナル武器の設定は別のGLB用です。設定したときと同じGLBを選び直してください": "The original weapon settings belong to a different GLB. Choose the same GLB that was used for the settings",
   "オリジナル武器のGLBを指定してください": "Specify the original weapon GLB",
-  "オリジナル武器のモデル": "Building the original weapon model"
+  "オリジナル武器のモデル": "Building the original weapon model",
+  "プレビューまたは装備の編集を処理中です。完了してから変換してください": "A preview or equipment edit is running. Wait for it to finish before converting",
+  "Skyrim.esmが見つかりません。Skyrim Special Editionのフォルダを確認してください: ": "Skyrim.esm was not found. Check the Skyrim Special Edition folder: "
 });

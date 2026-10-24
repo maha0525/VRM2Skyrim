@@ -23,7 +23,7 @@ function setupWeapon(){
   if(kinds.length){
     const pending=state.weaponPending,kind=pending?.kind||$('weapon-kind').value||'sword';
     $('weapon-kind').replaceChildren(...kinds.map(item=>new Option(tr(weaponKindLabels[item.id]),item.id)));
-    $('weapon-kind').value=kinds.some(item=>item.id===kind)?kind:'sword';
+    $('weapon-kind').value=kinds.some(item=>item.id===kind)?kind:kinds[0].id;
     fillWeaponBases(pending?.base??$('weapon-base').value);
     state.weaponBaseMissing=pending?.base&&$('weapon-base').value!==pending.base?pending.base:'';
     state.weaponPending=null;
@@ -99,7 +99,12 @@ function renderWeaponBaseStatus(){
 }
 const weaponViews={drawn:'武器を抜いて構えた姿',hand:'手元の拡大',sheathed:'武器を収めた姿',compare:'元の武器と同じ縮尺で比較（赤い線が握る位置）'};
 function clearWeaponPreview(){state.weaponPreview=null;$('weapon-preview-images').replaceChildren();$('weapon-preview-status').textContent='';}
-function weaponPreviewSignature(){try{return JSON.stringify([state.source?.source_id,collect().original_weapon]);}catch{return '';}}
+// Everything the server's avatar and weapon cache keys depend on (weapon_preview.preview).
+function weaponPreviewSignature(settings){
+  try{settings??=collect();}catch{return '';}
+  return JSON.stringify([state.source?.source_id,$('game').value,$('blender').value,settings.original_weapon,settings.armor_support,
+    settings.appearance_parts,settings.appearance_heads,settings.sex,settings.height_scale]);
+}
 function markWeaponPreviewStale(){if(state.weaponPreview){state.weaponPreview.stale=weaponPreviewSignature()!==state.weaponPreview.signature;renderWeaponPreview();}}
 function renderWeaponPreview(){
   const job=state.weaponPreview;$('weapon-preview-images').replaceChildren();if(!job)return;
@@ -115,7 +120,7 @@ async function weaponPreview(){
   error();
   let settings;try{settings=collect();if(settings.weapon_mode!=='original')return;}catch(e){error(e.message);return;}
   state.weaponPreviewLoading=true;$('weapon-preview').disabled=true;$('weapon-preview-status').textContent=tr('武器のプレビューを準備しています…');
-  const signature=JSON.stringify([state.source?.source_id,settings.original_weapon]);
+  const signature=weaponPreviewSignature(settings);
   try{
     const started=await api('/api/weapon-preview',{source_id:state.source.source_id,weapon_id:state.weaponGlb?.weapon_id,game:$('game').value,blender:$('blender').value,settings});
     for(;;){
@@ -137,7 +142,7 @@ function weaponSummary(settings){
 function initWeapon(){
   $('weapon_mode').addEventListener('change',()=>{error();setupWeapon();});
   $('weapon-glb').addEventListener('change',()=>uploadWeapon($('weapon-glb').files[0]));
-  $('weapon-glb-forget').onclick=()=>{state.weaponExpected=null;state.weaponMismatch='';renderWeaponGlb();$('weapon-glb').click();};
+  $('weapon-glb-forget').onclick=()=>{state.weaponExpected=null;state.weaponGlb=null;state.weaponMismatch='';$('weapon-glb').value='';markWeaponPreviewStale();renderWeaponGlb();$('weapon-glb').click();};
   $('weapon-kind').addEventListener('change',()=>{state.weaponBaseMissing='';fillWeaponBases('');markWeaponPreviewStale();updateWeaponBase();});
   $('weapon-base').addEventListener('change',()=>{state.weaponBaseMissing='';markWeaponPreviewStale();updateWeaponBase();});
   for(const id of ['weapon-grip','weapon-length'])$(id).addEventListener('input',()=>{state.weaponSizeDirty=true;markWeaponPreviewStale();});

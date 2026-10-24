@@ -33,6 +33,11 @@ def archives(data):
     return [file_identity(Path(data)/name) for name in ARCHIVES]
 
 
+def texture_archives(data):
+    """The archives weapon.shared_environment searches for ShinyDull_e.dds."""
+    return [file_identity(Path(data)/f'Skyrim - Textures{i}.bsa') for i in range(9)]
+
+
 def base_model(catalog, editor_id):
     """(kind, NIF path) of an original-weapon base; only the wizard's candidates are accepted."""
     record = catalog.require(editor_id, b'WEAP')
@@ -99,20 +104,36 @@ def prepare_avatar(source, game, blender, settings, root, key, progress):
     return base
 
 
-def prepare_weapon(glb, game, blender, settings, catalog, root, key, progress):
-    """weapon.nif and decoded textures built by the same convert_weapon as a conversion."""
+def publish_textures(output, root, key):
+    """Publish a placement output's converted DDS and decoded PNGs as the texture cache entry."""
+    cache = new_output(root/'weapon-textures', key)
+    report = json.loads((output/'weapon-textures-report.json').read_text(encoding='utf8'))
+    for name in ['settings.json', 'weapon-textures-report.json', *('mod/'+r for r in report['textures']),
+                 *(p.relative_to(output).as_posix() for p in (output/'dds-preview').glob('*.png'))]:
+        (cache/name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(output/name, cache/name)
+    publish(cache, key)
+    return cache
+
+
+def prepare_weapon(glb, game, blender, settings, catalog, root, key, textures, progress):
+    """weapon.nif built by the same convert_weapon as a conversion; textures: a texture cache
+    entry for this GLB (its DDS are copied, its PNGs drawn), or None to convert and decode them."""
     from weapon import convert_weapon
     progress('武器のモデルを作っています…')
     output = new_output(root/'weapons', key)
-    prepared = FollowerSettings.from_dict({**asdict(settings), 'mod_id': 'PreviewWeapon_'+key})
+    # One asset folder for every preview, so converted textures fit any placement.
+    prepared = FollowerSettings.from_dict({**asdict(settings), 'mod_id': 'PreviewWeapon'})
     prepared.save(output/'settings.json')
-    convert_weapon(glb, game/'Data', blender, output, prepared, catalog)
-    for texture in (output/'mod/textures').rglob('*.dds'):
-        decode_dds(texture, output/'dds-preview')
+    convert_weapon(glb, game/'Data', blender, output, prepared, catalog, textures=textures)
+    if textures is None:
+        for texture in (output/'mod/textures').rglob('*.dds'):
+            decode_dds(texture, output/'dds-preview')
+    pngs = (textures or output)/'dds-preview'
     progress('元の武器と並べています…')
     plan = json.loads((output/'weapon-plan.json').read_text(encoding='utf8'))
     run_blender(blender, 'weapon_compare_blender.py',
-                ['--weapon-nif', output/'mod'/plan['nif'], '--weapon-textures', output/'dds-preview',
+                ['--weapon-nif', output/'mod'/plan['nif'], '--weapon-textures', pngs,
                  '--base-nif', plan['base_nif'], '--output', output/'compare.png'], output, 'Weapon comparison')
     publish(output, key)
     return output, plan
@@ -139,15 +160,23 @@ def preview(workspace, source, glb, game, blender, settings, catalog, progress):
     avatar_reused = base is not None
     if base is None:
         base = prepare_avatar(source, game, blender, settings, root, avatar_key, progress)
-    weapon_key = digest(dict(schema=SCHEMA, code=code, glb=glb_hash, assets=archives(game/'Data'),
+    # Converted 4096² textures depend on the GLB alone (and the game's environment map);
+    # placement changes rebuild only the NIF and the renders.
+    texture_key = digest(dict(schema=SCHEMA, code=code, glb=glb_hash, assets=texture_archives(game/'Data')))
+    textures = ready_output(root/'weapon-textures', texture_key)
+    textures_reused = textures is not None
+    weapon_key = digest(dict(schema=SCHEMA, code=code, glb=glb_hash, textures=texture_key, assets=archives(game/'Data'),
                              blender=file_identity(blender), master=file_identity(game/'Data/Skyrim.esm'),
+                             update=file_identity(game/'Data/Update.esm'),
                              weapon={k: weapon[k] for k in ('kind', 'base', 'grip', 'length', 'flip', 'roll')}))
     built = ready_output(root/'weapons', weapon_key)
-    if built is not None and not valid_image(built/'compare.png'):
+    if built is not None and (textures is None or not valid_image(built/'compare.png')):
         built = None
     weapon_reused = built is not None
     if built is None:
-        built, plan = prepare_weapon(glb, game, blender, settings, catalog, root, weapon_key, progress)
+        built, plan = prepare_weapon(glb, game, blender, settings, catalog, root, weapon_key, textures, progress)
+        if textures is None:
+            textures = publish_textures(built, root, texture_key)
     else:
         plan = json.loads((built/'weapon-plan.json').read_text(encoding='utf8'))
     render_key = digest(dict(avatar=avatar_key, weapon=weapon_key))
@@ -159,13 +188,14 @@ def preview(workspace, source, glb, game, blender, settings, catalog, progress):
         drawn_animation(game/'Data', refs, weapon['kind'])
         run_blender(blender, 'render_blender.py',
                     ['--output', base, '--weapon-preview', render_key, '--weapon-nif', built/'mod'/plan['nif'],
-                     '--weapon-textures', built/'dds-preview', '--weapon-kind', weapon['kind']], base, 'Weapon preview')
+                     '--weapon-textures', textures/'dds-preview', '--weapon-kind', weapon['kind']], base, 'Weapon preview')
         shutil.copyfile(built/'compare.png', base/previews[3])
     report = json.loads((built/'weapon.json').read_text(encoding='utf8'))
     elapsed = time.perf_counter()-started
-    LOG.info('Weapon preview ready in %.2fs: avatar_reused=%s weapon_reused=%s render_reused=%s',
-             elapsed, avatar_reused, weapon_reused, render_reused)
+    LOG.info('Weapon preview ready in %.2fs: avatar_reused=%s textures_reused=%s weapon_reused=%s render_reused=%s',
+             elapsed, avatar_reused, textures_reused, weapon_reused, render_reused)
     return dict(output=str(base), previews=previews, views=list(VIEWS), avatar_reused=avatar_reused,
-                weapon_reused=weapon_reused, render_reused=render_reused, elapsed_seconds=round(elapsed, 2),
+                textures_reused=textures_reused, weapon_reused=weapon_reused, render_reused=render_reused,
+                elapsed_seconds=round(elapsed, 2),
                 weapon_triangles=report['source']['triangles'], base_dimensions=report['base_dimensions'],
                 weapon_settings={k: weapon[k] for k in ('kind', 'base', 'grip', 'length', 'flip', 'roll')})

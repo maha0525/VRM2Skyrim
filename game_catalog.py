@@ -38,6 +38,65 @@ SKILL_LABELS_EN = dict(zip(SKILLS, ('One-Handed', 'Two-Handed', 'Archery', 'Bloc
                                    'Destruction', 'Illusion', 'Restoration', 'Enchanting')))
 
 
+# FormIDs inside WEAP/STAT subrecords (xEdit wbDefinitionsTES5 WEAP, STAT, DEST and alternate
+# textures). A field in neither table makes an override's references unknown.
+SINGLE_REFERENCES = {b'EITM', b'ETYP', b'BIDS', b'BAMT', b'YNAM', b'ZNAM', b'INAM', b'WNAM', b'SNAM', b'XNAM',
+                     b'NAM7', b'TNAM', b'UNAM', b'NAM9', b'NAM8', b'CNAM', b'KWDA'}
+NO_REFERENCES = {b'EDID', b'OBND', b'FULL', b'MODL', b'MODT', b'MOD3', b'MO3T', b'ICON', b'MICO', b'EAMT',
+                 b'DEST', b'DMDL', b'DMDT', b'DSTF', b'KSIZ', b'DESC', b'NNAM', b'DATA', b'VNAM', b'MNAM'}
+
+
+def references(record):
+    """FormIDs a WEAP or STAT refers to; ValueError for a field this table does not know."""
+    result = []
+    for tag, value in record.fields:
+        if tag in SINGLE_REFERENCES:
+            result += [n for (n,) in struct.iter_unpack('<I', value[:len(value) // 4 * 4])]
+        elif tag in (b'MODS', b'MO3S', b'DMDS'):  # alternate textures: name, TXST, index
+            count, offset = struct.unpack_from('<I', value)[0], 4
+            for _ in range(count):
+                offset += 4 + struct.unpack_from('<I', value, offset)[0]
+                result.append(struct.unpack_from('<I', value, offset)[0])
+                offset += 8
+        elif tag == b'CRDT' and record.kind == b'WEAP':
+            result.append(struct.unpack_from('<I', value, 16 if len(value) == 24 else 12)[0])
+        elif tag == b'DSTD':
+            result += struct.unpack_from('<II', value, 8)
+        elif tag == b'DNAM' and record.kind == b'STAT':
+            result.append(struct.unpack_from('<I', value, 4)[0])
+        elif not (tag in NO_REFERENCES or tag == b'DNAM'):
+            raise ValueError(f'Unknown {record.kind.decode()} field {tag.decode()}')
+    return result
+
+
+def update_overrides(path, base):
+    """Update.esm WEAP/STAT records that override base (Skyrim.esm records by FormID).
+
+    Returns (overrides, refused). Update.esm's master 0 is Skyrim.esm, so an override whose
+    references all have master index 0 copies unchanged into a follower plugin whose master
+    0 is Skyrim.esm. Refused: overrides referring to Update.esm's own records or unknown fields,
+    and overrides that change FULL/DESC (string IDs of Update.esm's string tables).
+    """
+    loaded = list(records(path, {b'TES4', b'WEAP', b'STAT'}))
+    header = next(r for r in loaded if r.kind == b'TES4')
+    masters = [v.rstrip(b'\0').decode('utf8').casefold() for v in header.values(b'MAST')]
+    if masters[:1] != ['skyrim.esm']:
+        raise ValueError(f'Unexpected {Path(path).name} masters: {masters}')
+    overrides, refused = {}, set()
+    for record in loaded:
+        original = base.get(record.form_id)
+        if record.kind == b'TES4' or record.form_id >> 24 or original is None or original.kind != record.kind:
+            continue
+        try:
+            foreign = any(n >> 24 for n in references(record))
+        except (ValueError, struct.error):
+            foreign = True
+        if foreign or any(record.values(tag) != original.values(tag) for tag in (b'FULL', b'DESC')):
+            refused.add(record.form_id)
+        overrides[record.form_id] = record
+    return overrides, refused
+
+
 def weapon_kind(record, keyword_names):
     """Kind of a named, playable WEAP, or None.
 
@@ -75,6 +134,15 @@ class GameCatalog:
     def __init__(self, data):
         self.path = Path(data) / "Skyrim.esm"
         self.by_form_id = {r.form_id: r for r in records(self.path, KINDS)}
+        # WEAP/STAT values the game uses: Update.esm overrides 20 candidate weapons, 19 with other values (2026-10-25).
+        self.update_refused = set()
+        if (self.path.parent / 'Update.esm').is_file():
+            overrides, self.update_refused = update_overrides(self.path.parent / 'Update.esm', self.by_form_id)
+            self.by_form_id.update(overrides)
+            logging.info('Update.esm: %s WEAP/STAT overrides applied, %s refused as original-weapon bases',
+                         len(overrides), len(self.update_refused))
+        else:
+            logging.warning('Update.esm not found; Skyrim.esm weapon values are used without its overrides')
         self.by_editor_id = {r.editor_id: r for r in self.by_form_id.values() if r.editor_id}
         # Spell type alone also includes shrine/script/trap effects. The books
         # identify the ordinary spells that actors can learn and cast.
@@ -173,7 +241,9 @@ class GameCatalog:
 
     def original_weapon_kind(self, record):
         """Skyrim.esm WEAP usable as an original-weapon base (its kind), or None."""
-        if record.form_id >> 24 or self.first_person_static(record) is None:
+        static = self.first_person_static(record)
+        if record.form_id >> 24 or record.form_id in self.update_refused or static is None or (
+                static.form_id in self.update_refused):
             return None
         return weapon_kind(record, self.keyword_names(record))
 
@@ -187,8 +257,13 @@ class GameCatalog:
                     'model': 'meshes/' + record.values(b'MODL')[0].rstrip(b'\0').decode('utf8').replace('\\', '/').lower()})
         result = []
         for kind, (_, _, default) in ORIGINAL_WEAPON_KINDS.items():
+            if not candidates[kind]:
+                logging.warning('No original-weapon base of kind %s in Skyrim.esm', kind)
+                continue
             if default not in {c['id'] for c in candidates[kind]}:
-                raise ValueError(f'Default original-weapon base is not a {kind} in Skyrim.esm: {default}')
+                logging.warning('Default original-weapon base %s is not a %s here; using %s',
+                                default, kind, candidates[kind][0]['id'])
+                default = candidates[kind][0]['id']
             result.append({'id': kind, 'default': default, 'candidates': candidates[kind]})
         return result
 
