@@ -17,6 +17,8 @@ REFS = {
     b"OTFT": {b"INAM"},
     b"HDPT": {b"RNAM"},
     b"ACHR": {b"NAME"},
+    # WEAP/STAT MODL is a path string, unlike ARMO MODL; only WNAM is a FormID.
+    b"WEAP": {b"WNAM"},
 }
 
 

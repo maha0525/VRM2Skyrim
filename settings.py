@@ -48,6 +48,8 @@ class FollowerSettings:
     sitting_auto: bool = True
     sitting_offset: float = 0.0
     weapon: str = "SteelSword"
+    weapon_mode: str = 'official'  # 'original' replaces settings.weapon with original_weapon
+    original_weapon: dict = field(default_factory=dict)
     ammunition: str = ""
     perks: list = field(default_factory=list)  # {editor_id, rank}; rank is CK's zero-based rank
     spells: list = field(default_factory=list)
@@ -107,6 +109,7 @@ class FollowerSettings:
             value = getattr(self, name)
             if not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
                 raise ValueError(f"{name} must be in {low}–{high}")
+        validate_original_weapon(self.weapon_mode, self.original_weapon)
         if not isinstance(self.skills, dict) or not isinstance(self.perks, list) or not isinstance(self.spells, list):
             raise ValueError("skills must be an object; perks and spells must be lists")
         if self.auto_calculate and self.skills:
@@ -223,6 +226,41 @@ class FollowerSettings:
 
     def save(self, path):
         Path(path).write_text(json.dumps(asdict(self), ensure_ascii=False, indent=2), encoding="utf8")
+
+
+WEAPON_KINDS = ('sword', 'dagger', 'waraxe', 'mace', 'greatsword', 'battleaxe', 'warhammer', 'staff')
+ORIGINAL_WEAPON_KEYS = {'sha256', 'filename', 'kind', 'base', 'name', 'grip', 'length', 'flip', 'roll'}
+
+
+def validate_original_weapon(mode, weapon):
+    if mode not in ('official', 'original'):
+        raise ValueError('Invalid weapon mode')
+    if not isinstance(weapon, dict):
+        raise ValueError('Invalid original weapon')
+    if not weapon:
+        if mode == 'original':
+            raise ValueError('Original weapon mode requires original_weapon')
+        return
+    if set(weapon) != ORIGINAL_WEAPON_KEYS:
+        raise ValueError('Original weapon requires ' + ', '.join(sorted(ORIGINAL_WEAPON_KEYS)))
+    if not isinstance(weapon['sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', weapon['sha256']):
+        raise ValueError('Original weapon fingerprint must be an SHA256 hash')
+    for name, limit in (('filename', 255), ('name', 128)):
+        value = weapon[name]
+        if not isinstance(value, str) or not value.strip() or len(value) > limit or any(ord(c) < 32 for c in value):
+            raise ValueError(f'Invalid original weapon {name}')
+    if weapon['kind'] not in WEAPON_KINDS:
+        raise ValueError('Invalid original weapon kind')
+    if not isinstance(weapon['base'], str) or not re.fullmatch(r'[A-Za-z0-9_]{1,128}', weapon['base']):
+        raise ValueError('Invalid original weapon base')
+    for name, low, high in (('grip', 0, 1), ('length', 0, 1000)):
+        value = weapon[name]
+        if type(value) not in (int, float) or not math.isfinite(value) or not low < value < high:
+            raise ValueError(f'Original weapon {name} must be between {low} and {high} (exclusive)')
+    if type(weapon['flip']) is not bool:
+        raise ValueError('Original weapon flip must be true or false')
+    if type(weapon['roll']) not in (int, float) or not math.isfinite(weapon['roll']) or not 0 <= weapon['roll'] < 360:
+        raise ValueError('Original weapon roll must be in 0-360 degrees')
 
 
 SKILLS = ("OneHanded", "TwoHanded", "Marksman", "Block", "Smithing", "HeavyArmor", "LightArmor",

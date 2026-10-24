@@ -194,6 +194,8 @@ python converter.py avatar.vrm --settings my-follower.json --game 'E:\SteamLibra
 python wizard.py --no-browser --port 8768
 ```
 
+Settings with `"weapon_mode": "original"` also need the weapon GLB whose SHA256 is saved in `original_weapon`: add `--weapon-glb staff.glb`. The GLB is not included in the ZIP.
+
 If you used `.venv` during setup, run `.venv\Scripts\python.exe`. You can also drag a VRM onto `Convert-VRM.cmd`. Outputs are written under `build/`, and previous conversions are not overwritten. An explicitly specified `--output` must be an empty folder.
 
 Load `vrm2skyrim/<lowercase MOD ID>/settings.json` from a generated ZIP into the wizard to reconvert with the same settings. Its instructions are in `README.txt` in that same folder. Change the name and MOD ID when switching to a different avatar. The root-level `VRM2Skyrim-settings.json` from versions 0.3/0.4 can still be loaded. Since 0.4.1, all files, including instructions and settings, use MOD-specific paths to avoid conflicts between different MOD IDs.

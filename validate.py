@@ -291,6 +291,11 @@ def validate(output, skeleton=None):
         raise ValueError(
             f"Delivered NIF differs from the original VRM posed without stretch: {error}"
         )
+    weapon_report = None
+    if settings.weapon_mode == 'original':
+        from weapon import validate_weapon_model
+        weapon_report, weapon_textures = validate_weapon_model(output, settings)
+        textures |= weapon_textures
     preview = output / "dds-preview"
     preview.mkdir(exist_ok=True)
     texture_reports = []
@@ -310,6 +315,7 @@ def validate(output, skeleton=None):
         "head_visibility": head_visibility,
         'head_models': validate_head_models(output, settings),
         'clothing_skin': validate_clothing_skin(output, settings),
+        'original_weapon': weapon_report,
     }
     (output / "validation.json").write_text(
         json.dumps(report, indent=2), encoding="utf-8"

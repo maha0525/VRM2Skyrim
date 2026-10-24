@@ -170,7 +170,10 @@ def configure_actor(npc, settings, catalog, base_stats):
         additions += [(b"PRKR", uint(catalog.require(item["editor_id"], b"PERK").form_id)
                        + struct.pack("<B3x", item["rank"])) for item in settings.perks]
     inventory = []
-    if settings.weapon:
+    if settings.weapon_mode == 'original':
+        from weapon import WEAPON_ID
+        inventory.append((b"CNTO", uint(WEAPON_ID) + struct.pack("<i", 1)))
+    elif settings.weapon:
         inventory.append((b"CNTO", uint(catalog.require(settings.weapon, b"WEAP").form_id) + struct.pack("<i", 1)))
     if settings.ammunition:
         inventory.append((b"CNTO", uint(catalog.require(settings.ammunition, b"AMMO").form_id) + struct.pack("<i", 100)))
@@ -273,6 +276,12 @@ def build_npc(game_data, output, settings=None, catalog=None):
         (b"DATA", struct.pack("<6f", *location))])
     plugin_path = output / "mod" / settings.plugin_name
     items = [race, *appearance, npc, relation]
+    weapon_report = None
+    if settings.weapon_mode == 'original':
+        from weapon import catalog_records, npc_report
+        weapon_base, weapon_static, description, weapon_items = catalog_records(settings, catalog, output)
+        items += weapon_items
+        weapon_report = npc_report(settings, catalog, weapon_base, description)
     write_follower(plugin_path, items, author=settings.author or "VRM2Skyrim",
                    placement=(cell, actor), extra_masters=extra_masters)
     write_runtime(output, settings)
@@ -284,6 +293,10 @@ def build_npc(game_data, output, settings=None, catalog=None):
     reference = next(r for r in generated if r.kind == b"ACHR")
     if (uint(cell.form_id), 6) not in reference.groups or reference.groups[-1] != (uint(cell.form_id), 8):
         raise RuntimeError("Placed follower is not in the temple's persistent reference group")
+    if weapon_report:
+        from weapon import check_copied, validate_weapon_records
+        check_copied(generated, weapon_base, weapon_static)
+        validate_weapon_records(generated, settings, weapon_report)
     report = {"plugin": str(plugin_path), "npc_editor_id": settings.prefix + "NPC", "npc_local_form_id": "000800",
               "reference_editor_id": settings.prefix + "FollowerREF", "reference_local_form_id": "000806",
               "covered_slots": SLOTS if not settings.armor_support else [part["slot"] for part in components(settings)],
@@ -294,6 +307,7 @@ def build_npc(game_data, output, settings=None, catalog=None):
               "garment_keywords": {g['id']: {name: catalog.require(name,b'KYWD').form_id for name in keyword_names(g)}
                                    for g in settings.appearance_parts.get('garments', [])} if settings.armor_support else {},
               "records": [{"type": r.kind.decode(), "id": hex(r.form_id), "editor_id": r.editor_id} for r in generated],
+              "weapon_mode": settings.weapon_mode, "original_weapon": weapon_report,
               "game_verified": False}
     (output / "npc.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf8")
     logging.info("Follower plugin generated: %s; placement %s", plugin_path, cell.editor_id)

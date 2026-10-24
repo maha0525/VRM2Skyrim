@@ -19,6 +19,77 @@ Legacy 0.11.x and earlier shared patches must be removed only after every fitted
 follower depending on them has been re-exported/replaced. The wizard shows the
 migration notice independently of whether the current follower uses fitting.
 
+## Private local FormID allocation
+
+Local IDs of records in the follower ESP (own-file index 1 internally). Saved games
+keep these identities, so an ID is never reused for a different record kind.
+The TES4 HEDR next-object ID is at least `0x900`.
+
+| Local ID | Record | Owner / note |
+|---|---|---|
+| `0x800` | NPC_ follower | `build_npc.NPC_ID` |
+| `0x801` | ARMO appearance / full Skin | `build_npc.ARMOR_ID`, `gear_head_runtime` FullSkin |
+| `0x802` | ARMA fixed appearance or body Skin | `build_npc.ADDON_ID` |
+| `0x803` | OTFT default outfit | `build_npc.OUTFIT_ID` |
+| `0x804` | RACE private race | `build_npc.RACE_ID` |
+| `0x805` | RELA player relationship | `build_npc.RELATIONSHIP_ID` |
+| `0x806` | ACHR placed follower | `build_npc.REFERENCE_ID` |
+| `0x807`–`0x80A` | ARMA underwear, fixed face/hair, hands, feet Skin | `build_npc.appearance_records` |
+| `0x80B` | ARMO retired 0.5.1 head cover (inert) | `head_visibility.HEAD_COVER_ID` |
+| `0x80C` / `0x80D` | HDPT empty head / FLST head races | `head_visibility` |
+| `0x810`–`0x82F` | garment ARMA `0x810+2n`, ARMO `0x811+2n` | `wardrobe.MAX_GARMENTS` (16) |
+| `0x830`–`0x83F` | reserved | `wardrobe.py` |
+| `0x840`–`0x846` | FLST wardrobe runtime lists | `equipment_runtime.LIST_IDS` |
+| `0x850` / `0x851` | ARMA separate face / hair Skin | `build_npc.appearance_records` |
+| `0x852`–`0x854` | ARMO face/hair/both hidden Skin | `gear_head_runtime.IDS` |
+| `0x855` / `0x856` | FLST face/hair hiding equipment | `gear_head_runtime.IDS` |
+| `0x860`–`0x862` | ARMA head-visibility variants | `gear_head_runtime.head_variants` |
+| `0x870` | FLST recognized seats | `seating.SEATS_ID` |
+| `0x880` | CSTY private combat style | `combat_style.CUSTOM_STYLE_ID` |
+| `0x880`–`0x8BF` | legacy fitted ARMA, accepted only from old fitting profiles | `armor_patch.py` |
+| `0x8D0` | WEAP original weapon | `weapon.WEAPON_ID` |
+| `0x8D1` | STAT original weapon first-person model | `weapon.FIRST_PERSON_ID` |
+| `0x1000`+ | ARMA fitted official equipment, one per source addon | `armor_fitting.py` |
+
+## Original GLB weapon
+
+`weapon_mode=original` replaces the `settings.weapon` inventory entry with one private
+WEAP `0x8D0` copied from a Skyrim.esm base weapon. Base candidates are named,
+playable WEAPs (record flag `0x4` and DNAM Flags `0x80` clear, xEdit TES5) whose
+DNAM animation type and single `WeapType*` keyword form one of eight pairs:
+sword 1/WeapTypeSword, dagger 2/WeapTypeDagger, war axe 3/WeapTypeWarAxe, mace
+4/WeapTypeMace, greatsword 5/WeapTypeGreatsword, battleaxe 6/WeapTypeBattleaxe,
+warhammer 6/WeapTypeWarhammer, staff 8/WeapTypeStaff. Defaults are SteelSword,
+SteelDagger, SteelWarAxe, SteelMace, SteelGreatsword, SteelBattleaxe,
+SteelWarhammer and StaffFlames.
+
+The copy replaces EDID (`<prefix>OriginalWeapon`), FULL (inline string), MODL,
+WNAM and OBND, resolves a localized DESC to an inline string, and removes MODT and
+the CNAM template. All other fields stay in order. The base's first-person STAT
+becomes `0x8D1` (`<prefix>OriginalWeapon1stPerson`) with the same NIF in MODL,
+the new OBND, no MODT and its DNAM retained. WEAP WNAM is a FormID and is remapped
+with the follower's own-file index; WEAP/STAT MODL are path strings and are not.
+
+`meshes/<asset_dir>/weapon.nif` has a BSFadeNode root, BSTriShape children placed
+by their vertices, the base NIF's BSXFlags, `Prn` attach node and BSInvMarker, and
+`bhkCollisionObject` (base flags, 129 on official weapons) → `bhkRigidBody` (all
+base values, including mass, layer, center and inertia) → `bhkConvexVerticesShape`
+(base havok material and radius). The hull is the exact hull of at most 48 GLB
+vertices: extremes in 26 directions, then the farthest outside vertex until every
+vertex is within 0.5% of the model size. The longest GLB bounding-box axis becomes
++Y with its low end at -Y; flip turns 180° about Z, roll turns about Y; the
+length is scaled to `length` and the origin is at `grip` from the bottom, at the
+X/Z bounding-box centre of vertices within ±2% of the length around the grip.
+
+Textures: `weapon[_<material>].dds` (baseColorFactor RGB baked linearly),
+`_n.dds` (glTF normal RGB, alpha = 1 − roughness; the green decision is
+`weapon.FLIP_NORMAL_GREEN`), and `_m.dds` (metallic mask, converted without sRGB)
+when at least 1% of pixels have metallic ≥ 0.5. Masked materials reference the
+game's `textures\cubemaps\ShinyDull_e.dds`; `weapon.json` records its archive and
+SHA256 and the package gate re-reads that archive entry. An installed replacement
+at that path is used in game and only logged. The GLB is bound by
+`original_weapon.sha256` and is not packaged.
+
 ## Historical 0.7.0 equipment identities and private models
 
 The official catalog reads installed base/DLC/Creation masters, resolving every

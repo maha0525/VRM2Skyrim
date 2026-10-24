@@ -84,6 +84,14 @@ def package(output, settings=None):
         validate_registration(output)
         from equipment_textures import validate_shared
         validate_shared(output)
+    weapon_help = ""
+    if settings.weapon_mode == 'original':
+        from weapon import validate_shared as validate_weapon_textures
+        validate_weapon_textures(output)
+        weapon = settings.original_weapon
+        weapon_help = (f"Original weapon: {weapon['name']} ({settings.prefix}OriginalWeapon, local FormID 0008D0),\n"
+                       f"converted from {weapon['filename']} with the stats, sounds and enchantment of {weapon['base']}.\n"
+                       "Its environment map uses the game's textures\\cubemaps\\ShinyDull_e.dds.\n")
     metadata = mod / settings.asset_dir
     metadata.mkdir(parents=True, exist_ok=True)
     appearance_description = "Original outfit stays together; clothing is not removable."
@@ -190,6 +198,7 @@ already placed in the temple. Use a test save when checking a newly built MOD.
 The original VRM appearance uses a private race/skeleton.
 {appearance_description}
 {wardrobe_help}
+{weapon_help}
 {fitting_help}
 {seating_help}
 {('Toon shading requires VRM2Skyrim Toon and its supported Community Shaders build. Blender previews do not display toon shading.' if settings.toon_enabled else '')}
@@ -199,7 +208,7 @@ Ragdoll collision shapes/constraints still require fitting to the avatar.
 Combat style: {('private copy of ' + settings.combat_style_custom['source'] if settings.combat_style_mode == 'custom' else settings.combat_style)}.
 
 Settings are included as {settings.asset_dir}/settings.json for reproducible conversion.
-The original VRM is not included. Respect its author's permissions when sharing.
+{"The original VRM and weapon GLB are not included. Respect their authors' permissions when sharing." if settings.weapon_mode == 'original' else "The original VRM is not included. Respect its author's permissions when sharing."}
 """
     (metadata / "README.txt").write_text(readme, encoding="utf8")
     settings.save(metadata / "settings.json")
@@ -262,7 +271,7 @@ def convert_appearance(source, game, blender, output, settings, progress):
     convert_textures(output)
 
 
-def convert(source, game, blender, output, settings, progress=None):
+def convert(source, game, blender, output, settings, progress=None, weapon_glb=None):
     def stage(name):
         logging.info("Stage: %s", name)
         run['stage'] = name
@@ -279,6 +288,8 @@ def convert(source, game, blender, output, settings, progress=None):
         raise ValueError("Output cannot contain the original input VRM")
     if output.exists() and any(output.iterdir()):
         raise ValueError("Use an empty output folder; previous builds are retained")
+    if settings.weapon_mode == 'original' and weapon_glb is None:
+        raise ValueError("オリジナル武器のGLBを指定してください")
     output.mkdir(parents=True, exist_ok=True)
     run = {"version": VERSION, "state": "converting", "game_verified": False}
     try:
@@ -311,6 +322,11 @@ def convert(source, game, blender, output, settings, progress=None):
             stage('着座時の高さ補正')
             from seating import prepare
             prepare(output, Path(game) / 'Data', settings)
+        if settings.weapon_mode == 'original':
+            stage("オリジナル武器のモデル")
+            from weapon import convert_weapon
+            run["weapon_sha256"] = convert_weapon(weapon_glb, Path(game) / "Data", blender, output, settings,
+                                                  catalog)["source"]["sha256"]
         stage("フォロワーと初期配置の作成")
         build_npc(Path(game) / "Data", output, settings, catalog)
         from head_visibility import write_head_assets
@@ -355,6 +371,8 @@ def convert(source, game, blender, output, settings, progress=None):
         archive = package(output, settings)
         if hashlib.sha256(source.read_bytes()).hexdigest() != report["sha256"]:
             raise RuntimeError("Original VRM changed")
+        if weapon_glb is not None and hashlib.sha256(Path(weapon_glb).read_bytes()).hexdigest() != run.get("weapon_sha256"):
+            raise RuntimeError("Original weapon GLB changed")
         run.update(state="offline_verified", zip=str(archive), zip_sha256=hashlib.sha256(archive.read_bytes()).hexdigest())
         stage("変換完了")
         return archive
@@ -378,6 +396,7 @@ def main():
     parser.add_argument("--blender", type=Path, default=find_blender())
     parser.add_argument("--output", type=Path)
     parser.add_argument("--settings", type=Path)
+    parser.add_argument("--weapon-glb", type=Path, help="GLB for settings with weapon_mode=original")
     parser.add_argument("--doctor", action="store_true")
     args = parser.parse_args()
     if args.doctor:
@@ -389,7 +408,7 @@ def main():
     settings = FollowerSettings.load(args.settings) if args.settings else FollowerSettings(
         npc_name=args.source.stem, mod_name=args.source.stem + "Follower")
     output = args.output or ROOT / "build" / (settings.mod_id + "_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
-    archive = convert(args.source, args.game, args.blender, output, settings)
+    archive = convert(args.source, args.game, args.blender, output, settings, weapon_glb=args.weapon_glb)
     print(f"ZIP: {archive}")
     return 0
 

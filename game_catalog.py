@@ -9,7 +9,14 @@ from settings import SKILLS
 
 KINDS = {b"NPC_", b"ARMO", b"ARMA", b"RACE", b"FACT", b"VTYP", b"WEAP", b"PACK",
          b"CLAS", b"CSTY", b"PERK", b"SPEL", b"FLST", b"CELL", b"REFR", b"AMMO", b"KYWD", b'BOOK',
-         b'AVIF', b'MGEF'}
+         b'AVIF', b'MGEF', b'STAT'}
+# Original weapon kinds: WEAP DNAM animation type (first byte) and WeapType keyword, with the default base.
+ORIGINAL_WEAPON_KINDS = {
+    'sword': (1, 'WeapTypeSword', 'SteelSword'), 'dagger': (2, 'WeapTypeDagger', 'SteelDagger'),
+    'waraxe': (3, 'WeapTypeWarAxe', 'SteelWarAxe'), 'mace': (4, 'WeapTypeMace', 'SteelMace'),
+    'greatsword': (5, 'WeapTypeGreatsword', 'SteelGreatsword'),
+    'battleaxe': (6, 'WeapTypeBattleaxe', 'SteelBattleaxe'),
+    'warhammer': (6, 'WeapTypeWarhammer', 'SteelWarhammer'), 'staff': (8, 'WeapTypeStaff', 'StaffFlames')}
 
 
 def castable_spell(record):
@@ -29,6 +36,24 @@ SKILL_LABELS_EN = dict(zip(SKILLS, ('One-Handed', 'Two-Handed', 'Archery', 'Bloc
                                    'Heavy Armor', 'Light Armor', 'Pickpocket', 'Lockpicking',
                                    'Sneak', 'Alchemy', 'Speech', 'Alteration', 'Conjuration',
                                    'Destruction', 'Illusion', 'Restoration', 'Enchanting')))
+
+
+def weapon_kind(record, keyword_names):
+    """Kind of a named, playable WEAP, or None.
+
+    xEdit TES5 WEAP: record flag 0x4 and DNAM Flags (uint16 at byte 12) 0x80 are Non-Playable.
+    Scripted (VMAD) weapons are excluded: a copy would also run their quest scripts.
+    """
+    dnam = record.values(b'DNAM')
+    if (record.kind != b'WEAP' or record.flags & 4 or not record.values(b'FULL') or not record.values(b'MODL')
+            or record.values(b'VMAD')
+            or not dnam or len(dnam[0]) < 14 or struct.unpack_from('<H', dnam[0], 12)[0] & 0x80):
+        return None
+    types = [name for name in keyword_names if name.startswith('WeapType')]
+    if len(types) != 1:
+        return None
+    return next((kind for kind, (animation, keyword, _) in ORIGINAL_WEAPON_KINDS.items()
+                 if dnam[0][0] == animation and types[0] == keyword), None)
 
 
 def effect_ranks(record):
@@ -137,6 +162,36 @@ class GameCatalog:
             row[kind].add(self.label(race, language=language))
         return usage
 
+    def keyword_names(self, record):
+        ids = [n for value in record.values(b'KWDA') for (n,) in struct.iter_unpack('<I', value[:len(value) // 4 * 4])]
+        return [self.by_form_id[n].editor_id for n in ids if n in self.by_form_id and self.by_form_id[n].kind == b'KYWD']
+
+    def first_person_static(self, weapon):
+        values = weapon.values(b'WNAM')
+        record = self.by_form_id.get(struct.unpack('<I', values[0])[0]) if values and len(values[0]) == 4 else None
+        return record if record and record.kind == b'STAT' and record.values(b'MODL') else None
+
+    def original_weapon_kind(self, record):
+        """Skyrim.esm WEAP usable as an original-weapon base (its kind), or None."""
+        if record.form_id >> 24 or self.first_person_static(record) is None:
+            return None
+        return weapon_kind(record, self.keyword_names(record))
+
+    def original_weapon_choices(self):
+        candidates = {kind: [] for kind in ORIGINAL_WEAPON_KINDS}
+        for record in self.choices(b'WEAP'):
+            kind = self.original_weapon_kind(record)
+            if kind:
+                candidates[kind].append({
+                    'id': record.editor_id, 'label': self.label(record), 'labels': self.localized(record),
+                    'model': 'meshes/' + record.values(b'MODL')[0].rstrip(b'\0').decode('utf8').replace('\\', '/').lower()})
+        result = []
+        for kind, (_, _, default) in ORIGINAL_WEAPON_KINDS.items():
+            if default not in {c['id'] for c in candidates[kind]}:
+                raise ValueError(f'Default original-weapon base is not a {kind} in Skyrim.esm: {default}')
+            result.append({'id': kind, 'default': default, 'candidates': candidates[kind]})
+        return result
+
     def validate_settings(self, settings):
         voice = self.require(settings.voice, b"VTYP")
         if voice.form_id not in self.follower_voice_ids:
@@ -149,8 +204,12 @@ class GameCatalog:
             from combat_style import read_style
             if read_style(self.require(settings.combat_style_custom['source'], b'CSTY')) is None:
                 raise ValueError('Selected combat style has no editable data')
-        if settings.weapon:
+        if settings.weapon_mode == 'official' and settings.weapon:
             self.require(settings.weapon, b"WEAP")
+        if settings.weapon_mode == 'original':
+            weapon = settings.original_weapon
+            if self.original_weapon_kind(self.require(weapon['base'], b'WEAP')) != weapon['kind']:
+                raise ValueError(f"Original weapon base {weapon['base']} is not a playable Skyrim.esm {weapon['kind']}")
         if settings.ammunition:
             self.require(settings.ammunition, b"AMMO")
         for perk in settings.perks:
@@ -251,6 +310,7 @@ class GameCatalog:
             item['used_by_localized'] = {'ja': item['used_by'], 'en': sorted(en_row['humanoid'] | en_row['other'])}
         logging.debug('Wizard catalog: %d classes, %d combat styles (%d with character-skeleton NPC usage)',
                       len(result['classes']), len(result['styles']), sum(s['humanoid'] for s in result['styles']))
+        result['original_weapons'] = self.original_weapon_choices()
         result["marriage_voices"] = [r.editor_id for r in self.choices(b"VTYP") if r.form_id in self.marriage_voice_ids]
         result['english_strings_available'] = bool(self.english_strings)
         from combat_style import FIELDS

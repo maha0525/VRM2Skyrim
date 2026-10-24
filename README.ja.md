@@ -190,6 +190,8 @@ python converter.py avatar.vrm --settings my-follower.json --game 'E:\SteamLibra
 python wizard.py --no-browser --port 8768
 ```
 
+`"weapon_mode": "original"`の設定では、`original_weapon`にSHA256を保存した武器のGLBも`--weapon-glb staff.glb`で指定します。GLBはZIPに入れません。
+
 `.venv`で準備した場合は`.venv\Scripts\python.exe`を使います。VRMを`Convert-VRM.cmd`へドラッグしても変換できます。出力は`build/`以下。過去の変換結果は上書きしません。明示した`--output`には空のフォルダを指定してください。
 
 生成ZIPの`vrm2skyrim/<MOD ID小文字>/settings.json`をウィザードへ読み込めば、同じ設定で再変換できます。説明書も同じフォルダの`README.txt`です。VRMを差し替えて別モデルへ使う場合は名前とMOD IDを変更します。0.3/0.4のルートにあった`VRM2Skyrim-settings.json`も引き続き読み込めます。0.4.1では説明書・設定を含む全ファイルをMODごとのパスに分け、別MOD ID同士のファイル競合を解消しました。

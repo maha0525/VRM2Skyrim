@@ -27,6 +27,7 @@ def validate_private_records(generated, settings, output):
         + ((5 + sum(bool(p['nodes']) for p in head_variants(settings))) if settings.head_switch_enabled else 0)
     )
     expected_records += int(settings.sitting_enabled) + int(settings.combat_style_mode == 'custom')
+    expected_records += 2 * (settings.weapon_mode == 'original')  # private WEAP + first-person STAT
     if len(local_ids) != expected_records:
         raise ValueError(f"Expected {expected_records} private follower records, found {len(local_ids)} "
                          f"(combat style: {settings.combat_style_mode})")
@@ -37,7 +38,7 @@ def validate_private_records(generated, settings, output):
             reference_tags = {b"ARMO": {b"MODL", b"RNAM"}, b"ARMA": {b"RNAM", b"MODL"},
                               b"NPC_": {b"DOFT", b"RNAM", b"WNAM", b"CNTO", b"ZNAM"},
                                 b"RACE": {b"WNAM", b"HEAD"}, b"OTFT": {b"INAM"},
-                                b"HDPT": {b"RNAM"}, b"FLST": {b"LNAM"}}
+                                b"HDPT": {b"RNAM"}, b"FLST": {b"LNAM"}, b"WEAP": {b"WNAM"}}
             if tag in reference_tags.get(record.kind, set()):
                 if (tag == b"CNTO" and len(payload) != 8) or (tag != b"CNTO" and len(payload) % 4):
                     raise ValueError("Malformed plugin reference field")
@@ -51,6 +52,10 @@ def validate_private_records(generated, settings, output):
                     if value >> 24 == 1 and value not in local_ids:
                         raise ValueError("Dangling local record reference")
     validate_generated_style(generated, settings)
+    from weapon import validate_weapon_records
+    npc_path = output / 'npc.json'
+    report = json.loads(npc_path.read_text(encoding='utf8')).get('original_weapon') if npc_path.is_file() else None
+    validate_weapon_records(generated, settings, report)
     logging.info('Validated private plugin: %s records; combat style=%s',
                  len(local_ids), settings.combat_style_mode)
     return local_ids
