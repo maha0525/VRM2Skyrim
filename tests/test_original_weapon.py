@@ -242,9 +242,9 @@ def glb_document(materials, images):
     return document, binary
 
 
-def two_material_glb(path, nodes=False):
+def two_material_glb(path, nodes=False, mirror=False):
     """A real GLB: textured shaft (material 0) and untextured solid red head (material 1), Y up;
-    nodes=True gives each its own node and mesh, the head node rotated."""
+    nodes=True gives each its own node and mesh, the head node rotated (mirror=True: also scaled -1 on X)."""
     binary, views, accessors, primitives = bytearray(), [], [], []
 
     def add(array, kind, component):
@@ -278,7 +278,8 @@ def two_material_glb(path, nodes=False):
     views.append({'buffer': 0, 'byteOffset': len(binary), 'byteLength': len(image)})
     binary.extend(image)
     if nodes:
-        scene = {'nodes': [{'mesh': 0}, {'mesh': 1, 'rotation': [0, .3826834, 0, .9238795]}],
+        head = {'mesh': 1, 'rotation': [0, .3826834, 0, .9238795], **({'scale': [-1, 1, 1]} if mirror else {})}
+        scene = {'nodes': [{'mesh': 0}, head],
                  'meshes': [{'primitives': primitives[:1]}, {'primitives': primitives[1:]}], 'scenes': [{'nodes': [0, 1]}]}
     else:
         scene = {'nodes': [{'mesh': 0}], 'meshes': [{'primitives': primitives}], 'scenes': [{'nodes': [0]}]}
@@ -354,6 +355,8 @@ class TextureTests(unittest.TestCase):
         self.assertEqual([Path(e['relative']).name for e in manifest],
                          ['weapon_0.dds', 'weapon_0_n.dds', 'weapon_1.dds', 'weapon_1_n.dds', 'weapon_1_m.dds'])
         self.assertEqual(Image.open(manifest[0]['png']).getpixel((0, 0)), (255, 0, 0, 255))
+        # The alpha factor .5 is applied once, by the shader: the solid texture stays opaque.
+        self.assertEqual(Image.open(manifest[2]['png']).getpixel((0, 0))[3], 255)
         self.assertEqual(manifest[0]['base_color_factor'], [1, 1, 1])  # solid colour is already tinted
         # glTF defaults: metallic 1, roughness 1 (alpha 0).
         self.assertEqual(Image.open(manifest[3]['png']).getpixel((0, 0)), (128, 128, 255, 0))
@@ -836,11 +839,11 @@ class GameTests(unittest.TestCase):
         from weapon_nif import read_weapon
         if not NIFLY or not find_blender():
             self.skipTest('Requires local NiflyDLL and Blender')
-        for nodes in (False, True):
-            with self.subTest(nodes=nodes), tempfile.TemporaryDirectory(dir=ROOT / 'build') as directory:
+        for nodes, mirror in ((False, False), (True, False), (True, True)):
+            with self.subTest(nodes=nodes, mirror=mirror), tempfile.TemporaryDirectory(dir=ROOT / 'build') as directory:
                 directory = Path(directory)
                 glb = directory / 'two.glb'
-                two_material_glb(glb, nodes)
+                two_material_glb(glb, nodes, mirror)
                 settings = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapon=original(
                     sha256=weapon.sha256(glb), kind='mace', base='SteelMace', grip=.2, length=60))
                 output = directory / 'out'
@@ -849,6 +852,11 @@ class GameTests(unittest.TestCase):
                 shapes = {s['textures']['Diffuse'].rsplit('\\', 1)[-1]: s for s in read_weapon(output / 'mod' / report['nif'])['shapes']}
                 self.assertEqual(sorted(shapes), ['weapon_0.dds', 'weapon_1.dds'])
                 self.assertLess(shapes['weapon_0.dds']['points'][:, 1].max(), shapes['weapon_1.dds']['points'][:, 1].min() + 1e-3)
+                for name, shape in shapes.items():  # every face winds outwards, along its corner normals
+                    corners = shape['points'][shape['faces']]
+                    winding = np.cross(corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0])
+                    facing = np.einsum('ij,ij->i', winding, shape['normals'][shape['faces']].sum(1))
+                    self.assertTrue((facing > 0).all(), name)
                 for texture in (output / 'mod/textures').rglob('*.dds'):
                     decode_dds(texture, output / 'dds-preview')
                 plan = json.loads((output / 'weapon-plan.json').read_text(encoding='utf8'))

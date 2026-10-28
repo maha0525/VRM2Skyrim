@@ -90,6 +90,10 @@ def main():
         normals /= np.maximum(np.linalg.norm(normals, axis=1), 1e-12)[:, None]
         mesh.attributes.new(NORMAL_ATTRIBUTE, 'FLOAT_VECTOR', 'CORNER').data.foreach_set('vector', normals.reshape(-1))
         mesh.transform(Matrix(full.tolist()))
+        if np.linalg.det(full[:3, :3]) < 0:
+            # Mesh.transform keeps the corner order of a mirrored node, which turns its faces inside out;
+            # flip_normals reverses each face and carries its UVs and NORMAL_ATTRIBUTE corners with it.
+            mesh.flip_normals()
         obj = bpy.data.objects.new(f'V2SWeapon_{index:03}', mesh)
         bpy.context.scene.collection.objects.link(obj)
         objects.append(obj)

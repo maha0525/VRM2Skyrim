@@ -264,7 +264,8 @@ def read_weapon(path):
         for shape in nif.shapes:
             shapes.append({'name': shape.name, 'block': shape.blockname, 'vertices': len(shape.verts),
                            'triangles': len(shape.tris), 'textures': dict(shape.textures),
-                           'points': np.array(shape.verts, float),
+                           'points': np.array(shape.verts, float), 'normals': np.array(shape.normals, float),
+                           'faces': np.array(shape.tris, int),
                            'translation': list(shape.transform.translation[:]), 'scale': shape.transform.scale})
         collision = nif.root.collision_object
         body = collision.body if collision else None

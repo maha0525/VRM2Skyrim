@@ -182,7 +182,8 @@ def material_textures(document, binary, index, stem, source_dir, texture_dir):
     if 'baseColorTexture' in pbr:
         diffuse, tint = texture_image(document, binary, pbr['baseColorTexture']).convert('RGBA'), factor[:3]
     else:
-        diffuse = Image.new('RGBA', (4, 4), (*map(srgb_byte, factor[:3]), round(factor[3] * 255)))
+        # Opaque: the alpha factor reaches the NIF once, through the shader Alpha below.
+        diffuse = Image.new('RGBA', (4, 4), (*map(srgb_byte, factor[:3]), 255))
         tint = [1, 1, 1]
     diffuse.save(source_dir / f'{stem}.png')
     manifest.append({'png': str(source_dir / f'{stem}.png'), 'relative': f'{texture_dir}/{stem}.dds',
