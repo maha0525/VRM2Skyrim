@@ -13,6 +13,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen, build_opener, ProxyHandler
+import zipfile
 
 from wizard import WizardApplication, handler_for, BOOT_FINGERPRINT, WizardHTTPServer, make_server, main, port_is_listening
 from converter import convert
@@ -431,3 +432,77 @@ class WeaponServerTests(unittest.TestCase):
                          ('weapon_preview', 'complete', '武器のプレビューを更新しました'))
         self.assertEqual(calls, [(self.app.weapons[uploaded['weapon_id']]['path'], self.settings(uploaded)['original_weapon'])])
         self.assertEqual(job['previews'], ['previews/weapon-x-drawn.png'])
+
+
+class ToonShaderServerTests(unittest.TestCase):
+    """The shipped shader ZIP download and the Data/Shaders hash status; fixture game folder only."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.app = WizardApplication(self.root / 'workspace')
+        self.addCleanup(self.app.close)
+        self.server = ThreadingHTTPServer(('127.0.0.1', 0), handler_for(self.app))
+        self.worker = threading.Thread(target=self.server.serve_forever)
+        self.worker.start()
+        self.addCleanup(self.stop)
+        self.base = 'http://127.0.0.1:' + str(self.server.server_address[1])
+        self.opener = build_opener(ProxyHandler({}))
+        self.game = self.root / 'Skyrim Special Edition'
+        (self.game / 'Data').mkdir(parents=True)
+
+    def stop(self):
+        self.server.shutdown()
+        self.worker.join()
+        self.server.server_close()
+
+    def status(self, game):
+        return json.load(self.opener.open(self.base + '/api/toon-shader-status?game=' + quote(str(game)), timeout=10))
+
+    def test_download_returns_the_committed_zip_as_an_attachment(self):
+        from toon import SHIPPED_SHADER
+        response = self.opener.open(self.base + '/api/toon-shader', timeout=10)
+        self.assertEqual(response.read(), SHIPPED_SHADER.read_bytes())
+        self.assertEqual(response.headers['Content-Disposition'], f'attachment; filename="{SHIPPED_SHADER.name}"')
+        missing = self.root / 'toon-shader' / SHIPPED_SHADER.name
+        # The status reads adapter.json through toon.shipped_adapter.
+        with patch('wizard.SHIPPED_SHADER', missing), patch('toon.SHIPPED_SHADER', missing):
+            with self.assertRaises(HTTPError) as error:
+                self.opener.open(self.base + '/api/toon-shader', timeout=10)
+            self.assertEqual(error.exception.code, 404)
+            self.assertIn(SHIPPED_SHADER.name, json.load(error.exception)['error'])
+            self.assertEqual(self.status(self.game)['available'], False)
+
+    def test_shader_hashes_select_original_installed_unchecked_and_other(self):
+        from toon import SHIPPED_SHADER, shipped_adapter
+        self.assertEqual(self.status(self.game), {'archive': SHIPPED_SHADER.name, 'available': True,
+                                                  'release': '1.0.22', 'state': 'unchecked'})
+        self.assertEqual(self.status('')['state'], 'unchecked')
+        shaders = self.game / 'Data/Shaders'
+        shaders.mkdir(parents=True)
+        lighting, composite = b'fixture lighting', b'fixture composite'
+        digest = {lighting: hashlib.sha256(lighting).hexdigest(), composite: hashlib.sha256(composite).hexdigest()}
+        (shaders / 'Lighting.hlsl').write_bytes(lighting)
+        (shaders / 'DeferredCompositeCS.hlsl').write_bytes(composite)
+        self.assertEqual(self.status(self.game)['state'], 'other')
+        with patch('wizard.SUPPORTED_LIGHTING', digest[lighting]), patch('wizard.SUPPORTED_COMPOSITE', digest[composite]):
+            self.assertEqual(self.status(self.game)['state'], 'original')
+            # One original and one changed file is not the supported release.
+            (shaders / 'DeferredCompositeCS.hlsl').write_bytes(composite + b'changed')
+            self.assertEqual(self.status(self.game)['state'], 'other')
+            (shaders / 'DeferredCompositeCS.hlsl').unlink()
+            self.assertEqual(self.status(self.game)['state'], 'other')
+        # The installed state comes from the committed ZIP's adapter.json.
+        with zipfile.ZipFile(SHIPPED_SHADER) as package:
+            for name in ('Lighting.hlsl', 'DeferredCompositeCS.hlsl'):
+                (shaders / name).write_bytes(package.read('Shaders/' + name))
+        adapter = shipped_adapter()
+        self.assertEqual(hashlib.sha256((shaders / 'Lighting.hlsl').read_bytes()).hexdigest(),
+                         adapter['patched_lighting_sha256'])
+        self.assertEqual(self.status(self.game)['state'], 'installed')
+        with patch('wizard.shipped_adapter', return_value={**adapter, 'patched_lighting_sha256': 'other'}):
+            self.assertEqual(self.status(self.game)['state'], 'other')
+        with patch('wizard.shipped_adapter', return_value=None):
+            missing = self.status(self.game)
+            self.assertEqual((missing['available'], missing['state']), (False, 'other'))

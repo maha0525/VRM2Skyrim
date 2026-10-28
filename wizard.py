@@ -23,6 +23,7 @@ from environment import find_blender, find_game
 from game_catalog import GameCatalog
 from inspect_vrm import inspect
 from settings import FollowerSettings, VERSION
+from toon import BOTTLED_SHADERS_RELEASE, SHIPPED_SHADER, SUPPORTED_COMPOSITE, SUPPORTED_LIGHTING, shipped_adapter
 from wardrobe import validate_source
 
 
@@ -87,6 +88,29 @@ def port_is_listening(port):
 def armor_environment(game):
     from skypatcher import installation_status
     return installation_status(Path(game)/'Data') if game else None
+
+
+def toon_shader_status(game):
+    """The shipped shader ZIP and the Community Shaders shaders in the game folder.
+
+    Compares <game>/Data/Shaders/Lighting.hlsl and DeferredCompositeCS.hlsl:
+    `state` is 'original' (Bottled Shaders 1.0.22, ZIP not installed yet),
+    'installed' (the shipped ZIP's patched files), 'unchecked' (neither file is
+    there; MO2 keeps them in its own mods folder) or 'other'. The wizard only
+    warns; toon shading stays selectable.
+    """
+    adapter = shipped_adapter()
+    names = ('Lighting.hlsl', 'DeferredCompositeCS.hlsl')
+    paths = [Path(game)/'Data/Shaders'/name for name in names] if game else []
+    if not paths or not any(path.is_file() for path in paths):
+        state = 'unchecked'
+    else:
+        hashes = tuple(hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None for path in paths)
+        patched = adapter and (adapter['patched_lighting_sha256'], adapter['patched_composite_sha256'])
+        state = ('original' if hashes == (SUPPORTED_LIGHTING, SUPPORTED_COMPOSITE) else
+                 'installed' if hashes == patched else 'other')
+    return {'archive': SHIPPED_SHADER.name, 'available': adapter is not None,
+            'release': BOTTLED_SHADERS_RELEASE, 'state': state}
 
 
 class WizardApplication:
@@ -209,6 +233,7 @@ class WizardApplication:
             job["armor_support"] = settings.armor_support
             job["garments"] = [{"id": g["id"], "name": g["name"]} for g in settings.appearance_parts.get("garments", [])] if settings.armor_support else []
             job["weapon_mode"] = settings.weapon_mode
+            job["toon_enabled"] = settings.toon_enabled
             self.jobs[job_id] = job
         self.executor.submit(self._run, job, source, game, blender, output, settings, weapon_glb)
         return {"job_id": job_id}
@@ -473,6 +498,12 @@ def handler_for(app):
                     job = app.snapshot(query.get('job', [''])[0])
                     from skypatcher import installation_status
                     return self.reply(installation_status(Path(query.get('game', [''])[0])/'Data', job.get('plugin_name'), job['output']))
+                if url.path == '/api/toon-shader-status':
+                    return self.reply(toon_shader_status(parse_qs(url.query).get('game', [''])[0]))
+                if url.path == '/api/toon-shader':
+                    if not SHIPPED_SHADER.is_file():
+                        return self.reply({'error': f'Toon shader ZIP not found: {SHIPPED_SHADER}'}, 404)
+                    return self.file(SHIPPED_SHADER, attachment=True)
                 if url.path.startswith("/api/jobs/"):
                     job_id = url.path.split("/")[3]
                     job = app.snapshot(job_id)

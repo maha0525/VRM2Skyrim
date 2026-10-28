@@ -31,7 +31,32 @@ function applySettings(settings) {
   loadPhysics(settings);
   if(state.choices)updateStyles(settings.combat_style);
   loadWeapon(settings);
-  updateLevel(); updateMarriage(); renderChoices();
+  updateLevel(); updateMarriage(); renderChoices(); renderToonShader();
+}
+// The shipped shader ZIP targets the Community Shaders of one Bottled Shaders
+// release, identified by the hashes of the game's Data/Shaders files. Other or
+// unreadable shaders are a warning only; toon shading stays selectable.
+function renderToonShader(){
+  const value=state.toonShader;
+  const message=!value?'':value.error?tr("シェーダーの対応状況を確認できませんでした：")+value.error:!value.available?tr("トゥーン描画用シェーダーのZIP（{0}）が見つかりません。VRM2Skyrimのtoon-shaderフォルダを確認してください。",value.archive)
+    :value.state==='original'?tr("Community ShadersはこのZIPの対象（Bottled Shaders {0}）です。次に、トゥーン描画用シェーダーのZIPを保存してVortex / MO2で導入してください。",value.release)
+    :value.state==='installed'?tr("トゥーン描画用シェーダー（{0}）は導入済みです。",value.archive)
+    :value.state==='unchecked'?tr("Community Shadersの版を確認できませんでした（MO2ではシェーダーがMO2のmodsフォルダに置かれます）。このZIPはBottled Shaders {0}用です。",value.release)
+    :tr("導入されているCommunity Shadersのシェーダーは、このZIPの対象と異なります。このZIPはBottled Shaders {0}用のため、このCommunity Shadersでは描画が崩れる場合があります。",value.release);
+  // The supported release and an installed ZIP are plain information, not warnings.
+  const information=!!value&&!value.error&&value.available&&['original','installed'].includes(value.state);
+  const result=!!state.completedJob?.toon_enabled;$('toon-shader-result').hidden=!result;
+  for(const [link,status,shown] of [['toon-shader-download','toon-shader-status',$('toon_enabled').checked],['toon-shader-result-download','toon-shader-result-status',result]]){
+    $(link).hidden=value?.available===false;$(link).download=value?.archive||'';$(status).textContent=message;$(status).hidden=!shown||!message;
+    $(status).className=information?'hint':'note';$(status).dataset.kind=information?'information':'warning';
+  }
+}
+async function refreshToonShader(){
+  // Report a failed check beside the download, not in the page error: it
+  // never blocks the wizard.
+  const game=$('game').value;let value;
+  try{value=await api('/api/toon-shader-status?game='+encodeURIComponent(game));}catch(e){value={error:e.message};}
+  if($('game').value!==game)return;state.toonShader=value;renderToonShader();
 }
 function collect() {
   const settings={};
@@ -337,7 +362,7 @@ function showResult(job) {
   state.resultJob=job.id;$('equipment-edit').hidden=!job.edit_kit||!!job.armor_patch;
   if(job.edit_kit){$('edit-kit-download').href=fileURL(job.id,job.edit_kit);$('edit-mesh').replaceChildren(...job.edit_meshes.map(i=>new Option(i.name,i.key)));}
   showArmorPatch(job).catch(e=>error(e.message));
-  renderResultAppearance(job);
+  renderResultAppearance(job);refreshToonShader();
 }
 function renderResultAppearance(job) {
   $('progress').hidden=true;$('result').hidden=false;$('result-title').textContent=tr('{0}を、スカイリムへ。',job.npc_name);$('download').href=fileURL(job.id,job.archive);$('download').download=job.archive;$('plugin-name').textContent=job.plugin_name;$('output-folder').textContent=tr("出力フォルダ: ")+job.output;
@@ -382,6 +407,7 @@ async function init() {
   }
   state.defaults={...env.defaults,fit_mode:'all_official'};$('version').textContent='VRM2Skyrim '+env.version;$('game').value=env.game;$('blender').value=env.blender;applySettings(env.defaults);$('fit_mode').value='all_official';
   $('legacy-armor-notice').hidden=!env.armor_registration?.legacy_patch;
+  $('toon_enabled').addEventListener('change',renderToonShader);$('game').addEventListener('change',refreshToonShader);refreshToonShader();
   initWardrobe();
   await refreshSavedResults();
   $('check-deployed-patch').onclick=checkDeployedPatch;
@@ -412,7 +438,7 @@ document.addEventListener('languagechange',()=>{
     state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(option=>option.value));
     setupChoices(state.choices,true);
   }
-  renderWardrobe();renderPhysics();updateLevel();renderCatalogStatus();
+  renderWardrobe();renderPhysics();updateLevel();renderCatalogStatus();renderToonShader();
   renderWeaponGlb();renderWeaponBaseStatus();if(state.weaponPreview&&!state.weaponPreviewLoading)renderWeaponPreview();
   if(state.source)$('source-status').textContent=tr('{0} · {1}メッシュ · {2}三角形',state.source.filename,state.source.mesh_count,state.source.triangles.toLocaleString(i18n.language));
   if(state.step===4&&state.reviewSettings)summarize(state.reviewSettings);

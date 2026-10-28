@@ -19,6 +19,7 @@ const source={source_id:'fixture',sha256:'a'.repeat(64),filename:'fixture.vrm',m
    const req=route.request(),url=new URL(req.url());let data;
    if(url.pathname==='/api/environment')data={defaults,game:'Fixture',blender:'Fixture',version:'test'};
    else if(url.pathname==='/api/jobs')data={jobs:[]};
+   else if(url.pathname==='/api/toon-shader-status')data={archive:'VRM2Skyrim-Toon-Shader-0.13.0.zip',available:true,release:'1.0.22',state:'installed'};
    else if(url.pathname==='/api/source')data=source;
    else if(url.pathname==='/api/catalog'){
     calls++;await gate;if(fail)return route.fulfill({status:400,json:{error:'Catalog fixture failure'}});

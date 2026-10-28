@@ -17,6 +17,15 @@ float V2SToonData(uint index)
     return TexGlowSampler.Load(int3(pixel, 0)).a;
 }
 
+// The conversion Community Shaders (Bottled Shaders 1.0.22) Lighting.hlsl
+// applies to a non-PBR base texture, so shade and effect colours stay in the
+// space of material.BaseColor. Without Linear Lighting it returns the colour
+// unchanged apart from the Effects 11 ColorPow, like Color::Diffuse in 1.0.4.
+float3 V2SToonDiffuse(float3 color)
+{
+    return Color::Albedo(ColorManagement::DiffuseToWorking(color));
+}
+
 #include "VRM2Skyrim/ToonEffects.hlsli"
 
 void V2SInitializeToon()
@@ -88,7 +97,7 @@ void EvaluateLighting(DirectContext context, MaterialProperties material, float3
         // Repeat gutters preserve bilinear UV seams without sampling metadata.
         shadeUv.y += 4.0 / size.y;
         if (V2SToonSourceDomain) shadeUv.x += 4.0 / size.x;
-        float3 shadeSurface = Color::Diffuse(TexGlowSampler.SampleGrad(SampGlowSampler,
+        float3 shadeSurface = V2SToonDiffuse(TexGlowSampler.SampleGrad(SampGlowSampler,
             shadeUv, uv_ddx * scale, uv_ddy * scale).rgb);
         float width = max(0.0001, 1.0 - V2SToon.toony);
         float band = saturate((dot(context.worldNormal, context.lightDir) + V2SToon.shift + width) / (2.0 * width));
@@ -98,8 +107,10 @@ void EvaluateLighting(DirectContext context, MaterialProperties material, float3
         lightingOutput.diffuse = V2SToonDirect(context.worldNormal, context.lightDir,
             context.lightColor, min(context.detailedShadow, context.softShadow), V2SToon);
     }
-    lightingOutput.diffuse *= Color::VanillaNormalization();
+    // Color::BRDFScale replaced Color::VanillaNormalization() (1/pi with
+    // Linear Lighting, otherwise 1) in the native lobes of 1.0.22.
+    lightingOutput.diffuse *= Color::BRDFScale;
     V2SToonDirectSum += lightingOutput.diffuse;
-    V2SToonUnshadedSum += max(context.lightColor, 0.0) * Color::VanillaNormalization();
-    V2SToonRimDirectSum += max(context.lightColor,0)*saturate(min(context.detailedShadow,context.softShadow))*Color::VanillaNormalization();
+    V2SToonUnshadedSum += max(context.lightColor, 0.0) * Color::BRDFScale;
+    V2SToonRimDirectSum += max(context.lightColor,0)*saturate(min(context.detailedShadow,context.softShadow))*Color::BRDFScale;
 }

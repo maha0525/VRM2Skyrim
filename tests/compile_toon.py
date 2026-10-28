@@ -20,7 +20,9 @@ def verify(shader_root, output, diagnostic=False):
     feature_flags = ('DYNAMIC_CUBEMAPS', 'IBL', 'LIGHT_LIMIT_FIX', 'SKYLIGHTING',
                      'SCREEN_SPACE_GI', 'SCREEN_SPACE_SHADOWS', 'WETNESS_EFFECTS',
                      'EXTENDED_MATERIALS', 'VOLUMETRIC_SHADOWS', 'EXP_HEIGHT_FOG',
-                     'VANILLA_FRESNEL', 'EXTENDED_TRANSLUCENCY', 'ISL')
+                     'VANILLA_FRESNEL', 'EXTENDED_TRANSLUCENCY', 'NIGHT_EYE')
+    # Bottled Shaders 1.0.22 selects Linear Lighting at compile time.
+    linear = ('ENABLE_LL',)
     variants = [
         ('forward', 'ps_5_0', ('PSHADER', 'SKINNED')),
         ('glow', 'ps_5_0', ('PSHADER', 'SKINNED', 'GLOWMAP')),
@@ -35,7 +37,14 @@ def verify(shader_root, output, diagnostic=False):
         ('unskinned-deferred', 'ps_5_0', ('PSHADER', 'DEFERRED')),
         ('unskinned-features-deferred', 'ps_5_0', ('PSHADER', 'DEFERRED')+feature_flags),
         ('skin', 'ps_5_0', ('PSHADER', 'SKINNED', 'FACEGEN_RGB_TINT', 'CS_SKIN')),
+        ('linear', 'ps_5_0', ('PSHADER', 'SKINNED')+linear),
+        ('linear-deferred', 'ps_5_0', ('PSHADER', 'SKINNED', 'DEFERRED')+linear),
+        ('linear-features-deferred', 'ps_5_0', ('PSHADER', 'SKINNED', 'DEFERRED')+feature_flags+linear),
+        ('effects11', 'ps_5_0', ('PSHADER', 'SKINNED', 'EFFECTS11')+linear),
         ('hair', 'ps_5_0', ('PSHADER', 'SKINNED', 'HAIR', 'CS_HAIR')),
+        ('hair-backlighting', 'ps_5_0', ('PSHADER', 'SKINNED', 'HAIR', 'CS_HAIR_SHADING', 'HAIR_BACKLIGHTING')),
+        ('fur-shells', 'ps_5_0', ('PSHADER', 'SKINNED', 'DEFERRED', 'FUR_SHELLS')),
+        ('fur-shells-depth', 'ps_5_0', ('PSHADER', 'SKINNED', 'FUR_SHELLS', 'FUR_SHELLS_DEPTH')),
         ('eye', 'ps_5_0', ('PSHADER', 'SKINNED', 'EYE')),
         ('pbr', 'ps_5_0', ('PSHADER', 'SKINNED', 'TRUE_PBR', 'DEFERRED')),
         ('landscape', 'ps_5_0', ('PSHADER', 'LANDSCAPE', 'DEFERRED')),
@@ -69,7 +78,8 @@ def verify(shader_root, output, diagnostic=False):
     composites = []
     for name, flags in [('ssgi', ('SSGI',)), ('plain', ()),
                         ('features', ('SSGI', 'DYNAMIC_CUBEMAPS', 'IBL', 'SKYLIGHTING')),
-                        ('reverse-z', ('SSGI', 'REVERSE_Z')), ('terrain', ('SSGI', 'TERRAIN_BLENDING'))]:
+                        ('reverse-z', ('SSGI', 'REVERSE_Z')), ('terrain', ('SSGI', 'TERRAIN_BLENDING')),
+                        ('linear', ('SSGI', 'ENABLE_LL')), ('linear-features', ('SSGI', 'DYNAMIC_CUBEMAPS', 'IBL', 'SKYLIGHTING', 'ENABLE_LL'))]:
         hashes = []
         for kind, folder in [('original', shader_root), ('toon', output/patched_folder/'Shaders')]:
             path = output/f'{kind}-composite-{name}.cso'

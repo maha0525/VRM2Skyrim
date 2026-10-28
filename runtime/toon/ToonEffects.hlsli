@@ -73,15 +73,16 @@ float3 V2SFinishEffects(float3 surface,float3 normalWS,float3 viewWS,float2 uv,f
     float3 rim=0;
     if ((V2SToonMapFlags & 2)!=0) {
         float2 matcapUv=float2(dot(right,n),dot(up,n))*.495+.5;
-        rim=Color::Diffuse(V2SSampleEffect(1,matcapUv));
+        rim=V2SToonDiffuse(V2SSampleEffect(1,matcapUv));
     }
     float fresnel=pow(saturate(1-dot(n,v)+V2SToonRimLift),max(V2SToonRimPower,1e-5));
-    rim+=Color::Diffuse(Color::LinearToSrgb(V2SToonRimColour))*fresnel;
-    if ((V2SToonMapFlags & 4)!=0) rim*=Color::SrgbToLinear(V2SSampleEffect(2,uv));
+    // Gamma 2.2 transfer, as Color::LinearToSrgb / SrgbToLinear in 1.0.4.
+    rim+=V2SToonDiffuse(TransferFunctions::LinearToGamma22(V2SToonRimColour))*fresnel;
+    if ((V2SToonMapFlags & 4)!=0) rim*=TransferFunctions::Gamma22ToLinear(V2SSampleEffect(2,uv));
     float3 available=max(V2SToonUnshadedSum,0)+max(equalizedAmbient,0);
     float exposure=rcp(max(1,max(available.r,max(available.g,available.b))));
     rim*=lerp(1.0.xxx,(V2SToonRimDirectSum+max(ambient,0))*exposure,V2SToonRimMix);
     surface+=rim;
-    if (V2SToonOutline) surface=Color::Diffuse(Color::LinearToSrgb(V2SToonOutlineColour))*lerp(1.0.xxx,surface,V2SToonOutlineMix);
+    if (V2SToonOutline) surface=V2SToonDiffuse(TransferFunctions::LinearToGamma22(V2SToonOutlineColour))*lerp(1.0.xxx,surface,V2SToonOutlineMix);
     return surface;
 }

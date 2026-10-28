@@ -14,7 +14,10 @@ import numpy as np
 
 from nif_materials import normalize_material_colors
 from settings import FollowerSettings, VERSION
-from toon import SIGNATURE, control_bytes, parameters_for, patch_composite, patch_lighting, prepare_materials, shader_package, validate_toon
+from toon import (BOTTLED_SHADERS_RELEASE, COMMUNITY_SHADERS_DLL_VERSION, LICENSE_FILES, LICENSE_FOLDER,
+                  MODIFIED_NOTICE, ROOT, SHIPPED_SHADER, SIGNATURE, SUPPORTED_COMPOSITE, SUPPORTED_LIGHTING,
+                  control_bytes, parameters_for, patch_composite, patch_lighting, prepare_materials, shader_package,
+                  shipped_adapter, validate_toon)
 
 NATIVE = os.name == 'nt' and (Path(__file__).resolve().parents[1]/'dependencies/io_scene_nifly/NiflyDLL.dll').is_file()
 
@@ -25,21 +28,39 @@ class ToonTests(unittest.TestCase):
         source = (b'#\tinclude "Common/LightingEval.hlsli"\n'
                   b'\tPS_OUTPUT psout;\n\tfloat4 color = 0;\n'
                   b'\tfloat3 worldNormal = normalize(mul(tbn, normal.xyz));\n'
-                  b'#\tif !defined(DEFERRED)\n\tcolor.xyz = Color::IrradianceToLinear(color.xyz);\n'
+                  b'#\tif !defined(DEFERRED)\n\tcolor.xyz = ColorManagement::SceneToLinear(color.xyz);\n'
                   b'\t// Stored as 1 - vertexAO so the cleared default (0) means no occlusion\n'
-                  b'\treturn psout;\n')
+                  b'#\tif defined(FUR_SHELLS_DEPTH)\n\tpsout = (PS_OUTPUT)0;\n#\tendif\n\n\treturn psout;\n')
         composite = (b'#include "Common/GBuffer.hlsli"\n'
                      b'\tfloat3 albedo = AlbedoTexture[dispatchID.xy];\n'
                      b'\tSampleSSGI(dispatchID.xy, normalWS, ssgiAo, ssgiIl);\n')
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            # The layout of the Bottled Shaders mod folder: Shaders/ and the
+            # licence folder SKSE/Plugins/CommunityShaders/Licenses beside it.
+            mod = Path(temp)
+            root = mod/'Shaders'
+            root.mkdir()
             (root/'Lighting.hlsl').write_bytes(source)
             (root/'DeferredCompositeCS.hlsl').write_bytes(composite)
-            (root/'LICENSE').write_text('Fixture upstream license', encoding='utf8')
+            licenses = mod/LICENSE_FOLDER
+            licenses.mkdir(parents=True)
+            for name in LICENSE_FILES:
+                (licenses/name).write_text('Fixture '+name, encoding='utf8')
+            (licenses/'LICENSE-SebH-MIT.txt').write_text('Not for these files', encoding='utf8')
             with patch('toon.SUPPORTED_LIGHTING', hashlib.sha256(source).hexdigest()), \
                     patch('toon.SUPPORTED_COMPOSITE', hashlib.sha256(composite).hexdigest()):
-                normal = shader_package(root, root/'output')
-                diagnostic = shader_package(root, root/'output', diagnostic=True)
+                normal = shader_package(root, mod/'output')
+                diagnostic = shader_package(root, mod/'output', diagnostic=True)
+                # An explicit licence folder is used instead of the derived one.
+                explicit = mod/'explicit'
+                explicit.mkdir()
+                for name in LICENSE_FILES:
+                    (explicit/name).write_text('Explicit '+name, encoding='utf8')
+                with zipfile.ZipFile(shader_package(root, mod/'explicit-output', licenses=explicit)) as package:
+                    self.assertEqual(package.read('Shaders/VRM2Skyrim/Licenses/COPYING.txt'), b'Explicit COPYING.txt')
+                (licenses/'EXCEPTIONS.md').unlink()
+                with self.assertRaisesRegex(ValueError, 'licence files not found.*EXCEPTIONS.md'):
+                    shader_package(root, mod/'missing-output')
             self.assertNotEqual(normal, diagnostic)
             for path, is_diagnostic in [(normal, False), (diagnostic, True)]:
                 with zipfile.ZipFile(path) as package:
@@ -54,16 +75,109 @@ class ToonTests(unittest.TestCase):
                     lighting = package.read('Shaders/Lighting.hlsl')
                     self.assertEqual(hashlib.sha256(lighting).hexdigest(), metadata['patched_lighting_sha256'])
                     self.assertIn(f'#define V2S_TOON_DIAGNOSTIC {int(is_diagnostic)}'.encode(), lighting)
-                    self.assertEqual(len(package.namelist()), 10)
+                    self.assertEqual(len(package.namelist()), 13)
                     self.assertNotIn(b'defined(SKINNED)', lighting)
+                    self.assertEqual(metadata['bottled_shaders_release'], '1.0.22')
                     self.assertEqual(hashlib.sha256(package.read('Shaders/DeferredCompositeCS.hlsl')).hexdigest(),
                                      metadata['patched_composite_sha256'])
-                    self.assertEqual(package.read('Shaders/VRM2Skyrim/CommunityShaders-LICENSE.txt'),
-                                     b'Fixture upstream license')
+                    for name in LICENSE_FILES:
+                        self.assertEqual(package.read('Shaders/VRM2Skyrim/Licenses/'+name), ('Fixture '+name).encode())
+                    self.assertFalse(any('SebH' in name or 'CommunityShaders-LICENSE' in name for name in package.namelist()))
                     self.assertIn('Shaders/VRM2Skyrim/VRM2Skyrim-LICENSE.txt', package.namelist())
+                    for name in ('Lighting.hlsl', 'DeferredCompositeCS.hlsl'):
+                        self.assertTrue(package.read('Shaders/'+name).startswith(MODIFIED_NOTICE.encode()), name)
+                    # The diagnostic colour precedes the fur-shell depth clear.
+                    self.assertLess(lighting.index(b'psout.Diffuse.xyz = float3(1, 0, 1);'),
+                                    lighting.index(b'psout = (PS_OUTPUT)0;'))
             (root/'Lighting.hlsl').write_bytes(source+b'changed')
             with self.assertRaisesRegex(ValueError, 'Unsupported Community'):
-                shader_package(root, root/'output')
+                shader_package(root, mod/'output', licenses=explicit)
+
+    def test_committed_shader_zip_is_the_patch_of_bottled_shaders_1_0_22(self):
+        # The originals are not in the repository. Removing exactly the lines
+        # the adapter inserts from the committed ZIP must give files whose
+        # SHA256 are the 1.0.22 originals, and patching those must give the ZIP.
+        with zipfile.ZipFile(SHIPPED_SHADER) as package:
+            lighting = package.read('Shaders/Lighting.hlsl').decode('utf8')
+            composite = package.read('Shaders/DeferredCompositeCS.hlsl').decode('utf8')
+        guard = '#if !defined(LANDSCAPE) && !defined(LODLANDSCAPE) && !defined(TRUE_PBR)'
+        self.assertTrue(lighting.startswith(MODIFIED_NOTICE))
+        kept, depth, closed = [], 0, False
+        for line in lighting[len(MODIFIED_NOTICE):].split('\n'):
+            if depth == 0 and line.startswith(guard):
+                depth = 1
+            elif depth:
+                depth += line.startswith('#if') - line.startswith('#endif')
+                closed = depth == 0
+            elif closed and line == '' and kept[-1] == '':
+                closed = False  # the separating blank line after the GBuffer marker
+            else:
+                kept.append(line)
+                closed = False
+        original_lighting = '\n'.join(kept).encode('utf8')
+        self.assertTrue(composite.startswith(MODIFIED_NOTICE))
+        original_composite = composite[len(MODIFIED_NOTICE):]
+        for inserted in ('#include "VRM2Skyrim/ToonDeferred.hlsli"\n',
+                         '\tconst bool v2sMarked = V2SIsMarkedMask(MasksTexture[dispatchID.xy]);\n',
+                         '    if (v2sMarked) {\n        ssgiAo = 1;\n        ssgiIl = 0;\n    }\n'):
+            self.assertEqual(original_composite.count(inserted), 1, inserted)
+            original_composite = original_composite.replace(inserted, '')
+        original_composite = original_composite.encode('utf8')
+        self.assertEqual(hashlib.sha256(original_lighting).hexdigest(), SUPPORTED_LIGHTING)
+        self.assertEqual(hashlib.sha256(original_composite).hexdigest(), SUPPORTED_COMPOSITE)
+        self.assertEqual(SUPPORTED_LIGHTING, '188f5016869dc3a2cf1460a56296b01ddf848b641e4c9e0c36d809a02c800b90')
+        self.assertEqual(SUPPORTED_COMPOSITE, '8abca54c90d1f2f732120ee8c9d43318d342cda74cc3b12e7206a5c5a0e0a7a9')
+        self.assertEqual(patch_lighting(original_lighting), lighting.encode('utf8'))
+        self.assertEqual(patch_composite(original_composite), composite.encode('utf8'))
+        diagnostic = patch_lighting(original_lighting, diagnostic=True)
+        self.assertEqual(diagnostic.replace(b'#define V2S_TOON_DIAGNOSTIC 1', b'#define V2S_TOON_DIAGNOSTIC 0'),
+                         lighting.encode('utf8'))
+        # Already patched files and the 1.0.4 forward anchor are refused.
+        for function, patched in ((patch_lighting, lighting), (patch_composite, composite)):
+            with self.assertRaisesRegex(ValueError, 'Unsupported Community'):
+                function(patched.encode('utf8'))
+        old = original_lighting.replace(b'ColorManagement::SceneToLinear(color.xyz);\n\tcolor.xyz += specularColor;',
+                                        b'Color::IrradianceToLinear(color.xyz);\n\tcolor.xyz += specularColor;')
+        self.assertNotEqual(old, original_lighting)
+        with patch('toon.SUPPORTED_LIGHTING', hashlib.sha256(old).hexdigest()), \
+                self.assertRaisesRegex(ValueError, 'anchor changed'):
+            patch_lighting(old)
+
+    def test_committed_shader_zip_matches_this_version_and_adapter(self):
+        # Users install this ZIP directly; a VERSION bump or HLSL change
+        # without rebuilding it with toon.py --shader-root must fail here.
+        self.assertEqual(SHIPPED_SHADER, ROOT/'toon-shader'/f'VRM2Skyrim-Toon-Shader-{VERSION}.zip')
+        self.assertTrue(SHIPPED_SHADER.is_file(), f'Rebuild {SHIPPED_SHADER.name} with toon.py --shader-root')
+        with zipfile.ZipFile(SHIPPED_SHADER) as package:
+            self.assertIsNone(package.testzip())
+            metadata = json.loads(package.read('Shaders/VRM2Skyrim/adapter.json'))
+            self.assertEqual(metadata['version'], VERSION)
+            self.assertIs(metadata['diagnostic'], False)
+            self.assertEqual(metadata['lighting_sha256'], SUPPORTED_LIGHTING)
+            self.assertEqual(metadata['composite_sha256'], SUPPORTED_COMPOSITE)
+            self.assertEqual(metadata['community_shaders_dll_version'], COMMUNITY_SHADERS_DLL_VERSION)
+            self.assertEqual(metadata['bottled_shaders_release'], BOTTLED_SHADERS_RELEASE)
+            self.assertEqual(metadata, shipped_adapter())
+            lighting = package.read('Shaders/Lighting.hlsl')
+            self.assertEqual(hashlib.sha256(lighting).hexdigest(), metadata['patched_lighting_sha256'])
+            self.assertIn(b'#define V2S_TOON_DIAGNOSTIC 0', lighting)
+            self.assertEqual(hashlib.sha256(package.read('Shaders/DeferredCompositeCS.hlsl')).hexdigest(),
+                             metadata['patched_composite_sha256'])
+            # GPL-3.0 with the Community Shaders exceptions for the patched files.
+            self.assertEqual(sorted(name for name in package.namelist() if '/Licenses/' in name),
+                             sorted('Shaders/VRM2Skyrim/Licenses/'+name for name in LICENSE_FILES))
+            self.assertIn(b'GNU GENERAL PUBLIC LICENSE', package.read('Shaders/VRM2Skyrim/Licenses/COPYING.txt'))
+            self.assertIn(b'Version 3', package.read('Shaders/VRM2Skyrim/Licenses/COPYING.txt'))
+            self.assertIn(b'Modding Exception', package.read('Shaders/VRM2Skyrim/Licenses/EXCEPTIONS.md'))
+            self.assertNotIn('Shaders/VRM2Skyrim/CommunityShaders-LICENSE.txt', package.namelist())
+            self.assertEqual(package.read('Shaders/VRM2Skyrim/VRM2Skyrim-LICENSE.txt'), (ROOT/'LICENSE').read_bytes())
+            self.assertEqual(package.read('Shaders/VRM2Skyrim/README.md'), (ROOT/'docs/TOON.md').read_bytes())
+            runtime = sorted((ROOT/'runtime/toon').glob('*.hlsli'))
+            self.assertTrue(runtime)
+            self.assertEqual(sorted(name for name in package.namelist() if name.endswith('.hlsli')),
+                             sorted(f'Shaders/VRM2Skyrim/{path.name}' for path in runtime))
+            for path in runtime:
+                self.assertEqual(package.read(f'Shaders/VRM2Skyrim/{path.name}'), path.read_bytes(), path.name)
 
     @unittest.skipUnless(NATIVE, 'Requires local Windows NiflyDLL')
     def test_split_materials_with_shared_texture_are_not_guessed_and_coverage_is_complete(self):
