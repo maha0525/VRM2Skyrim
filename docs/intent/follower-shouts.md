@@ -1,6 +1,6 @@
 # フォロワーのシャウト — ウィザードでシャウトを覚えさせる
 
-ステータス: 設計中 (2026-10-28 起草)。実装は未着手。
+ステータス: 実装中 (2026-10-28 起草、同日まはーが実装を承認)。
 
 ## 出てくる名前
 
@@ -22,6 +22,7 @@
 ## まはーが決めたこと (2026-10-28)
 
 - ウィザードでフォロワーにシャウトを覚えさせる方法を設計する。DLC のサイクロンも含める。
+- 候補は、下の「選べるシャウト」の 27 個を全部出す。戦闘で使うか分からないものも、注意書きを添えて出す (2026-10-28、実装の承認と同時に決定)。
 
 この節に無い項目は、すべて書き手 (メティス) の提案である。
 
@@ -39,7 +40,7 @@
 
 プレイヤーが覚えられるシャウトを、データから機械的に見分ける規則は見つからなかった。「三つの言葉が全部違い、仮の言葉や竜の言葉を含まず、説明文がある」で絞っても、狼男の遠吠え (`HowlWerewolfCallOfTheWild`)・試験用の `MQ105PhantomFormShout`・竜用の `DLC1DragonDrainVitalityShout02` などが混ざった。だから候補は、コードに書いた一覧 (プラグイン名と Editor ID の組) にする。
 
-一覧に入れるのは次の 27 個 (書き手の提案)。
+一覧に入れるのは次の 27 個 (まはーの決定)。
 
 - `Skyrim.esm` (20): `animalAllegianceShout`・`AuraWhisperShout`・`BecomeEtherealShout`・`CallDragonShout`・`CallofValorShout`・`ClearSkiesShout`・`DisarmShout`・`Dismay`・`DragonrendShout`・`ElementalFuryShout`・`FireBreathShout`・`FrostBreathShout`・`IceFormShout`・`KynesPeaceShout`・`MarkedforDeathShout`・`SlowTimeShout`・`StormCallShout`・`ThrowVoiceShout`・`UnrelentingForceShout`・`WhirlwindSprintShout`
 - `Dawnguard.esm` (3): `DLC1DrainVitalityShout`・`DLC1SoulTearShout`・`DLC1SummonDragonShout` (デュルネヴィール召喚。言葉が `DLC1DragonSummon1Dur`〜`3Viir` で説明文がある。似た名前の `DLC1VQ05DurnehviirShout` はクエスト用で、候補にしない)
