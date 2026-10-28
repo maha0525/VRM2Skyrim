@@ -55,18 +55,55 @@ def import_original_weapon(nif, textures):
     return attachment, meshes
 
 
-def attachment_node(skeleton_file, name):
+def global_matrix(node):
     from custom_skeleton import matrix
+    return Matrix(matrix(node.global_transform).tolist())
+
+
+def unscaled(m):
+    return Matrix.LocRotScale(m.translation, m.to_quaternion(), None)
+
+
+def attachment_node(skeleton_file, name):
     node = skeleton_file.nodes[name]
-    return node.parent.name, Matrix(matrix(node.global_transform).tolist())
+    return name, node.parent.name, global_matrix(node), global_matrix(node.parent)
+
+
+def add_attachment_bones(rig, skeleton_file, names):
+    """Add the skeleton's attachment nodes the mesh importer omits (they carry no weights),
+    so the animation import poses them."""
+    missing = [n for n in names if n in skeleton_file.nodes and n not in rig.data.bones]
+    if not missing:
+        return
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode='EDIT')
+    for name in missing:
+        node = skeleton_file.nodes[name]
+        parent = rig.data.edit_bones[node.parent.name]
+        # The parent bone's offset from its node carries the importer's bone-axis convention.
+        convention = unscaled(global_matrix(node.parent)).inverted() @ parent.matrix
+        bone = rig.data.edit_bones.new(name)
+        bone.tail = (0, 5, 0)
+        bone.matrix = unscaled(global_matrix(node)) @ convention
+        bone.parent, bone.use_deform = parent, False
+    bpy.ops.object.mode_set(mode='OBJECT')
 
 
 def attach(weapon, rig, node):
-    """Place a weapon on a skeleton node through its posed parent bone."""
-    bone_name, rest = node
-    bone = rig.pose.bones.get(bone_name)
-    posed = bone.matrix @ bone.bone.matrix_local.inverted() if bone else Matrix.Identity(4)
-    weapon.matrix_world = rig.matrix_world @ posed @ rest
+    """Place a weapon on a skeleton node: its parent's posed bone, then the node's local
+    transform, animated when the animation has a track for the node itself (vanilla HKX
+    animate WEAPON; staffright_idle rolls it ~180° about the weapon's length)."""
+    name, parent_name, rest, parent_rest = node
+    parent = rig.pose.bones[parent_name]
+    local = parent_rest.inverted() @ rest
+    action = rig.animation_data.action if rig.animation_data else None
+    if action and any(c.data_path.startswith(f'pose.bones["{name}"].') for c in action.fcurves):
+        # Track values are absolute locals in the parent node's (scaled) frame; the importer
+        # applied them to unscaled bones, so read them back in unscaled node frames.
+        bone = rig.pose.bones[name]
+        local = (parent.matrix @ parent.bone.matrix_local.inverted() @ unscaled(parent_rest)).inverted() @ (
+            bone.matrix @ bone.bone.matrix_local.inverted() @ unscaled(rest))
+    weapon.matrix_world = rig.matrix_world @ parent.matrix @ parent.bone.matrix_local.inverted() @ parent_rest @ local
     bpy.context.view_layer.update()
 
 
@@ -261,6 +298,11 @@ def main():
                     if modifier.type == "ARMATURE" and modifier.object == new_rig:
                         modifier.object = rig
             bpy.data.objects.remove(new_rig, do_unlink=True)
+    if args.animation in ("attack", "sheathed") or args.weapon_preview:
+        from custom_skeleton import NifFile
+        from weapon_nif import HOLD_NODE, SHEATH_NODES
+        with NifFile(str(skel)) as skeleton_file:
+            add_attachment_bones(rig, skeleton_file, [HOLD_NODE, *SHEATH_NODES.values()])
     meshes = [obj for obj in bpy.context.scene.objects if obj.type == "MESH" and not obj.hide_render
               and any(mod.type == "ARMATURE" and mod.object == rig for mod in obj.modifiers)]
     for obj in bpy.context.scene.objects:
@@ -318,9 +360,9 @@ def main():
         weapon_node = sheath_node if args.animation == "sheathed" else hold_node
         weapon_node_name = SHEATH_NODES[original_weapon['kind']] if args.animation == "sheathed" else HOLD_NODE
     elif args.animation == "attack":
-        from custom_skeleton import NifFile, matrix
+        from custom_skeleton import NifFile
         with NifFile(str(skel)) as skeleton_file:
-            weapon_rest = Matrix(matrix(skeleton_file.nodes["WEAPON"].global_transform).tolist())
+            weapon_node, weapon_node_name = attachment_node(skeleton_file, "WEAPON"), "WEAPON"
         existing = set(bpy.context.scene.objects)
         bpy.context.view_layer.objects.active = None
         bpy.ops.import_scene.pynifly(
@@ -342,9 +384,6 @@ def main():
                 obj.data.materials.append(metal)
             if obj.parent is None:
                 obj.parent = weapon
-        # The mesh importer omits unweighted attachment bones. Recover the
-        # actual attachment from the delivered skeleton, then pose its hand.
-        weapon_node, weapon_node_name = ("NPC R Hand [RHnd]", weapon_rest), "WEAPON"
     # Scale the whole hierarchy for lighting; keep imported bone bind transforms.
     physics_sample = None
     if args.physics_frame is not None:
@@ -414,7 +453,7 @@ def main():
         frame_camera(camera, meshes + weapon_meshes, (1.8, 4, .55))
         scene.render.filepath = str(previews / f"weapon-{name}-drawn.png")
         render_material_queues(scene)
-        hand = rig.pose.bones[hold_node[0]]
+        hand = rig.pose.bones[hold_node[1]]
         center = rig.matrix_world @ hand.head
         camera.location = center + Vector((.5, 1.0, .35))
         camera.data.ortho_scale = .32
@@ -453,7 +492,7 @@ def main():
         render_material_queues(scene)
     if weapon is not None and args.animation == "attack":
         scene.frame_set(10)
-        hand = rig.pose.bones[weapon_node[0]]
+        hand = rig.pose.bones[weapon_node[1]]
         attach(weapon, rig, weapon_node)
         center = rig.matrix_world @ hand.head
         camera.location = center + Vector((.5, 1.0, .35))
