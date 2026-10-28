@@ -79,7 +79,7 @@
         <section id="original-weapon-panel" class="original-weapon-panel" hidden>
           <h3>オリジナル武器</h3>
           <p class="hint">GLBファイルの武器を、このフォロワー専用の武器にします。攻撃力・音・付呪・持ち方は、元にする公式の武器から受け継ぎます。</p>
-          <label>武器のGLBファイル<input id="weapon-glb" type="file" accept=".glb"></label>
+          <input id="weapon-glb" type="file" accept=".glb" hidden><button type="button" id="weapon-glb-choose" class="secondary">武器のGLBファイルを選ぶ</button>
           <p id="weapon-glb-status" class="source-status" aria-live="polite">まだ選択されていません</p>
           <div id="weapon-glb-mismatch" class="note" role="alert" hidden><span id="weapon-glb-mismatch-text"></span><button type="button" id="weapon-glb-forget" class="secondary">設定のGLBを使わず、別のGLBにする</button></div>
           <p class="hint">公式の武器の三角形ポリゴン数は、およそ366〜2,066です。それよりずっと多い武器は、ゲームが重くなる場合があります。ポリゴン数は自動では減らしません。</p>

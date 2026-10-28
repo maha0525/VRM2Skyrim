@@ -445,7 +445,7 @@ Object.assign(englishUI, {
   "公式の武器": "Official weapon",
   "オリジナル武器": "Original weapon",
   "GLBファイルの武器を、このフォロワー専用の武器にします。攻撃力・音・付呪・持ち方は、元にする公式の武器から受け継ぎます。": "Turns the weapon in a GLB file into a weapon only this follower owns. Damage, sounds, enchantment and how it is held come from the official base weapon.",
-  "武器のGLBファイル": "Weapon GLB file",
+  "武器のGLBファイルを選ぶ": "Choose the weapon GLB file",
   "設定のGLBを使わず、別のGLBにする": "Use a different GLB instead of the one in the settings",
   "公式の武器の三角形ポリゴン数は、およそ366〜2,066です。それよりずっと多い武器は、ゲームが重くなる場合があります。ポリゴン数は自動では減らしません。": "Official weapons have about 366–2,066 triangles. A weapon with far more may slow the game down. The triangle count is not reduced automatically.",
   "武器の種類": "Weapon type",

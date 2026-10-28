@@ -141,6 +141,8 @@ function weaponSummary(settings){
 }
 function initWeapon(){
   $('weapon_mode').addEventListener('change',()=>{error();setupWeapon();});
+  // The native input is hidden: it is cleared after each upload, so its own label would say nothing is chosen.
+  $('weapon-glb-choose').onclick=()=>$('weapon-glb').click();
   $('weapon-glb').addEventListener('change',()=>uploadWeapon($('weapon-glb').files[0]));
   $('weapon-glb-forget').onclick=()=>{state.weaponExpected=null;state.weaponGlb=null;state.weaponMismatch='';$('weapon-glb').value='';markWeaponPreviewStale();renderWeaponGlb();$('weapon-glb').click();};
   $('weapon-kind').addEventListener('change',()=>{state.weaponBaseMissing='';fillWeaponBases('');markWeaponPreviewStale();updateWeaponBase();});
