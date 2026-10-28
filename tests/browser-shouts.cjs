@@ -59,7 +59,7 @@ const DAWNGUARD=[['DLC1DrainVitalityShout','008A62'],['DLC1SoulTearShout','007CB
   assert.match(await row(CYCLONE).locator('small').textContent(),new RegExp('DLC2CycloneShout · '+cyclone.descriptions.ja.slice(0,8)));
   assert.equal(await row(FORCE).locator('.dlc').count(),0);
   assert.equal(await page.locator('#shouts .dlc').count(),7);  // Dawnguard 3 + Dragonborn 4
-  assert.match(await page.locator('[data-step="3"]').textContent(),/戦闘でそのシャウトを使うかどうかは、ゲームで確かめていません/);
+  assert.doesNotMatch(await page.locator('[data-step="3"]').textContent(),/ゲームで確かめていません/);
   assert.equal(await page.locator('#shout-score').isHidden(),true);
   await row(CYCLONE).locator('input').check();await row(FORCE).locator('input').check();
   assert.equal(await page.locator('#shout-count').textContent(),'2');
@@ -90,7 +90,7 @@ const DAWNGUARD=[['DLC1DrainVitalityShout','008A62'],['DLC1SoulTearShout','007CB
   assert.match(await row(CYCLONE).locator('small').textContent(),/whirling cyclone/);
   assert.equal(await page.locator('#shout-score').textContent(),'Private combat style, Equipment Score Mult - Shout: 2.5');
   assert.match(await page.locator('[data-step="3"]').textContent(),/Optionally add perks, spells and shouts\./);
-  assert.match(await page.locator('[data-step="3"]').textContent(),/has not been checked in the game/);
+  assert.doesNotMatch(await page.locator('[data-step="3"]').textContent(),/has not been checked in the game/);
   await page.screenshot({path:path.join(fixture,'shouts-en.png'),fullPage:true});
   await page.locator('#language').selectOption('ja');
   await row(FORCE).locator('input').uncheck();await row(FORCE).locator('input').check();  // selection order: Cyclone, Force

@@ -2,7 +2,7 @@
 
 ## Shader ZIP shipped in the repository (2026-10-28)
 
-Status: 検証待ち (in-game check on Bottled Shaders 1.0.22 by the user).
+Status: 完了 (2026-10-28: the user installed the shipped ZIP on Bottled Shaders 1.0.22 and saw the toon shading applied in game).
 
 The user found the shader installation too hard: users had to locate the
 original Community Shaders mod folder and run `toon.py --shader-root` in

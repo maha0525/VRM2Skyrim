@@ -194,7 +194,7 @@ the same armor items may need a compatibility patch/load-order adjustment.
     if settings.shouts:
         from shouts import entry
         shout_help = ('Shouts: ' + ', '.join(f'{entry(key)[1]} ({key})' for key in settings.shouts)
-                      + '\nWhether the follower uses each shout in combat has not been verified in game.\n')
+                      + '\n')
     toon_help = ''
     if settings.toon_enabled:
         from toon import BOTTLED_SHADERS_RELEASE, SHIPPED_SHADER

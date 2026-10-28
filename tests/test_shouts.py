@@ -377,7 +377,7 @@ class ReadmeTests(unittest.TestCase):
             self.assertIn('Requires the official DLC/Creations: Dragonborn (Dragonborn.esm). Readme.esp does not load '
                           'without them. No other prerequisite MOD is required.', text)
             self.assertIn('Shouts: DLC2CycloneShout (Dragonborn.esm:0200C0), UnrelentingForceShout (Skyrim.esm:013E07)', text)
-            self.assertIn('has not been verified in game', text)
+            self.assertNotIn('has not been verified in game', text)
             skse = self.readme(Path(directory) / 'skse', ('Skyrim.esm', 'Update.esm', 'Dawnguard.esm'),
                                shouts=[SOUL_TEAR], physics_enabled=True)
             self.assertIn('launch through skse64_loader.exe.\nRequires the official DLC/Creations: Dawnguard (Dawnguard.esm).', skse)

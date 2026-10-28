@@ -192,7 +192,6 @@ const englishUI = {
   "Perkを検索": "Search Perks",
   "唱える魔法": "Spells",
   "シャウト": "Shouts",
-  "フォロワーが戦闘でそのシャウトを使うかどうかは、ゲームで確かめていません。": "Whether the follower actually uses a shout in combat has not been checked in the game.",
   "{0} が必要": "Requires {0}",
   "戦闘スタイル {0} のシャウトの優先度: {1}": "Combat style {0}, Equipment Score Mult - Shout: {1}",
   "専用の戦闘スタイルのシャウトの優先度: {0}": "Private combat style, Equipment Score Mult - Shout: {0}",
