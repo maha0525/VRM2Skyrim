@@ -4,6 +4,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from build_npc import configure_actor
 from environment import find_game
@@ -152,6 +153,38 @@ class SyntheticCatalogTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'DLC2BendWillShout'):
                 shouts.choices(catalog)
 
+    def test_creation_shout_with_an_outside_master_does_not_break_the_catalog(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = fake_data(directory)
+            # Creation masters: Skyrim.esm 0, Outside.esm 1 (not in the catalog), own records 2.
+            plugin_file(data / 'ccTestCreation.esl', ('Skyrim.esm', 'Outside.esm'), [
+                Record(b'ARMO', 0x02000801, 0, [(b'EDID', b'ccTestArmor\0')]),
+                Record(b'SHOU', 0x02000802, 0, [(b'EDID', b'ccTestShout\0'),
+                                                (b'SNAM', uint(0x01000123) + uint(0) + struct.pack('<f', 1.0))])])
+            catalog = OfficialCatalog(data)
+            self.assertIn('ccTestCreation.esl', catalog.plugins)
+            self.assertEqual(catalog.key(catalog.require('ccTestArmor', b'ARMO')), 'ccTestCreation.esl:000801')
+            self.assertFalse(any(catalog.source[r.form_id] == 'ccTestCreation.esl' for r in catalog.by_id.values()
+                                 if r.kind == b'SHOU'))
+            self.assertEqual(len(shouts.choices(catalog)), 27)
+            # An ARMO reference into the outside master still fails, as before.
+            plugin_file(data / 'ccTestCreation.esl', ('Skyrim.esm', 'Outside.esm'), [
+                Record(b'ARMO', 0x02000801, 0, [(b'EDID', b'ccTestArmor\0'), (b'RNAM', uint(0x01000123))])])
+            with self.assertRaisesRegex(ValueError, 'Unresolved master reference ccTestCreation.esl:01000123'):
+                OfficialCatalog(data)
+
+    def test_unavailable_rows_name_the_shout_and_missing_dlc(self):
+        with tempfile.TemporaryDirectory() as directory:
+            catalog = OfficialCatalog(fake_data(directory, ('Skyrim.esm', 'Update.esm', 'Dragonborn.esm')))
+            rows = shouts.unavailable(catalog)
+            self.assertEqual([r['editor_id'] for r in rows],
+                             ['DLC1DrainVitalityShout', 'DLC1SoulTearShout', 'DLC1SummonDragonShout'])
+            soul = rows[1]
+            self.assertEqual((soul['id'], soul['dlc'], soul['requires']),
+                             (SOUL_TEAR, 'Dawnguard', 'Dawnguard (Dawnguard.esm)'))
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(shouts.unavailable(OfficialCatalog(fake_data(directory))), [])
+
     def test_missing_dlc_is_an_error_naming_the_shout_and_dlc(self):
         with tempfile.TemporaryDirectory() as directory:
             data = fake_data(directory, ('Skyrim.esm', 'Update.esm', 'Dragonborn.esm'))
@@ -186,11 +219,14 @@ class SyntheticCatalogTests(unittest.TestCase):
 
 
 class OutputCheckTests(unittest.TestCase):
-    def write(self, directory, data, settings, splo, extras, spct=None, fitting=None):
-        """Write a follower ESP whose NPC carries the given internal SPLO values."""
+    def write(self, directory, data, settings, splo, extras, spct=None, fitting=None, sndd=0, npc=None, addons=None):
+        """Write a follower ESP whose NPC carries the given internal SPLO values.
+
+        sndd: internal SNDD of fitted addon 001000; addons: {local id: internal SNDD} replaces it."""
         output = Path(directory) / 'out'
         (output / 'mod').mkdir(parents=True)
-        (output / 'npc.json').write_text(json.dumps({'game_data': str(data)}))
+        if npc is not False:
+            (output / 'npc.json').write_text(json.dumps({'game_data': str(data)} if npc is None else npc))
         if fitting:
             (output / 'armor-fitting.json').write_text(json.dumps(fitting))
         fields = [(b'EDID', (settings.prefix + 'NPC\0').encode()), (b'RNAM', uint(0x01000804))]
@@ -198,7 +234,9 @@ class OutputCheckTests(unittest.TestCase):
             fields += [(b'SPCT', uint(len(splo) if spct is None else spct))] + [(b'SPLO', uint(v)) for v in splo]
         items = [Record(b'NPC_', 0x01000800, 0, fields)]
         if fitting:
-            items.append(Record(b'ARMA', 0x01001000, 0, [(b'RNAM', uint(0x01000804)), (b'SNDD', uint(0))]))
+            for local, value in ({0x1000: sndd} if addons is None else addons).items():
+                items.append(Record(b'ARMA', 0x01000000 | local, 0,
+                                    [(b'RNAM', uint(0x01000804)), *([(b'SNDD', uint(value))] if value is not None else [])]))
         cell = Record(b'CELL', 0x165A7, 0, [], ((b'CELL', 0), (struct.pack('<i', 7), 2), (struct.pack('<i', 1), 3)))
         actor = Record(b'ACHR', 0x01000806, 0x400, [(b'NAME', uint(0x01000800))])
         write_follower(output / 'mod' / settings.plugin_name, items, author='test', placement=(cell, actor),
@@ -244,14 +282,68 @@ class OutputCheckTests(unittest.TestCase):
             settings = fitted_settings(mod_id='Probe', fit_armors=['Dragonborn.esm:000AAA'], shouts=[SOUL_TEAR])
             fitting = profile(settings.plugin_name)
             refs = official_references(data, settings, fitting)
-            output, generated = self.write(directory, data, settings, refs['shouts'], refs['masters'], fitting=fitting)
+            output, generated = self.write(directory, data, settings, refs['shouts'], refs['masters'], fitting=fitting,
+                                           sndd=refs['sounds'][0x1000])
             validate_generated(generated, settings, output)
             # Footstep-only masters are no longer enough once the Dawnguard shout is selected.
             with tempfile.TemporaryDirectory(dir=directory) as case:
                 output, generated = self.write(case, data, settings, refs['shouts'], ['Update.esm', 'Dragonborn.esm'],
-                                               fitting=fitting)
+                                               fitting=fitting, sndd=refs['sounds'][0x1000])
                 with self.assertRaisesRegex(ValueError, 'masters'):
                     validate_generated(generated, settings, output)
+
+    def test_fitted_footsteps_are_read_back_through_the_written_masters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = fake_data(directory)
+            settings = fitted_settings(mod_id='Probe', fit_armors=['Dragonborn.esm:000AAA'], shouts=[SOUL_TEAR])
+            fitting = profile(settings.plugin_name)
+            refs = official_references(data, settings, fitting)
+            # Internal numbering: Update 2, Dawnguard 3, Dragonborn 4; on disk Dragonborn is master 3.
+            self.assertEqual(refs['sounds'], {0x1000: 4 << 24 | SOUND})
+            output, generated = self.write(directory, data, settings, refs['shouts'], refs['masters'],
+                                           fitting=fitting, sndd=refs['sounds'][0x1000])
+            arma = next(r for r in records(output / 'mod' / settings.plugin_name) if r.kind == b'ARMA')
+            self.assertEqual(arma.values(b'SNDD'), [uint(3 << 24 | SOUND)])
+            # The readback never uses official_references' sound numbering.
+            real = official_references
+            with patch('shouts.official_references', lambda *a, **k: {**real(*a, **k), 'sounds': {0x1000: 0}}):
+                validate_generated(generated, settings, output)
+            cases = (
+                (dict(sndd=0), r"footsteps \[\] differ from the source addon \[\('dragonborn.esm', 4660\)\]"),
+                (dict(sndd=None), 'differ from the source addon'),
+                (dict(sndd=3 << 24 | SOUND), r"\('dawnguard.esm', 4660\)"),  # Dawnguard instead of Dragonborn
+                (dict(sndd=4 << 24 | SOUND + 1), 'differ from the source addon'),
+                (dict(sndd=9 << 24 | SOUND), 'has no master'),
+                (dict(addons={}), 'missing from the written plugin'),
+                (dict(addons={0x1000: refs['sounds'][0x1000], 0x1001: refs['sounds'][0x1000]}), 'Addon 001001'),
+            )
+            for index, (values, message) in enumerate(cases):
+                with self.subTest(case=index), tempfile.TemporaryDirectory(dir=directory) as case:
+                    output, generated = self.write(case, data, settings, refs['shouts'], refs['masters'],
+                                                   fitting=fitting, **values)
+                    with self.assertRaisesRegex(ValueError, message):
+                        validate_generated(generated, settings, output)
+
+    def test_game_data_from_the_caller_or_npc_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = fake_data(directory)
+            settings = fitted_settings(mod_id='Probe', fit_armors=['Dragonborn.esm:000AAA'], shouts=[CYCLONE])
+            fitting = profile(settings.plugin_name)
+            refs = official_references(data, settings, fitting)
+            moved = str(Path(directory) / 'moved' / 'Data')
+            for index, npc in enumerate(({'plugin': 'Probe.esp'}, False, {'game_data': moved})):
+                with self.subTest(npc=npc), tempfile.TemporaryDirectory(dir=directory) as case:
+                    output, generated = self.write(case, data, settings, refs['shouts'], refs['masters'],
+                                                   fitting=fitting, sndd=refs['sounds'][0x1000], npc=npc)
+                    message = 'Skyrim.esm がありません' if index == 2 else r'npc\.json に game_data の記録が無い.*--game-data'
+                    with self.assertRaisesRegex(ValueError, message):
+                        validate_generated(generated, settings, output)
+                    validate_generated(generated, settings, output, data)  # the caller's folder wins
+            with tempfile.TemporaryDirectory(dir=directory) as case:
+                output, generated = self.write(case, data, settings, refs['shouts'], refs['masters'],
+                                               fitting=fitting, sndd=refs['sounds'][0x1000])
+                with self.assertRaisesRegex(ValueError, 'Skyrim.esm がありません'):
+                    validate_generated(generated, settings, output, moved)
 
     def test_no_shouts_without_fitting_keeps_skyrim_only(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -326,6 +418,13 @@ class GameShoutTests(unittest.TestCase):
         path = build_npc(self.data, output, settings, self.catalog)
         generated = follower_records(path)
         validate_private_records(generated, settings, output)
+        # An output built before npc.json recorded game_data: the caller's Data folder is used.
+        report = json.loads((output / 'npc.json').read_text(encoding='utf8'))
+        del report['game_data']
+        (output / 'npc.json').write_text(json.dumps(report), encoding='utf8')
+        with self.assertRaisesRegex(ValueError, 'game_data'):
+            validate_private_records(generated, settings, output)
+        validate_private_records(generated, settings, output, self.data)
         disk = list(records(path))
         return shouts.master_names(disk[0]), next(r for r in disk if r.kind == b'NPC_'), disk
 

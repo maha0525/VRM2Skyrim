@@ -22,7 +22,7 @@ function applySettings(settings) {
   if(settings.physics_stiffness!==undefined&&!Array.from($('physics_stiffness').options).some(o=>o.value===String(settings.physics_stiffness)))$('physics_stiffness').add(new Option(tr("指定値 ")+settings.physics_stiffness,String(settings.physics_stiffness)));
   for(const [key,value] of Object.entries(settings)) {const input=$(key); if(!input)continue; if(input.type==='checkbox') input.checked=value; else input.value=String(value);}
   state.styleDirty=false;loadCombatStyle(settings);
-  state.perks=new Map((settings.perks||[]).map(item=>[item.editor_id,item.rank])); state.spells=new Set(settings.spells||[]); state.shouts=new Set(settings.shouts||[]);
+  state.perks=new Map((settings.perks||[]).map(item=>[item.editor_id,item.rank])); state.spells=new Set(settings.spells||[]); state.shouts=new Set(settings.shouts||[]); normalizeShouts();
   state.fitArmors=new Set(settings.fit_armors||[]); $('fit-enabled').checked=state.fitArmors.size>0||settings.fit_mode==='all_official';
   state.headOverrides=structuredClone(settings.head_overrides||{});
   $('head-hide-face').checked=settings.head_defaults?.hide_face??false; $('head-hide-hair').checked=settings.head_defaults?.hide_hair??true; setupFitting();
@@ -108,7 +108,7 @@ function fillSelect(id, choices, allowNone=false) {
   $(id).value=selected;
 }
 function setupChoices(choices, localizing=false) {
-  state.choices=choices;
+  state.choices=choices;normalizeShouts();
   for(const kind of ['perk','spell']){
     const selector=$(kind+'-category'),previous=selector.value;
     const available=new Set(choices[kind==='perk'?'perks':'spells'].flatMap(item=>item.categories||['other']));
@@ -215,14 +215,41 @@ function renderChoiceList(kind, term) {
   }
 }
 function renderChoices(){renderChoiceList('perks',$('perk-search').value);renderChoiceList('spells',$('spell-search').value);$('perk-count').textContent=state.perks.size;$('spell-count').textContent=state.spells.size;selectedTags('perks');selectedTags('spells');renderShouts();}
+function shoutKey(id){
+  // settings.py and the server compare shout keys case-insensitively; the wizard keeps the catalog's spelling.
+  const known=[...(state.choices?.shouts||[]),...(state.choices?.unavailable_shouts||[])],folded=String(id).toLowerCase();
+  return known.find(item=>item.id.toLowerCase()===folded)?.id??id;
+}
+function normalizeShouts(){state.shouts=new Set([...state.shouts].map(shoutKey));}
+function shoutName(id){
+  const item=state.choices?.shouts?.find(item=>item.id===id);
+  return item?recordLabel(item):state.choices?.unavailable_shouts?.find(item=>item.id===id)?.editor_id??id;
+}
 function shoutScore(){
   // The custom style's edited value wins; otherwise the selected official style's value.
-  if($('combat_style_mode').value==='custom')return {custom:true,value:state.styleCustom?.values?.shout_score};
-  const style=state.choices?.styles.find(item=>item.id===$('combat_style').value);
-  return {custom:false,id:$('combat_style').value,value:style?.config?.values?.shout_score};
+  // Missing, empty or non-numeric values read as null (shown as "no value").
+  const number=value=>{const result=typeof value==='number'?value:typeof value==='string'&&value.trim()?Number(value):NaN;return Number.isFinite(result)?result:null;};
+  if($('combat_style_mode').value==='custom')return {custom:true,value:number(state.styleCustom?.values?.shout_score)};
+  const id=$('combat_style').value,styles=state.choices?.styles||[];
+  const style=styles.find(item=>item.id===id)||styles.find(item=>String(item.id).toLowerCase()===id.toLowerCase());
+  return {custom:false,id:style?.id??id,value:number(style?.config?.values?.shout_score)};
 }
 function renderShouts(){
   const list=$('shouts');list.replaceChildren();
+  // Selected shouts the catalog cannot offer (DLC not installed, or an unknown key from a settings file)
+  // stay visible here so they can be removed; conversion refuses them.
+  const offered=new Set((state.choices?.shouts||[]).map(item=>item.id));
+  if(state.choices)for(const id of state.shouts){
+    if(offered.has(id))continue;
+    const missing=(state.choices.unavailable_shouts||[]).find(item=>item.id===id);
+    const row=document.createElement('div');row.className='choice unavailable';row.dataset.shoutKey=id;
+    const title=document.createElement('strong');title.textContent=missing?missing.editor_id:id;row.append(title);
+    if(missing?.dlc){const dlc=document.createElement('span');dlc.className='dlc';dlc.dataset.dlc=missing.dlc;dlc.textContent=tr('{0} が必要',missing.dlc);row.append(dlc);}
+    const desc=document.createElement('small');
+    desc.textContent=missing?id+' · '+tr('{0} がインストールされていないので、このシャウトは使えません。外してください。',missing.requires):tr('このシャウトは選べません: {0}',id)+' '+tr('外してください。');
+    const remove=document.createElement('button');remove.type='button';remove.textContent=tr('外す');remove.onclick=()=>{state.shouts.delete(id);renderShouts();};
+    row.append(desc,remove);list.append(row);
+  }
   for(const item of state.choices?.shouts||[]){
     const label=document.createElement('label');label.className='choice';
     const check=document.createElement('input');check.type='checkbox';check.dataset.recordId=item.id;check.checked=state.shouts.has(item.id);
@@ -234,8 +261,8 @@ function renderShouts(){
   }
   $('shout-count').textContent=state.shouts.size;
   const tags=$('selected-shouts');tags.replaceChildren();
-  for(const id of state.shouts){const item=state.choices?.shouts?.find(item=>item.id===id);const button=document.createElement('button');button.type='button';button.textContent=(item?recordLabel(item):id)+' ×';button.onclick=()=>{state.shouts.delete(id);renderShouts();};tags.append(button);}
-  const score=shoutScore(),known=Number.isFinite(score.value),shown=state.shouts.size>0;
+  for(const id of state.shouts){const button=document.createElement('button');button.type='button';button.textContent=shoutName(id)+' ×';button.onclick=()=>{state.shouts.delete(id);renderShouts();};tags.append(button);}
+  const score=shoutScore(),known=score.value!==null,shown=state.shouts.size>0;
   $('shout-score').hidden=!shown;$('shout-score-warning').hidden=!shown||score.value!==0;
   const value=known?String(Number(score.value.toFixed(4))):'';
   $('shout-score').textContent=!known?tr('戦闘スタイルにシャウトの優先度の値がありません。ゲーム既定の値を使います。'):score.custom?tr('専用の戦闘スタイルのシャウトの優先度: {0}',value):tr('戦闘スタイル {0} のシャウトの優先度: {1}',score.id,value);
@@ -284,7 +311,7 @@ function summarize(settings) {
   const voice=state.choices.voices.find(item=>item.id===settings.voice);
   const rows=[[tr("アバター"),state.source.filename],[tr("NPC名"),settings.npc_name],['MOD',settings.mod_name+' / '+settings.mod_id+'.esp'],[tr("ボイス"),recordLabel(voice)||settings.voice],[tr("戦闘"),settings.combat_class+' / '+settings.combat_style],[tr("レベル"),settings.level_mode==='player'?tr("プレイヤー×{0}（{1}〜{2}）", settings.level_multiplier, settings.min_level, settings.max_level):String(settings.level)],[tr("生存"),{'protected':tr("保護"),'essential':tr("不死"),'mortal':tr("通常")}[settings.protection]],[tr("体力 / マジカ / スタミナ"),`${settings.health} / ${settings.magicka} / ${settings.stamina}${settings.auto_calculate?tr("（自動成長の補正に使用）"):''}`],[tr("Perk / 魔法"),`${settings.perks.length} / ${settings.spells.length}`],[tr("初期配置"),tr("ホワイトラン · キナレス聖堂")]];
   rows.push([tr("衣服"),settings.armor_support?tr("{0}品を着脱可能（初期装備{1}品）", settings.appearance_parts.garments.length, settings.appearance_parts.garments.filter(g=>g.equipped).length):tr("元の衣服を着脱しない")]);
-  rows.push([tr("シャウト"),settings.shouts.length?settings.shouts.map(id=>{const item=state.choices.shouts?.find(item=>item.id===id);return item?recordLabel(item):id;}).join(i18n.language==='en'?', ':'、'):tr("なし")]);
+  rows.push([tr("シャウト"),settings.shouts.length?settings.shouts.map(shoutName).join(i18n.language==='en'?', ':'、'):tr("なし")]);
   rows.push([tr("トゥーン描画"),settings.toon_enabled?tr("有効"):tr("無効")]);
   rows.push([tr("開始武器"),weaponSummary(settings)]);
   if(settings.combat_style_mode==='custom')rows.push([tr('専用戦闘スタイル'),tr('コピー元: {0}',settings.combat_style_custom.source)]);
@@ -300,7 +327,7 @@ async function next() {
   state.navigationLoading=true;$('next').disabled=true;
   try {
     if(state.step===0){if(!state.source)throw new Error(tr("VRMファイルを選択してください"));const result=await loadCatalog();$('checks').replaceChildren();for(const [key,value]of Object.entries(result.checks)){const badge=document.createElement('span');badge.textContent=key+(value?' ✓':tr(" 未準備"));badge.className=value?'':'missing';$('checks').append(badge);}if(Object.values(result.checks).some(value=>!value))throw new Error(tr("環境が未準備です。パスを確認し、初回はSetup.cmdを実行してください。"));}
-    const result=await api('/api/validate',{source_id:state.source.source_id,game:$('game').value,settings:collect(),weapon_id:state.weaponGlb?.weapon_id,check_weapon:state.step>=2});if(state.step===3)summarize(result.settings);
+    const result=await api('/api/validate',{source_id:state.source.source_id,game:$('game').value,settings:collect(),weapon_id:state.weaponGlb?.weapon_id,check_weapon:state.step>=2,check_shouts:state.step>=3});if(state.step===3)summarize(result.settings);
     showStep(state.step+1);
   }catch(e){error(e.message);}finally{state.navigationLoading=false;renderCatalogStatus();}
 }

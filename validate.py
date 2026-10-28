@@ -28,7 +28,8 @@ sys.path.insert(0, str(ROOT / "dependencies/io_scene_nifly"))
 from pyn.pynifly import NifFile  # noqa: E402 - isolated native-library import
 
 
-def validate(output, skeleton=None):
+def validate(output, skeleton=None, game_data=None):
+    """game_data: the game's Data folder; without it the shout/footstep check uses npc.json's record."""
     output = Path(output).resolve()
     mod = output / "mod"
     settings = load_settings(output)
@@ -154,7 +155,7 @@ def validate(output, skeleton=None):
         with NifFile(str(path)) as native_head:
             if native_head.game != 'SKYRIMSE' or native_head.root.blockname != 'BSFadeNode' or native_head.shapes:
                 raise ValueError('Native head/FaceGen contains renderable geometry or the wrong root')
-    local_ids = validate_private_records(generated, settings, output)
+    local_ids = validate_private_records(generated, settings, output, game_data)
     by_name = {record.editor_id: record for record in generated}
     npc = by_name[settings.prefix + 'NPC']
     race = by_name[settings.prefix + "Race"]
@@ -336,5 +337,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("output", type=Path)
     parser.add_argument("--skeleton", type=Path)
+    parser.add_argument("--game-data", type=Path, help="Skyrim Data folder (default: the one npc.json recorded)")
     args = parser.parse_args()
-    validate(args.output, args.skeleton)
+    validate(args.output, args.skeleton, args.game_data)

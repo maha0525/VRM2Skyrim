@@ -359,7 +359,7 @@ def convert(source, game, blender, output, settings, progress=None, weapon_glb=N
         stage("出力の読み戻し検査")
         from validate import validate
         from verify_animation import verify_animation
-        validation = validate(output)
+        validation = validate(output, game_data=Path(game) / "Data")
         if validation["total_triangles"] != report["total_triangles"]:
             raise RuntimeError("Conversion did not preserve all source triangles")
         verify_animation(output)

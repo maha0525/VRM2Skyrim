@@ -104,8 +104,13 @@ class OfficialCatalog:
         self.tables = {}
         self.master_lists = {}
         self.archives = {}
+        from shouts import SHOUTS
+        # SHOU only from the plugins that own allowlisted shouts: a Creation's SHOU may reference a
+        # master outside this catalog and must not break armor loading.
+        shout_plugins = {plugin.casefold() for plugin, _, _ in SHOUTS}
         for name in self.plugins:
-            loaded = list(records(self.data / name, {b'TES4', b'ARMO', b'ARMA', b'TXST', b'SHOU'}))
+            kinds = {b'TES4', b'ARMO', b'ARMA', b'TXST'} | ({b'SHOU'} if name.casefold() in shout_plugins else set())
+            loaded = list(records(self.data / name, kinds))
             header = next(r for r in loaded if r.kind == b'TES4')
             masters = [b.rstrip(b'\0').decode('utf8') for b in header.values(b'MAST')] + [name]
             self.master_lists[name] = masters[:-1]

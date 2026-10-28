@@ -97,6 +97,13 @@ def choices(catalog):
     return result
 
 
+def unavailable(catalog):
+    """Allowlisted shouts whose plugin is not installed, so the wizard can show and remove them."""
+    return [{'id': key(plugin, local), 'editor_id': editor_id, 'plugin': plugin, 'dlc': DLC_NAMES.get(plugin),
+             'requires': dlc_label(plugin)}
+            for plugin, editor_id, local in SHOUTS if plugin not in catalog.plugins]
+
+
 def official_references(game_data, settings, fitting=None, catalog=None):
     """Combined follower masters (footsteps + shouts) and references numbered against them.
 
@@ -118,8 +125,71 @@ def master_names(header):
     return [value.rstrip(b'\0').decode('utf8') for value in header.values(b'MAST')]
 
 
-def validate_generated(generated, settings, output):
-    """Read the written ESP back: SPLO shouts resolve to the selected SHOU in their master file."""
+def game_folder(output, game_data=None):
+    """Game Data folder for the output check: the caller's, else the one npc.json recorded at build time."""
+    if game_data is None:
+        npc = Path(output) / 'npc.json'
+        game_data = json.loads(npc.read_text(encoding='utf8')).get('game_data') if npc.is_file() else None
+        if not game_data:
+            raise ValueError('シャウトと装備の足音の検査には、ゲームの Data フォルダが必要です。'
+                             f'{npc} に game_data の記録が無いので、Data フォルダを指定して検査してください'
+                             '(validate.py は --game-data)。')
+    data = Path(game_data)
+    if not (data / 'Skyrim.esm').is_file():
+        raise ValueError(f'ゲームの Data フォルダに Skyrim.esm がありません: {data}。'
+                         'ゲームを別の場所へ移した場合は、今の Data フォルダを指定して検査してください。')
+    return data
+
+
+def footstep_sounds(addon, plugin_of):
+    """(owner plugin, local id) of each non-zero ARMA SNDD; plugin_of maps the index byte to a file name."""
+    result = set()
+    for blob in addon.values(b'SNDD'):
+        value = struct.unpack('<I', blob)[0]
+        if value:
+            result.add((plugin_of(value).casefold(), value & 0xFFFFFF))
+    return result
+
+
+def validate_footsteps(disk, masters, fitting, catalog):
+    """Written fitted ARMA SNDD, read through the ESP's own MAST list, names the source addon's sound.
+
+    Independent of official_references: expected values come from the source addon in the catalog,
+    observed values only from the bytes and master list of the written plugin."""
+    expected = {}
+    for item in fitting['equipment']:
+        sounds = expected.setdefault(item['addon_local_id'], set())
+        if item.get('source_addon_key'):
+            source = catalog.require(item['source_addon_key'], b'ARMA')
+            sounds |= footstep_sounds(source, lambda v: catalog.plugins[v >> 24])
+    own, checked, fitting_ids = len(masters), {}, set(expected)
+
+    def master(value):
+        if value >> 24 >= own:
+            raise ValueError(f'Fitted addon footstep {value:08X} has no master (masters: {own})')
+        return masters[value >> 24]
+    for addon in disk:
+        if addon.kind != b'ARMA' or addon.form_id >> 24 != own:
+            continue
+        local = addon.form_id & 0xFFFFFF
+        observed = footstep_sounds(addon, master)
+        wanted = expected.pop(local, set())
+        if len(wanted) > 1:
+            raise ValueError(f'Fitted addon {local:06X} has conflicting source footstep sounds')
+        if observed != wanted:
+            raise ValueError(f'Addon {local:06X} footsteps {sorted(observed)} differ from the '
+                             f'source addon {sorted(wanted)}')
+        if local in fitting_ids:
+            checked[local] = observed
+    if expected:
+        raise ValueError(f'Fitted addons missing from the written plugin: {[f"{n:06X}" for n in expected]}')
+    logging.info('Validated fitted footsteps against source addons: %s',
+                 {f'{n:06X}': sorted(s) for n, s in checked.items()})
+
+
+def validate_generated(generated, settings, output, game_data=None):
+    """Read the written ESP back: SPLO shouts resolve to the selected SHOU in their master file,
+    and fitted ARMA footsteps to the source addon's sound."""
     output = Path(output)
     npc = next(r for r in generated if r.kind == b'NPC_' and r.editor_id == settings.prefix + 'NPC')
     spells = npc.values(b'SPLO')
@@ -133,14 +203,19 @@ def validate_generated(generated, settings, output):
         if header is not None and master_names(header) != ['Skyrim.esm']:
             raise ValueError('Follower without shouts or fitting must use only Skyrim.esm as master')
         return
-    report = json.loads((output / 'npc.json').read_text(encoding='utf8'))
-    data = Path(report['game_data'])
+    data = game_folder(output, game_data)
     fitting = json.loads((output / 'armor-fitting.json').read_text()) if settings.fitting_enabled else None
-    expected = ['Skyrim.esm', *official_references(data, settings, fitting)['masters']]
-    disk = list(records(output / 'mod' / settings.plugin_name, {b'TES4', b'NPC_'}))
+    from official_catalog import OfficialCatalog
+    catalog = OfficialCatalog(data)
+    # Recomputed with the same official_references the build used: catches a stale or edited
+    # header, not an error in official_references itself. The SNDD/SPLO readbacks below are independent.
+    expected = ['Skyrim.esm', *official_references(data, settings, fitting, catalog)['masters']]
+    disk = list(records(output / 'mod' / settings.plugin_name, {b'TES4', b'NPC_', b'ARMA'}))
     masters = master_names(disk[0])
     if masters != expected:
         raise ValueError(f'Follower masters {masters} differ from the computed {expected}')
+    if fitting:
+        validate_footsteps(disk, masters, fitting, catalog)
     disk_npc = next(r for r in disk if r.kind == b'NPC_' and r.editor_id == settings.prefix + 'NPC')
     values = [struct.unpack('<I', v)[0] for v in disk_npc.values(b'SPLO')]
     if any(v >> 24 for v in values[:len(settings.spells)]):

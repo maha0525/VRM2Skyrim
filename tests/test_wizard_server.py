@@ -341,6 +341,26 @@ class WeaponServerTests(unittest.TestCase):
             official = {**settings, 'weapon_mode': 'official'}
             self.assertEqual(self.post('/api/validate', {**request, 'settings': official})[0], 200)
 
+    def test_validation_checks_shouts_only_when_asked(self):
+        # STEP 01-03 send check_shouts=false so a settings file with a shout whose DLC is missing
+        # can still reach STEP 04, where the shout is shown and removable.
+        def validate_settings(settings):
+            if settings.shouts:
+                raise ValueError('シャウト DLC1SoulTearShout (Dawnguard.esm:007CB6) には Dawnguard (Dawnguard.esm) が必要ですが、インストールされていません。')
+        catalog = SimpleNamespace(validate_settings=validate_settings)
+        request = {'source_id': 'avatar', 'game': str(self.root),
+                   'settings': asdict(FollowerSettings(mod_name='Probe', shouts=['Dawnguard.esm:007CB6']))}
+        with patch.object(self.app, 'catalog', return_value=catalog):
+            status, result = self.post('/api/validate', {**request, 'check_shouts': False})
+            self.assertEqual((status, result['settings']['shouts']), (200, []))
+            malformed = {**request, 'settings': {**request['settings'], 'shouts': ['Skyrim.esm:13E07']}, 'check_shouts': False}
+            self.assertEqual(self.post('/api/validate', malformed)[0], 200)
+            for flags in ({}, {'check_shouts': True}):
+                with self.subTest(flags=flags):
+                    status, result = self.post('/api/validate', {**request, **flags})
+                    self.assertEqual(status, 400)
+                    self.assertIn('DLC1SoulTearShout', result['error'])
+
     def test_conversion_receives_the_glb_path_but_settings_do_not(self):
         _, uploaded = self.upload()
         captured = {}

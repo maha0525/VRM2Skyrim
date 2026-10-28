@@ -519,7 +519,11 @@ def handler_for(app):
                     catalog = app.catalog(request["game"])
                     return self.reply({"choices": catalog.json_choices(request.get('sex', 'female')), "checks": doctor(request["game"], request["blender"])})
                 if self.path == "/api/validate":
-                    settings = FollowerSettings.from_dict(request["settings"])
+                    # Shouts are chosen (and removable) in STEP 04; earlier steps skip them (check_shouts).
+                    values = request["settings"]
+                    if not request.get('check_shouts', True):
+                        values = {**values, 'shouts': []}
+                    settings = FollowerSettings.from_dict(values)
                     if settings.armor_support:
                         source_id = request.get("source_id")
                         if source_id not in app.source_reports:

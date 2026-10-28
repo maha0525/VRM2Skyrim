@@ -10,8 +10,10 @@ from equipment_runtime import PROPERTIES
 from combat_style import validate_generated_style
 
 
-def validate_private_records(generated, settings, output):
-    """Check the same generated plugin contract used by the final output gate."""
+def validate_private_records(generated, settings, output, game_data=None):
+    """Check the same generated plugin contract used by the final output gate.
+
+    game_data: the game's Data folder; without it the shout/footstep check uses npc.json's record."""
     output = Path(output)
     local_ids = {
         record.form_id for record in generated if record.kind not in (b"TES4", b"CELL")
@@ -53,7 +55,7 @@ def validate_private_records(generated, settings, output):
                         raise ValueError("Dangling local record reference")
     validate_generated_style(generated, settings)
     from shouts import validate_generated
-    validate_generated(generated, settings, output)
+    validate_generated(generated, settings, output, game_data)
     from weapon import validate_weapon_records
     npc_path = output / 'npc.json'
     report = json.loads(npc_path.read_text(encoding='utf8')).get('original_weapon') if npc_path.is_file() else None

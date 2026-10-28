@@ -4,7 +4,9 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const root=path.resolve(__dirname,'..'),fixture=path.join(root,'build/ui-roles');
 const defaults=JSON.parse(fs.readFileSync(path.join(fixture,'defaults.json'),'utf8'));
 const choices=JSON.parse(fs.readFileSync(path.join(fixture,'roles.json'),'utf8'));
-const CYCLONE='Dragonborn.esm:0200C0',FORCE='Skyrim.esm:013E07';
+const CYCLONE='Dragonborn.esm:0200C0',FORCE='Skyrim.esm:013E07',SOUL='Dawnguard.esm:007CB6',UNKNOWN='Skyrim.esm:000ABC';
+// Game data without Dawnguard: its shouts are not offered and come as unavailable_shouts (shouts.unavailable).
+const DAWNGUARD=[['DLC1DrainVitalityShout','008A62'],['DLC1SoulTearShout','007CB6'],['DLC1SummonDragonShout','0030D2']];
 (async()=>{
  assert.equal(choices.shouts?.length,27,'Regenerate the fixture: python tests/browser-roles-fixture.py');
  const cyclone=choices.shouts.find(item=>item.id===CYCLONE),force=choices.shouts.find(item=>item.id===FORCE);
@@ -12,14 +14,24 @@ const CYCLONE='Dragonborn.esm:0200C0',FORCE='Skyrim.esm:013E07';
  const browser=await chromium.launch({headless:true,channel:'chrome'});
  try{
   const page=await browser.newPage({locale:'ja-JP',acceptDownloads:true,viewport:{width:1440,height:1100}});
-  const errors=[],validated=[];page.on('pageerror',e=>errors.push(e.message));
+  const errors=[],validated=[],flags=[];page.on('pageerror',e=>errors.push(e.message));
+  const noDawnguard={...choices,shouts:choices.shouts.filter(item=>item.plugin!=='Dawnguard.esm'),
+   unavailable_shouts:DAWNGUARD.map(([editor_id,local])=>({id:'Dawnguard.esm:'+local,editor_id,plugin:'Dawnguard.esm',dlc:'Dawnguard',requires:'Dawnguard (Dawnguard.esm)'}))};
+  let catalogChoices=choices;
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url());let data;
    if(url.pathname==='/api/environment')data={defaults,game:'Read-only fixture',blender:'Fixture Blender',version:'test'};
    else if(url.pathname==='/api/jobs')data={jobs:[]};
    else if(url.pathname==='/api/source')data={source_id:'fixture',sha256:'fixture',filename:'fixture.vrm',mesh_count:1,triangles:1,suggested_name:'Test',parts:[]};
-   else if(url.pathname==='/api/catalog')data={checks:{ready:true},choices:{...choices,armors:[],equipment_plugins:[]}};
-   else if(url.pathname==='/api/validate'){const settings=request.postDataJSON().settings;validated.push(settings);data={settings};}
+   else if(url.pathname==='/api/catalog')data={checks:{ready:true},choices:{...catalogChoices,armors:[],equipment_plugins:[]}};
+   else if(url.pathname==='/api/validate'){
+    // Like wizard.py + GameCatalog.validate_settings: shouts are checked unless check_shouts is false.
+    const body=request.postDataJSON(),settings=body.settings;validated.push(settings);const check=body.check_shouts??true;flags.push(body.check_shouts);
+    const bad=check?settings.shouts.find(id=>!catalogChoices.shouts.some(item=>item.id===id)):undefined;
+    const missing=catalogChoices.unavailable_shouts?.find(item=>item.id===bad);
+    if(bad)return route.fulfill({status:400,json:{error:missing?`シャウト ${missing.editor_id} (${bad}) には ${missing.requires} が必要ですが、インストールされていません。`:`このシャウトは選べません: ${bad}`}});
+    data={settings:check?settings:{...settings,shouts:[]}};
+   }
    if(data!==undefined)return route.fulfill({json:data});
    const name=url.pathname==='/'?'index.html':url.pathname.slice(1),file=path.join(root,'web',name);
    if(!fs.existsSync(file))return route.fulfill({status:404,body:'not found'});
@@ -101,9 +113,71 @@ const CYCLONE='Dragonborn.esm:0200C0',FORCE='Skyrim.esm:013E07';
   await start(legacy);await to(3);
   assert.deepEqual(await checked(),[]);
   assert.deepEqual(validated.at(-1).shouts,[]);
+  // A settings file with a shout whose DLC is not installed (and an unknown key) reaches STEP 04,
+  // where both are shown with what is missing and can be removed; "next" refuses them until then.
+  catalogChoices=noDawnguard;flags.length=0;
+  await start({...defaults,shouts:['dawnguard.esm:007cb6',UNKNOWN,CYCLONE]});await to(3);
+  assert.deepEqual(flags,[false,false,false]);
+  const missingRows=page.locator('#shouts .choice.unavailable');
+  assert.equal(await missingRows.count(),2);
+  assert.equal(await page.locator('#shouts label.choice').count(),24);
+  assert.equal(await page.locator('#shout-count').textContent(),'3');
+  const soulRow=page.locator(`#shouts .choice.unavailable[data-shout-key="${SOUL}"]`),unknownRow=page.locator(`#shouts .choice.unavailable[data-shout-key="${UNKNOWN}"]`);
+  assert.equal(await soulRow.locator('strong').textContent(),'DLC1SoulTearShout');
+  assert.equal(await soulRow.locator('.dlc').textContent(),'Dawnguard が必要');
+  assert.equal(await soulRow.locator('small').textContent(),SOUL+' · Dawnguard (Dawnguard.esm) がインストールされていないので、このシャウトは使えません。外してください。');
+  assert.equal(await unknownRow.locator('strong').textContent(),UNKNOWN);
+  assert.equal(await unknownRow.locator('small').textContent(),`このシャウトは選べません: ${UNKNOWN} 外してください。`);
+  assert.deepEqual(await page.$$eval('#selected-shouts button',b=>b.map(x=>x.textContent)),['DLC1SoulTearShout ×',UNKNOWN+' ×',cyclone.labels.ja+' ×']);
+  await page.locator('#next').click();await page.locator('#error').waitFor({state:'visible'});
+  assert.match(await page.locator('#error').textContent(),/DLC1SoulTearShout.*Dawnguard/);
+  assert.equal(await page.evaluate(()=>state.step),3);
+  await page.locator('#language').selectOption('en');
+  assert.equal(await soulRow.locator('small').textContent(),SOUL+' · Dawnguard (Dawnguard.esm) is not installed, so this shout cannot be used. Please remove it.');
+  assert.equal(await soulRow.locator('button').textContent(),'Remove');
+  assert.equal(await unknownRow.locator('small').textContent(),`This shout cannot be selected: ${UNKNOWN} Please remove it.`);
+  await page.screenshot({path:path.join(fixture,'shouts-unavailable-en.png'),fullPage:true});
+  await page.locator('#language').selectOption('ja');
+  await soulRow.locator('button').click();
+  assert.equal(await page.locator('#shout-count').textContent(),'2');
+  await page.locator('#next').click();await page.waitForFunction(id=>document.querySelector('#error').textContent.includes(id),UNKNOWN);
+  await unknownRow.locator('button').click();
+  assert.equal(await missingRows.count(),0);
+  await to(4);
+  assert.equal(flags.at(-1),true);
+  assert.deepEqual(validated.at(-1).shouts,[CYCLONE]);
+  assert.match(await page.locator('#summary').textContent(),new RegExp(`シャウト${cyclone.labels.ja}トゥーン`));
+  // Hand-written keys in another case match the catalog row, before and after the catalog loads.
+  catalogChoices=choices;
+  await start({...defaults,shouts:['skyrim.esm:013e07']});await to(3);
+  assert.deepEqual(await checked(),[FORCE]);
+  assert.equal(await missingRows.count(),0);
+  await row(FORCE).locator('input').uncheck();await row(FORCE).locator('input').check();
+  assert.deepEqual(await page.evaluate(()=>[...state.shouts]),[FORCE]);
+  await to(0);
+  await page.locator('#import-settings').setInputFiles({name:'case.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({...defaults,shouts:['DRAGONBORN.ESM:0200c0','skyrim.esm:013E07']}))});
+  await to(3);
+  assert.deepEqual(await page.evaluate(()=>[...state.shouts]),[CYCLONE,FORCE]);
+  assert.equal(await page.locator('#shout-count').textContent(),'2');
+  await to(4);
+  assert.deepEqual(validated.at(-1).shouts,[CYCLONE,FORCE]);
+  await to(3);
+  // Shout priority: numeric strings count; other values and unknown styles show "no value" and never throw.
+  const score=async(mode,value,style)=>{await page.evaluate(([mode,value,style])=>{
+   if(style!==undefined){if(![...$('combat_style').options].some(o=>o.value===style))$('combat_style').add(new Option(style,style));$('combat_style').value=style;}
+   $('combat_style_mode').value=mode;state.styleCustom={...state.styleCustom,values:{...(state.styleCustom?.values||{}),shout_score:value}};renderShouts();
+  },[mode,value,style]);return page.locator('#shout-score').textContent();};
+  const none='戦闘スタイルにシャウトの優先度の値がありません。ゲーム既定の値を使います。';
+  assert.equal(await score('custom','1.5'),'専用の戦闘スタイルのシャウトの優先度: 1.5');
+  assert.equal(await page.locator('#shout-score-warning').isHidden(),true);
+  assert.equal(await score('custom','0'),'専用の戦闘スタイルのシャウトの優先度: 0');
+  assert.equal(await page.locator('#shout-score-warning').isHidden(),false);
+  for(const value of ['abc','',' ',null,undefined,{}])assert.equal(await score('custom',value),none,String(value));
+  assert.equal(await score('existing',undefined,'CSHUMANMAGIC'),'戦闘スタイル csHumanMagic のシャウトの優先度: 1');
+  assert.equal(await score('existing',undefined,'NoSuchStyle'),none);
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   assert.deepEqual(errors,[]);
-  console.log('PASS: 27 shouts, DLC labels, shout priority (official/private/zero warning), preset keeps shouts, JA/EN, review, export/import, legacy JSON, mobile');
+  console.log('PASS: 27 shouts, DLC labels, shout priority (official/private/zero warning/strings/unknown style), preset keeps shouts, JA/EN, review, export/import, legacy JSON, missing-DLC and unknown shouts removable at STEP 04, key case, mobile');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

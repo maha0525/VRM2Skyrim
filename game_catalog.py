@@ -405,6 +405,7 @@ class GameCatalog:
                              'addons': [{'key': catalog.key(a), 'name': a.editor_id, 'mask': slot_mask(a)}
                                         for a in catalog.addon_records(r, sex)]}
                             for r in official_choices(catalog, sex)]
-        from shouts import choices as shout_choices
+        from shouts import choices as shout_choices, unavailable
         result['shouts'] = shout_choices(catalog)
+        result['unavailable_shouts'] = unavailable(catalog)
         return result
