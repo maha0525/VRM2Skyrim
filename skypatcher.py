@@ -44,8 +44,10 @@ def rules(profile):
     return {"armor": sorted(armor), "formList": sorted(lists)}
 
 
-def footstep_bindings(game_data, profile):
-    catalog = OfficialCatalog(game_data)
+def footstep_bindings(game_data, profile, owners=(), catalog=None):
+    """Follower masters and SNDD references; owners adds other referenced plugins (shouts)
+    so every reference is numbered against the same combined master order."""
+    catalog = catalog or OfficialCatalog(game_data)
     bindings = {}
     needed = set()
     for item in profile["equipment"]:
@@ -62,12 +64,7 @@ def footstep_bindings(game_data, profile):
             if old != binding:
                 raise ValueError("Shared fitted addon has conflicting footstep sounds")
             needed.add(owner)
-    while True:
-        expanded = needed | {m for n in needed for m in catalog.master_lists[n]}
-        if expanded == needed:
-            break
-        needed = expanded
-    extras = [n for n in catalog.plugins if n in needed and n != "Skyrim.esm"]
+    extras = catalog.extra_masters(needed | set(owners))
     refs = {
         addon: (0 if owner == "Skyrim.esm" else extras.index(owner) + 2) << 24 | local
         for addon, (owner, local) in bindings.items()

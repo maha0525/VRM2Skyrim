@@ -13,11 +13,108 @@ Private fitted ARMA records retain original SNDD footstep references directly;
 only their required official masters are added to the follower. Local FormIDs
 are unchanged. Conversion/validation use canonical own-file index 1 while the
 serializer maps the real MAST order, including VMAD, race, outfit, head, combat
-style, relationship and placed-reference links. See follower_plugin.py.
+style, relationship, placed-reference links and the NPC spell list (SPLO, which
+holds both spells and shouts). See follower_plugin.py.
+
+Selected shouts (settings `shouts`, OfficialCatalog keys) are SPLO references to
+the official SHOU records, after the spells; SPCT counts both. A DLC shout adds
+its plugin and that plugin's masters to the follower, like footstep sounds. The
+extra masters are one combined, deduplicated list in OfficialCatalog plugin order
+(footsteps and shouts together), computed also without fitting; footstep SNDD and
+shout SPLO references are both numbered against it (shouts.official_references).
+The output gate reads the written ESP back and resolves each shout in its master
+file (shouts.validate_generated).
 
 Legacy 0.11.x and earlier shared patches must be removed only after every fitted
 follower depending on them has been re-exported/replaced. The wizard shows the
 migration notice independently of whether the current follower uses fitting.
+
+## Private local FormID allocation
+
+Local IDs of records in the follower ESP (own-file index 1 internally). Saved games
+keep these identities, so an ID is never reused for a different record kind.
+The TES4 HEDR next-object ID is at least `0x900`.
+
+| Local ID | Record | Owner / note |
+|---|---|---|
+| `0x800` | NPC_ follower | `build_npc.NPC_ID` |
+| `0x801` | ARMO appearance / full Skin | `build_npc.ARMOR_ID`, `gear_head_runtime` FullSkin |
+| `0x802` | ARMA fixed appearance or body Skin | `build_npc.ADDON_ID` |
+| `0x803` | OTFT default outfit | `build_npc.OUTFIT_ID` |
+| `0x804` | RACE private race | `build_npc.RACE_ID` |
+| `0x805` | RELA player relationship | `build_npc.RELATIONSHIP_ID` |
+| `0x806` | ACHR placed follower | `build_npc.REFERENCE_ID` |
+| `0x807`–`0x80A` | ARMA underwear, fixed face/hair, hands, feet Skin | `build_npc.appearance_records` |
+| `0x80B` | ARMO retired 0.5.1 head cover (inert) | `head_visibility.HEAD_COVER_ID` |
+| `0x80C` / `0x80D` | HDPT empty head / FLST head races | `head_visibility` |
+| `0x810`–`0x82F` | garment ARMA `0x810+2n`, ARMO `0x811+2n` | `wardrobe.MAX_GARMENTS` (16) |
+| `0x830`–`0x83F` | reserved | `wardrobe.py` |
+| `0x840`–`0x846` | FLST wardrobe runtime lists | `equipment_runtime.LIST_IDS` |
+| `0x850` / `0x851` | ARMA separate face / hair Skin | `build_npc.appearance_records` |
+| `0x852`–`0x854` | ARMO face/hair/both hidden Skin | `gear_head_runtime.IDS` |
+| `0x855` / `0x856` | FLST face/hair hiding equipment | `gear_head_runtime.IDS` |
+| `0x860`–`0x862` | ARMA head-visibility variants | `gear_head_runtime.head_variants` |
+| `0x870` | FLST recognized seats | `seating.SEATS_ID` |
+| `0x880` | CSTY private combat style | `combat_style.CUSTOM_STYLE_ID` |
+| `0x880`–`0x8BF` | legacy fitted ARMA, accepted only from old fitting profiles | `armor_patch.py` |
+| `0x8D0` | WEAP original weapon | `weapon.WEAPON_ID` |
+| `0x8D1` | STAT original weapon first-person model | `weapon.FIRST_PERSON_ID` |
+| `0x1000`+ | ARMA fitted official equipment, one per source addon | `armor_fitting.py` |
+
+## Original GLB weapon
+
+`weapon_mode=original` replaces the `settings.weapon` inventory entry with one private
+WEAP `0x8D0` copied from a Skyrim.esm base weapon. Base candidates are named,
+playable WEAPs (record flag `0x4` and DNAM Flags `0x80` clear, xEdit TES5) whose
+DNAM animation type and single `WeapType*` keyword form one of eight pairs:
+sword 1/WeapTypeSword, dagger 2/WeapTypeDagger, war axe 3/WeapTypeWarAxe, mace
+4/WeapTypeMace, greatsword 5/WeapTypeGreatsword, battleaxe 6/WeapTypeBattleaxe,
+warhammer 6/WeapTypeWarhammer, staff 8/WeapTypeStaff. Defaults are SteelSword,
+SteelDagger, SteelWarAxe, SteelMace, SteelGreatsword, SteelBattleaxe,
+SteelWarhammer and StaffFlames; a kind whose default is missing uses its first
+candidate (logged).
+
+Base WEAP and first-person STAT records are read with Update.esm's overrides of
+Skyrim.esm records applied (20 candidates, 19 with different values, in the
+installed Update.esm, e.g. SteelDagger NAM8/NAM9/DNAM). An override is refused as a base when any FormID in it
+has an Update.esm master index other than 0 (Skyrim.esm), when it has a field
+outside the known WEAP/STAT FormID table (`game_catalog.references`), or when it
+changes FULL/DESC (Update.esm string IDs). The follower plugin's masters are unchanged.
+
+The copy replaces EDID (`<prefix>OriginalWeapon`), FULL (inline string), MODL,
+WNAM and OBND, resolves a localized DESC to an inline string, and removes MODT and
+the CNAM template. All other fields stay in order. The base's first-person STAT
+becomes `0x8D1` (`<prefix>OriginalWeapon1stPerson`) with the same NIF in MODL,
+the new OBND, no MODT and its DNAM retained. WEAP WNAM is a FormID and is remapped
+with the follower's own-file index; WEAP/STAT MODL are path strings and are not.
+
+`meshes/<asset_dir>/weapon.nif` has a BSFadeNode root, BSTriShape children placed
+by their vertices, the base NIF's BSXFlags and BSInvMarker, a `Prn` naming the
+sheath node of the kind (`weapon_nif.SHEATH_NODES`: the bases' own Prn for every
+kind except the staff, which uses `WeaponStaff`), and `bhkCollisionObject` (base
+flags, 129 on official weapons) → plain `bhkRigidBody` with zero translation and
+identity rotation (base numeric values only: collision filter, mass, damping,
+friction, restitution, motion/quality/deactivator/solver, maximum velocities,
+penetration depth; centre of mass = volume centroid of the new hull; inertia =
+mass × box inertia of the hull's bounding box) → `bhkConvexVerticesShape`. Its havok
+material and convex radius come from the base shape when it is a convex vertices,
+box or convex transform shape, or from the first such child of a `bhkListShape`
+(about half the candidates); otherwise the list's material (or SOLID_METAL) and
+Havok's default radius 0.05. The hull is the exact hull of at most 48 GLB
+vertices: extremes in 26 directions, then the farthest outside vertex until every
+vertex is within 0.5% of the model size. The longest GLB bounding-box axis becomes
++Y with its low end at -Y; flip turns 180° about Z, roll turns about Y; the
+length is scaled to `length` and the origin is at `grip` from the bottom, at the
+X/Z bounding-box centre of vertices within ±2% of the length around the grip.
+
+Textures: `weapon[_<material>].dds` (baseColorFactor RGB baked linearly),
+`_n.dds` (glTF normal RGB, alpha = 1 − roughness; the green decision is
+`weapon.FLIP_NORMAL_GREEN`), and `_m.dds` (metallic mask, converted without sRGB)
+when at least 1% of pixels have metallic ≥ 0.5. Masked materials reference the
+game's `textures\cubemaps\ShinyDull_e.dds`; `weapon.json` records its archive and
+SHA256 and the package gate re-reads that archive entry. An installed replacement
+at that path is used in game and only logged. The GLB is bound by
+`original_weapon.sha256` and is not packaged.
 
 ## Historical 0.7.0 equipment identities and private models
 
@@ -30,6 +127,8 @@ beast-specific addons. An item may have several humanoid addons, and enchanted
 variants share the same fitted addon geometry.
 
 The follower keeps its Skyrim-only master layout and existing saved local IDs.
+Exceptions: DLC/Creation masters needed by fitted footstep sounds (0.12.0) and by
+selected DLC shouts; see the independent registration section above.
 Fitted private ARMA records begin at `0x1000`, one per unique source addon. The
 combined armor patch adds them to the original ARMO, remapping all references,
 VMAD object properties and alternate texture sets into its master order. Original
@@ -95,7 +194,10 @@ The binary field layouts follow [xEdit's TES5 definitions](https://github.com/TE
   or metadata; resolve such overrides through ordinary mod load-order/patching.
 
 The skeleton keeps animation-controlled local transforms and adds unanimated
-rigid parent nodes. This follows the proxy-node mechanism described in the
+rigid parent nodes, plus `WeaponStaff` (absent from the vanilla skeletons): a
+child of WeaponBack's parent (NPC Spine2) at (0, −9, 4) in that bone's frame,
+with the staff's +Y tilted 35° from the spine's up axis toward the right
+shoulder and its +Z forward (`custom_skeleton.HELPER_NODES`). This follows the proxy-node mechanism described in the
 [Beyond Skyrim animation skeleton tutorial](https://wiki.beyondskyrim.org/wiki/Arcane_University:Editing_Animation_Skeletons).
 The mesh is posed using rotations, with no per-limb fitting scale, and rebound
 to the custom skeleton. The static result is checked against an independent

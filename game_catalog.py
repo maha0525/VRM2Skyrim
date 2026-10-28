@@ -9,7 +9,14 @@ from settings import SKILLS
 
 KINDS = {b"NPC_", b"ARMO", b"ARMA", b"RACE", b"FACT", b"VTYP", b"WEAP", b"PACK",
          b"CLAS", b"CSTY", b"PERK", b"SPEL", b"FLST", b"CELL", b"REFR", b"AMMO", b"KYWD", b'BOOK',
-         b'AVIF', b'MGEF'}
+         b'AVIF', b'MGEF', b'STAT'}
+# Original weapon kinds: WEAP DNAM animation type (first byte) and WeapType keyword, with the default base.
+ORIGINAL_WEAPON_KINDS = {
+    'sword': (1, 'WeapTypeSword', 'SteelSword'), 'dagger': (2, 'WeapTypeDagger', 'SteelDagger'),
+    'waraxe': (3, 'WeapTypeWarAxe', 'SteelWarAxe'), 'mace': (4, 'WeapTypeMace', 'SteelMace'),
+    'greatsword': (5, 'WeapTypeGreatsword', 'SteelGreatsword'),
+    'battleaxe': (6, 'WeapTypeBattleaxe', 'SteelBattleaxe'),
+    'warhammer': (6, 'WeapTypeWarhammer', 'SteelWarhammer'), 'staff': (8, 'WeapTypeStaff', 'StaffFlames')}
 
 
 def castable_spell(record):
@@ -31,6 +38,83 @@ SKILL_LABELS_EN = dict(zip(SKILLS, ('One-Handed', 'Two-Handed', 'Archery', 'Bloc
                                    'Destruction', 'Illusion', 'Restoration', 'Enchanting')))
 
 
+# FormIDs inside WEAP/STAT subrecords (xEdit wbDefinitionsTES5 WEAP, STAT, DEST and alternate
+# textures). A field in neither table makes an override's references unknown.
+SINGLE_REFERENCES = {b'EITM', b'ETYP', b'BIDS', b'BAMT', b'YNAM', b'ZNAM', b'INAM', b'WNAM', b'SNAM', b'XNAM',
+                     b'NAM7', b'TNAM', b'UNAM', b'NAM9', b'NAM8', b'CNAM', b'KWDA'}
+NO_REFERENCES = {b'EDID', b'OBND', b'FULL', b'MODL', b'MODT', b'MOD3', b'MO3T', b'ICON', b'MICO', b'EAMT',
+                 b'DEST', b'DMDL', b'DMDT', b'DSTF', b'KSIZ', b'DESC', b'NNAM', b'DATA', b'VNAM', b'MNAM'}
+
+
+def references(record):
+    """FormIDs a WEAP or STAT refers to; ValueError for a field this table does not know."""
+    result = []
+    for tag, value in record.fields:
+        if tag in SINGLE_REFERENCES:
+            result += [n for (n,) in struct.iter_unpack('<I', value[:len(value) // 4 * 4])]
+        elif tag in (b'MODS', b'MO3S', b'DMDS'):  # alternate textures: name, TXST, index
+            count, offset = struct.unpack_from('<I', value)[0], 4
+            for _ in range(count):
+                offset += 4 + struct.unpack_from('<I', value, offset)[0]
+                result.append(struct.unpack_from('<I', value, offset)[0])
+                offset += 8
+        elif tag == b'CRDT' and record.kind == b'WEAP':
+            result.append(struct.unpack_from('<I', value, 16 if len(value) == 24 else 12)[0])
+        elif tag == b'DSTD':
+            result += struct.unpack_from('<II', value, 8)
+        elif tag == b'DNAM' and record.kind == b'STAT':
+            result.append(struct.unpack_from('<I', value, 4)[0])
+        elif not (tag in NO_REFERENCES or tag == b'DNAM'):
+            raise ValueError(f'Unknown {record.kind.decode()} field {tag.decode()}')
+    return result
+
+
+def update_overrides(path, base):
+    """Update.esm WEAP/STAT records that override base (Skyrim.esm records by FormID).
+
+    Returns (overrides, refused). Update.esm's master 0 is Skyrim.esm, so an override whose
+    references all have master index 0 copies unchanged into a follower plugin whose master
+    0 is Skyrim.esm. Refused: overrides referring to Update.esm's own records or unknown fields,
+    and overrides that change FULL/DESC (string IDs of Update.esm's string tables).
+    """
+    loaded = list(records(path, {b'TES4', b'WEAP', b'STAT'}))
+    header = next(r for r in loaded if r.kind == b'TES4')
+    masters = [v.rstrip(b'\0').decode('utf8').casefold() for v in header.values(b'MAST')]
+    if masters[:1] != ['skyrim.esm']:
+        raise ValueError(f'Unexpected {Path(path).name} masters: {masters}')
+    overrides, refused = {}, set()
+    for record in loaded:
+        original = base.get(record.form_id)
+        if record.kind == b'TES4' or record.form_id >> 24 or original is None or original.kind != record.kind:
+            continue
+        try:
+            foreign = any(n >> 24 for n in references(record))
+        except (ValueError, struct.error):
+            foreign = True
+        if foreign or any(record.values(tag) != original.values(tag) for tag in (b'FULL', b'DESC')):
+            refused.add(record.form_id)
+        overrides[record.form_id] = record
+    return overrides, refused
+
+
+def weapon_kind(record, keyword_names):
+    """Kind of a named, playable WEAP, or None.
+
+    xEdit TES5 WEAP: record flag 0x4 and DNAM Flags (uint16 at byte 12) 0x80 are Non-Playable.
+    Scripted (VMAD) weapons are excluded: a copy would also run their quest scripts.
+    """
+    dnam = record.values(b'DNAM')
+    if (record.kind != b'WEAP' or record.flags & 4 or not record.values(b'FULL') or not record.values(b'MODL')
+            or record.values(b'VMAD')
+            or not dnam or len(dnam[0]) < 14 or struct.unpack_from('<H', dnam[0], 12)[0] & 0x80):
+        return None
+    types = [name for name in keyword_names if name.startswith('WeapType')]
+    if len(types) != 1:
+        return None
+    return next((kind for kind, (animation, keyword, _) in ORIGINAL_WEAPON_KINDS.items()
+                 if dnam[0][0] == animation and types[0] == keyword), None)
+
+
 def effect_ranks(record):
     """PRKE ranks that actually have effects; DATA Num Ranks alone is not enough."""
     return sorted({value[1] for value in record.values(b'PRKE') if len(value) >= 3}) or [0]
@@ -50,6 +134,15 @@ class GameCatalog:
     def __init__(self, data):
         self.path = Path(data) / "Skyrim.esm"
         self.by_form_id = {r.form_id: r for r in records(self.path, KINDS)}
+        # WEAP/STAT values the game uses: Update.esm overrides 20 candidate weapons, 19 with other values (2026-10-25).
+        self.update_refused = set()
+        if (self.path.parent / 'Update.esm').is_file():
+            overrides, self.update_refused = update_overrides(self.path.parent / 'Update.esm', self.by_form_id)
+            self.by_form_id.update(overrides)
+            logging.info('Update.esm: %s WEAP/STAT overrides applied, %s refused as original-weapon bases',
+                         len(overrides), len(self.update_refused))
+        else:
+            logging.warning('Update.esm not found; Skyrim.esm weapon values are used without its overrides')
         self.by_editor_id = {r.editor_id: r for r in self.by_form_id.values() if r.editor_id}
         # Spell type alone also includes shrine/script/trap effects. The books
         # identify the ordinary spells that actors can learn and cast.
@@ -137,6 +230,43 @@ class GameCatalog:
             row[kind].add(self.label(race, language=language))
         return usage
 
+    def keyword_names(self, record):
+        ids = [n for value in record.values(b'KWDA') for (n,) in struct.iter_unpack('<I', value[:len(value) // 4 * 4])]
+        return [self.by_form_id[n].editor_id for n in ids if n in self.by_form_id and self.by_form_id[n].kind == b'KYWD']
+
+    def first_person_static(self, weapon):
+        values = weapon.values(b'WNAM')
+        record = self.by_form_id.get(struct.unpack('<I', values[0])[0]) if values and len(values[0]) == 4 else None
+        return record if record and record.kind == b'STAT' and record.values(b'MODL') else None
+
+    def original_weapon_kind(self, record):
+        """Skyrim.esm WEAP usable as an original-weapon base (its kind), or None."""
+        static = self.first_person_static(record)
+        if record.form_id >> 24 or record.form_id in self.update_refused or static is None or (
+                static.form_id in self.update_refused):
+            return None
+        return weapon_kind(record, self.keyword_names(record))
+
+    def original_weapon_choices(self):
+        candidates = {kind: [] for kind in ORIGINAL_WEAPON_KINDS}
+        for record in self.choices(b'WEAP'):
+            kind = self.original_weapon_kind(record)
+            if kind:
+                candidates[kind].append({
+                    'id': record.editor_id, 'label': self.label(record), 'labels': self.localized(record),
+                    'model': 'meshes/' + record.values(b'MODL')[0].rstrip(b'\0').decode('utf8').replace('\\', '/').lower()})
+        result = []
+        for kind, (_, _, default) in ORIGINAL_WEAPON_KINDS.items():
+            if not candidates[kind]:
+                logging.warning('No original-weapon base of kind %s in Skyrim.esm', kind)
+                continue
+            if default not in {c['id'] for c in candidates[kind]}:
+                logging.warning('Default original-weapon base %s is not a %s here; using %s',
+                                default, kind, candidates[kind][0]['id'])
+                default = candidates[kind][0]['id']
+            result.append({'id': kind, 'default': default, 'candidates': candidates[kind]})
+        return result
+
     def validate_settings(self, settings):
         voice = self.require(settings.voice, b"VTYP")
         if voice.form_id not in self.follower_voice_ids:
@@ -149,8 +279,12 @@ class GameCatalog:
             from combat_style import read_style
             if read_style(self.require(settings.combat_style_custom['source'], b'CSTY')) is None:
                 raise ValueError('Selected combat style has no editable data')
-        if settings.weapon:
+        if settings.weapon_mode == 'official' and settings.weapon:
             self.require(settings.weapon, b"WEAP")
+        if settings.weapon_mode == 'original':
+            weapon = settings.original_weapon
+            if self.original_weapon_kind(self.require(weapon['base'], b'WEAP')) != weapon['kind']:
+                raise ValueError(f"Original weapon base {weapon['base']} is not a playable Skyrim.esm {weapon['kind']}")
         if settings.ammunition:
             self.require(settings.ammunition, b"AMMO")
         for perk in settings.perks:
@@ -162,10 +296,15 @@ class GameCatalog:
                 raise ValueError(f"このPerkの指定ランクに効果がありません: {perk['editor_id']}")
         for spell in settings.spells:
             self.require(spell, b"SPEL")
-        if settings.fit_armors:
-            from armor_catalog import official_choices
+        equipment = None
+        if settings.fit_armors or settings.shouts:
             from official_catalog import OfficialCatalog
             equipment = OfficialCatalog(self.path.parent)
+        if settings.shouts:
+            from shouts import resolve
+            resolve(equipment, settings.shouts)
+        if settings.fit_armors:
+            from armor_catalog import official_choices
             allowed = {r.form_id for r in official_choices(equipment, settings.sex)}
             if any(equipment.require(key, b'ARMO').form_id not in allowed for key in settings.fit_armors):
                 raise ValueError('人型向けの公式装備を選んでください')
@@ -251,6 +390,7 @@ class GameCatalog:
             item['used_by_localized'] = {'ja': item['used_by'], 'en': sorted(en_row['humanoid'] | en_row['other'])}
         logging.debug('Wizard catalog: %d classes, %d combat styles (%d with character-skeleton NPC usage)',
                       len(result['classes']), len(result['styles']), sum(s['humanoid'] for s in result['styles']))
+        result['original_weapons'] = self.original_weapon_choices()
         result["marriage_voices"] = [r.editor_id for r in self.choices(b"VTYP") if r.form_id in self.marriage_voice_ids]
         result['english_strings_available'] = bool(self.english_strings)
         from combat_style import FIELDS
@@ -265,4 +405,7 @@ class GameCatalog:
                              'addons': [{'key': catalog.key(a), 'name': a.editor_id, 'mask': slot_mask(a)}
                                         for a in catalog.addon_records(r, sex)]}
                             for r in official_choices(catalog, sex)]
+        from shouts import choices as shout_choices, unavailable
+        result['shouts'] = shout_choices(catalog)
+        result['unavailable_shouts'] = unavailable(catalog)
         return result

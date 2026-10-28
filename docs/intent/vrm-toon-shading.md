@@ -1,5 +1,55 @@
 # VRM-only toon shading
 
+## Shader ZIP shipped in the repository (2026-10-28)
+
+Status: 完了 (2026-10-28: the user installed the shipped ZIP on Bottled Shaders 1.0.22 and saw the toon shading applied in game).
+
+The user found the shader installation too hard: users had to locate the
+original Community Shaders mod folder and run `toon.py --shader-root` in
+PowerShell before they could use a default-on feature. Decided with the user:
+
+- The ZIP depends only on the supported CS 1.9.0.0 sources, our patch and the
+  VRM2Skyrim version, so one ZIP built by the maintainer holds the same shader
+  files a user would build. Ship it: commit `toon-shader/VRM2Skyrim-Toon-Shader-<VERSION>.zip`
+  to the repository. Users get it with the clone / Download ZIP they already do.
+- Licence (corrected the same day from the 1.0.22 licence files): Community
+  Shaders is GPL-3.0 with its Modding Exception and GPL-3.0 Linking Exception
+  (`SKSE/Plugins/CommunityShaders/Licenses/COPYING.txt`, `EXCEPTIONS.md`,
+  `THIRD_PARTY.md`). The MIT LICENSE that 1.0.4 kept in `Shaders/` covers only
+  Ilya Perapechka's original code; CS contributors' changes to `Lighting.hlsl`
+  and all of `DeferredCompositeCS.hlsl` are GPL-3.0. Redistributing the patched
+  files is allowed under GPL-3.0: the ZIP carries COPYING.txt, EXCEPTIONS.md,
+  THIRD_PARTY.md and LICENSE-Perapechka-MIT.txt, each patched file starts with
+  a dated notice that VRM2Skyrim modified it, and the HLSL itself is the
+  corresponding source. Our MIT `runtime/toon/*.hlsli` are included in the
+  same ZIP and are conveyed with it under GPL-3.0; the VRM2Skyrim repository
+  stays MIT, and the docs say the ZIP's contents are GPL-3.0.
+- Target (decided with the user the same day): the current Nexus release,
+  Bottled Shaders 1.0.22. Its DLL reports the same FileVersion 1.9.0.0 as 1.0.4
+  but both shader files differ, so the DLL version cannot tell them apart. The
+  Lighting patch anchors no longer match 1.0.22 and must be ported; the user
+  re-verifies toon shading in game on 1.0.22.
+- The wizard offers the ZIP as a download beside the STEP 01 toon checkbox and
+  on the result page. No ZIP is built in the wizard.
+- Shipping removes the old build-time refusal of other CS versions, so the
+  wizard hashes `Data/Shaders/Lighting.hlsl` and `DeferredCompositeCS.hlsl` in
+  the chosen game folder: the supported originals mean the ZIP is not installed
+  yet, the patched hashes mean it is installed, anything else gets a warning
+  that the ZIP is for Bottled Shaders 1.0.22 and may break rendering. When the
+  files are not there (MO2 keeps them in its own mods folder), say that the
+  version could not be checked and which release the ZIP is for. A warning,
+  never a block: toon shading stays selectable. (The first plan read the DLL
+  FileVersion; 1.0.4 and 1.0.22 share 1.9.0.0, so that check cannot work.)
+- `toon.py --shader-root` stays as the maintainer's tool for rebuilding the ZIP
+  after HLSL or version changes; user instructions no longer mention it. Tests
+  keep the committed ZIP consistent with the code (present for the current
+  VERSION, its adapter metadata matching `toon.py`), so a version bump without
+  a rebuilt ZIP fails.
+
+Sources: the user's Vortex downloads hold Bottled Shaders 1.0.4 (Nexus 192816;
+its shaders match the current `SUPPORTED_LIGHTING` / `SUPPORTED_COMPOSITE`) and
+1.0.22 (Lighting.hlsl 188f5016…0b90, DeferredCompositeCS.hlsl 8abca54c…a7a9).
+
 ## 0.13.0: regular feature, enabled by default
 
 On 2026-10-17 the user accepted the complete material-effects build in Skyrim,

@@ -44,13 +44,15 @@ def bake_base_color(image, factor):
     return image.convert('RGBA').point(tables + list(range(256)))
 
 
-def convert_textures(output):
+def convert_textures(output, manifest="textures.json"):
+    """Convert a PNG manifest to DDS; entries with normal or srgb=false are not sRGB data."""
     output = Path(output).resolve()
-    sources = json.loads((output / "textures.json").read_text(encoding="utf-8"))
+    sources = json.loads((output / manifest).read_text(encoding="utf-8"))
     settings = load_settings(output)
-    flat = output / "texture-sources/flat_n.png"
-    Image.new("RGBA", (16, 16), (128, 128, 255, 0)).save(flat)
-    sources.append({"png": str(flat), "relative": f"textures/{settings.asset_dir}/flat_n.dds", "normal": True})
+    if manifest == "textures.json":
+        flat = output / "texture-sources/flat_n.png"
+        Image.new("RGBA", (16, 16), (128, 128, 255, 0)).save(flat)
+        sources.append({"png": str(flat), "relative": f"textures/{settings.asset_dir}/flat_n.dds", "normal": True})
     for source in sources:
         dest = output / "mod" / source["relative"]
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -75,7 +77,7 @@ def convert_textures(output):
         if format_name != 'BC7_UNORM':
             command += ['-dx10']
         command += ['-o', str(dest.parent)]
-        if not source.get("normal"):
+        if not source.get("normal") and source.get("srgb", True):
             command += ["-srgb"]
         command.append(str(source_png))
         result = subprocess.run(command, text=True, capture_output=True, encoding=locale.getencoding(), errors='replace')

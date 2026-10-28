@@ -17,8 +17,34 @@ from settings import VERSION, load_settings
 
 ROOT = Path(__file__).resolve().parent
 SIGNATURE = bytes((255, 0, 255, 255, 0, 255, 0, 255))
-SUPPORTED_LIGHTING = '5cb3f71e483d6aba661f9adb10ac8d06db36878f6d6f05c4c8ec383be9fd40e8'
-SUPPORTED_COMPOSITE = 'e53c942c7ba4d755827e0feabdcc143e33f6f06ef30b448951ff3f5955d71225'
+# Original Shaders/Lighting.hlsl and Shaders/DeferredCompositeCS.hlsl of the
+# Community Shaders build shipped in the Nexus release Bottled Shaders 1.0.22.
+SUPPORTED_LIGHTING = '188f5016869dc3a2cf1460a56296b01ddf848b641e4c9e0c36d809a02c800b90'
+SUPPORTED_COMPOSITE = '8abca54c90d1f2f732120ee8c9d43318d342cda74cc3b12e7206a5c5a0e0a7a9'
+BOTTLED_SHADERS_RELEASE = '1.0.22'
+# CommunityShaders.dll FileVersion of that release. Bottled Shaders 1.0.4 reports
+# the same version with different shaders, so the wizard compares shader hashes.
+COMMUNITY_SHADERS_DLL_VERSION = '1.9.0.0'
+# Committed for users; rebuild with --shader-root on every VERSION bump.
+SHIPPED_SHADER = ROOT/'toon-shader'/f'VRM2Skyrim-Toon-Shader-{VERSION}.zip'
+# Community Shaders licence files, relative to the folder that holds Shaders/.
+LICENSE_FOLDER = Path('SKSE/Plugins/CommunityShaders/Licenses')
+LICENSE_FILES = ('COPYING.txt', 'EXCEPTIONS.md', 'THIRD_PARTY.md', 'LICENSE-Perapechka-MIT.txt')
+MODIFIED_NOTICE = f'''// Modified by VRM2Skyrim on 2026-10-28 for VRM toon shading: marked VRM
+// materials use VRM2Skyrim/*.hlsli; other materials keep the original code.
+// Original file: Community Shaders as shipped in Bottled Shaders {BOTTLED_SHADERS_RELEASE}.
+// This modified file is distributed under GPL-3.0 with the Community Shaders
+// Modding Exception and GPL-3.0 Linking Exception; see VRM2Skyrim/Licenses/
+// (COPYING.txt, EXCEPTIONS.md, THIRD_PARTY.md, LICENSE-Perapechka-MIT.txt).
+'''
+
+
+def shipped_adapter():
+    """adapter.json of the committed shader ZIP, or None when the ZIP is missing."""
+    if not SHIPPED_SHADER.is_file():
+        return None
+    with zipfile.ZipFile(SHIPPED_SHADER) as package:
+        return json.loads(package.read('Shaders/VRM2Skyrim/adapter.json'))
 
 
 def control_bytes(parameters):
@@ -69,8 +95,12 @@ def patch_lighting(source, diagnostic=False):
 #endif'''
     initializer = '\tPS_OUTPUT psout;'
     ambient = '\tfloat4 color = 0;'
-    forward = '#\tif !defined(DEFERRED)\n\tcolor.xyz = Color::IrradianceToLinear(color.xyz);'
-    finish = '\treturn psout;'
+    # 1.0.22 renamed Color::IrradianceToLinear to ColorManagement::SceneToLinear;
+    # this is still the scene-to-linear step that starts the forward-only block.
+    forward = '#\tif !defined(DEFERRED)\n\tcolor.xyz = ColorManagement::SceneToLinear(color.xyz);'
+    # The diagnostic colour goes before the fur-shell depth pass clears psout
+    # (new in 1.0.22), so that clearing still applies.
+    finish = '#\tif defined(FUR_SHELLS_DEPTH)\n\tpsout = (PS_OUTPUT)0;\n#\tendif\n\n\treturn psout;'
     for token in (include, initializer, ambient, forward, finish):
         if text.count(token) != 1:
             raise ValueError('Shader integration anchor changed: '+token)
@@ -132,7 +162,7 @@ def patch_lighting(source, diagnostic=False):
 #endif
 
 '''+masks)
-    return text.encode('utf8')
+    return (MODIFIED_NOTICE+text).encode('utf8')
 
 
 def patch_composite(source):
@@ -152,25 +182,37 @@ def patch_composite(source):
         ssgiAo = 1;
         ssgiIl = 0;
     }''')
-    return text.encode('utf8')
+    return (MODIFIED_NOTICE+text).encode('utf8')
 
 
-def shader_package(shader_root, output, diagnostic=False):
+def shader_package(shader_root, output, diagnostic=False, archive_dir=None, licenses=None):
+    """Build the shader ZIP from an original Bottled Shaders `Shaders` folder.
+
+    `licenses` defaults to SKSE/Plugins/CommunityShaders/Licenses beside
+    `shader_root` in the same mod folder.
+    """
     shader_root, output = Path(shader_root), Path(output)
+    licenses = Path(licenses) if licenses else shader_root.parent/LICENSE_FOLDER
+    missing = [name for name in LICENSE_FILES if not (licenses/name).is_file()]
+    if missing:
+        raise ValueError(f'Community Shaders licence files not found in {licenses}: {", ".join(missing)}')
     source = shader_root/'Lighting.hlsl'
     patched = patch_lighting(source.read_bytes(), diagnostic)
     composite = patch_composite((shader_root/'DeferredCompositeCS.hlsl').read_bytes())
     folder = 'shader-diagnostic-mod' if diagnostic else 'shader-mod'
     target = output/folder/'Shaders'
-    (target/'VRM2Skyrim').mkdir(parents=True, exist_ok=True)
+    (target/'VRM2Skyrim/Licenses').mkdir(parents=True, exist_ok=True)
     (target/'Lighting.hlsl').write_bytes(patched)
     (target/'DeferredCompositeCS.hlsl').write_bytes(composite)
     for path in (ROOT/'runtime/toon').glob('*.hlsli'):
         shutil.copy2(path, target/'VRM2Skyrim'/path.name)
-    shutil.copy2(shader_root/'LICENSE', target/'VRM2Skyrim/CommunityShaders-LICENSE.txt')
+    for name in LICENSE_FILES:
+        shutil.copy2(licenses/name, target/'VRM2Skyrim/Licenses'/name)
     shutil.copy2(ROOT/'docs/TOON.md', target/'VRM2Skyrim/README.md')
     shutil.copy2(ROOT/'LICENSE', target/'VRM2Skyrim/VRM2Skyrim-LICENSE.txt')
-    metadata = {'prototype': 6, 'version': VERSION, 'diagnostic': diagnostic, 'community_shaders_dll_version': '1.9.0.0',
+    metadata = {'prototype': 6, 'version': VERSION, 'diagnostic': diagnostic,
+                'bottled_shaders_release': BOTTLED_SHADERS_RELEASE,
+                'community_shaders_dll_version': COMMUNITY_SHADERS_DLL_VERSION,
                 'lighting_sha256': SUPPORTED_LIGHTING,
                 'patched_lighting_sha256': hashlib.sha256(patched).hexdigest(),
                 'composite_sha256': SUPPORTED_COMPOSITE,
@@ -181,11 +223,17 @@ def shader_package(shader_root, output, diagnostic=False):
                 'original_evaluation_for_unmarked_materials': True}
     (target/'VRM2Skyrim/adapter.json').write_text(json.dumps(metadata, indent=2), encoding='utf8')
     suffix = '-Diagnostic' if diagnostic else ''
-    archive = output/f'VRM2Skyrim-Toon-Shader-{VERSION}{suffix}.zip'
+    archive = Path(archive_dir or output)/f'VRM2Skyrim-Toon-Shader-{VERSION}{suffix}.zip'
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    # Package only this build's files: a reused staging folder may still hold
+    # files from an older build, and the normal ZIP is shipped to users.
+    written = [target/'Lighting.hlsl', target/'DeferredCompositeCS.hlsl',
+               *(target/'VRM2Skyrim'/path.name for path in (ROOT/'runtime/toon').glob('*.hlsli')),
+               *(target/'VRM2Skyrim/Licenses'/name for name in LICENSE_FILES),
+               *(target/'VRM2Skyrim'/name for name in ('README.md', 'VRM2Skyrim-LICENSE.txt', 'adapter.json'))]
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
-        for path in sorted((output/folder).rglob('*')):
-            if path.is_file():
-                package.write(path, path.relative_to(output/folder).as_posix())
+        for path in sorted(written, key=lambda path: path.relative_to(output/folder).as_posix()):
+            package.write(path, path.relative_to(output/folder).as_posix())
     logging.info('Toon shader adapter: %s; original shader SHA256 %s', archive, SUPPORTED_LIGHTING)
     return archive
 
@@ -386,11 +434,22 @@ def validate_toon(output):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
     parser = argparse.ArgumentParser()
-    parser.add_argument('--shader-root', type=Path)
-    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--shader-root', type=Path,
+                        help=f'original Shaders folder of the Bottled Shaders {BOTTLED_SHADERS_RELEASE} mod')
+    parser.add_argument('--licenses', type=Path,
+                        help=f'Community Shaders licence folder; default: {LICENSE_FOLDER.as_posix()} '
+                             'in the mod folder that holds --shader-root')
+    parser.add_argument('--output', type=Path,
+                        help='converted follower folder; with --shader-root, the staging folder and ZIP folder')
     parser.add_argument('--diagnostic', action='store_true', help='mark recognized surfaces magenta for activation checks')
     args = parser.parse_args()
     if args.shader_root:
-        shader_package(args.shader_root, args.output, args.diagnostic)
-    else:
+        # Without --output the normal ZIP replaces the committed SHIPPED_SHADER;
+        # the diagnostic ZIP is never shipped and stays in build/.
+        archive_dir = None if args.output or args.diagnostic else SHIPPED_SHADER.parent
+        shader_package(args.shader_root, args.output or ROOT/'build/toon-shader', args.diagnostic, archive_dir,
+                       args.licenses)
+    elif args.output:
         prepare_materials(args.output)
+    else:
+        parser.error('--output is required without --shader-root')

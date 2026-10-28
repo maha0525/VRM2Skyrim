@@ -82,6 +82,13 @@ def remap_record(record, resolve):
             blob = bytes(data)
         elif tag == b'VMAD':
             blob = vmad_refs(blob, resolve)
+        elif record.kind == b'SHOU' and tag in (b'MDOB', b'SNAM'):
+            # SHOU SNAM: word (WOOP), spell (SPEL), recovery time (float).
+            count = 1 if tag == b'MDOB' else 2
+            if len(blob) < 4 * count:
+                raise ValueError(f'Invalid shout field {tag!r}')
+            refs = struct.unpack_from(f'<{count}I', blob)
+            blob = struct.pack(f'<{count}I', *(resolve(n) for n in refs)) + blob[4 * count:]
         fields.append((tag, blob))
     result.fields = fields
     return result
@@ -97,8 +104,13 @@ class OfficialCatalog:
         self.tables = {}
         self.master_lists = {}
         self.archives = {}
+        from shouts import SHOUTS
+        # SHOU only from the plugins that own allowlisted shouts: a Creation's SHOU may reference a
+        # master outside this catalog and must not break armor loading.
+        shout_plugins = {plugin.casefold() for plugin, _, _ in SHOUTS}
         for name in self.plugins:
-            loaded = list(records(self.data / name, {b'TES4', b'ARMO', b'ARMA', b'TXST'}))
+            kinds = {b'TES4', b'ARMO', b'ARMA', b'TXST'} | ({b'SHOU'} if name.casefold() in shout_plugins else set())
+            loaded = list(records(self.data / name, kinds))
             header = next(r for r in loaded if r.kind == b'TES4')
             masters = [b.rstrip(b'\0').decode('utf8') for b in header.values(b'MAST')] + [name]
             self.master_lists[name] = masters[:-1]
@@ -116,7 +128,10 @@ class OfficialCatalog:
                 self.by_id[record.form_id] = record
                 self.source[record.form_id] = name
                 self.localized[record.form_id] = bool(header.flags & 0x80)
-        self.by_editor_id = {r.editor_id: r for r in self.by_id.values() if r.editor_id}
+        # Editor IDs are not unique across plugins; shouts are found per owner plugin.
+        self.by_editor_id = {r.editor_id: r for r in self.by_id.values() if r.editor_id and r.kind != b'SHOU'}
+        self.by_plugin_editor_id = {(self.identity(r)[0].casefold(), r.editor_id): r
+                                    for r in self.by_id.values() if r.editor_id and r.kind == b'SHOU'}
         LOG.info('Official equipment catalog: %s plugins, %s records', len(self.plugins), len(self.by_id))
 
     def identity(self, record):
@@ -135,6 +150,26 @@ class OfficialCatalog:
         if record is None or kind and record.kind != kind:
             raise ValueError(f'Official equipment not found: {key}')
         return record
+
+    def find(self, plugin, editor_id, kind):
+        """Record owned by plugin (its own FormID, not an override) with this Editor ID, or None."""
+        record = self.by_plugin_editor_id.get((plugin.casefold(), editor_id))
+        return record if record is not None and record.kind == kind else None
+
+    def extra_masters(self, owners):
+        """Masters besides Skyrim.esm that references into owners need, with their master chains."""
+        needed = set(owners)
+        while True:
+            expanded = needed | {m for n in needed for m in self.master_lists[n]}
+            if expanded == needed:
+                break
+            needed = expanded
+        return [n for n in self.plugins if n in needed and n != 'Skyrim.esm']
+
+    def follower_form_id(self, value, extras):
+        """Catalog FormID as a follower-plugin reference: Skyrim.esm 0, extras from 2 (follower_plugin)."""
+        owner = self.plugins[value >> 24]
+        return (0 if owner == 'Skyrim.esm' else extras.index(owner) + 2) << 24 | (value & 0xFFFFFF)
 
     def choices(self, kind):
         return sorted((r for r in self.by_id.values() if r.kind == kind), key=lambda r: self.key(r))

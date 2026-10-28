@@ -25,10 +25,10 @@ SamplerState SourceSampler:register(s0); SamplerState SampGlowSampler:register(s
 static bool V2SToonEnabled=true;static uint2 V2SToonTextureSize;
 static float3 V2SToonUnshadedSum=0;
 float V2SToonData(uint i){return TexGlowSampler.Load(int3(i*4,V2SToonTextureSize.y-4,0)).a;}
-namespace Color {
-float3 Diffuse(float3 v){return v;}
-float3 LinearToSrgb(float3 v){return v;}
-float3 SrgbToLinear(float3 v){return v;}
+float3 V2SToonDiffuse(float3 v){return v;}
+namespace TransferFunctions {
+float3 LinearToGamma22(float3 v){return v;}
+float3 Gamma22ToLinear(float3 v){return v;}
 }
 '''
     results = []

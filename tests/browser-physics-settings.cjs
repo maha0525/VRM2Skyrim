@@ -12,12 +12,15 @@ const source={source_id:'physics',sha256:'a'.repeat(64),filename:'physics.vrm',m
  const browser=await chromium.launch({headless:true,channel:'chrome'});
  try{
   const page=await browser.newPage({locale:'ja-JP',acceptDownloads:true});
-  const errors=[],submitted=[];page.on('pageerror',e=>errors.push(e.message));
+  const errors=[],submitted=[],shaderRequests=[];page.on('pageerror',e=>errors.push(e.message));
+  const archive='VRM2Skyrim-Toon-Shader-0.13.0.zip';let toonShader={archive,available:true,release:'1.0.22',state:'original'},jobToon=true;
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url());let data;
    if(url.pathname==='/api/environment')data={defaults,game:'Read-only fixture',blender:'Fixture Blender',version:'test'};
    else if(url.pathname==='/api/jobs')data=request.method()==='POST'?{job_id:'completed'}:{jobs:[]};
-   else if(url.pathname==='/api/jobs/completed')data={id:'completed',status:'complete',stage:'Complete',events:[],npc_name:'Test',plugin_name:'Test.esp',archive:'Test.zip',output:'Fixture',previews:[]};
+   else if(url.pathname==='/api/jobs/completed')data={id:'completed',status:'complete',stage:'Complete',events:[],npc_name:'Test',plugin_name:'Test.esp',archive:'Test.zip',output:'Fixture',previews:[],toon_enabled:jobToon};
+   else if(url.pathname==='/api/toon-shader-status'){shaderRequests.push(url.searchParams.get('game'));data=toonShader;}
+   else if(url.pathname==='/api/toon-shader')return route.fulfill({body:Buffer.from('fixture zip'),contentType:'application/zip',headers:{'Content-Disposition':`attachment; filename="${archive}"`}});
    else if(url.pathname==='/api/source')data={...source,sha256:request.headers()['x-filename']==='other.vrm'?'b'.repeat(64):source.sha256};
    else if(url.pathname==='/api/catalog')data={checks:{ready:true},choices:{...choices,armors:[],equipment_plugins:[]}};
    else if(url.pathname==='/api/validate'){submitted.push(request.postDataJSON().settings);data={settings:submitted.at(-1)};}
@@ -98,6 +101,64 @@ const source={source_id:'physics',sha256:'a'.repeat(64),filename:'physics.vrm',m
   for(let step=3;step>=0;step--){await page.locator('#back').click();await page.locator(`[data-step="${step}"]`).waitFor({state:'visible'});}
   await page.screenshot({path:path.join(fixture,'toon-step01-ja.png'),fullPage:true});
   assert.equal(await toon.isChecked(),true);
+  // The shipped shader ZIP downloads beside the STEP 01 checkbox and on the
+  // result page. The game's Data/Shaders hashes select the message: the
+  // supported originals and an installed ZIP inform; other or unreadable
+  // shaders warn. Both languages; toon shading stays selectable.
+  async function shaderState(name,available=true){
+   toonShader={archive,available,release:'1.0.22',state:name};const game='Fixture game '+shaderRequests.length;
+   await page.locator('#game').fill(game);await page.locator('#game').dispatchEvent('change');
+   await page.waitForFunction(({game,name,available})=>document.querySelector('#game').value===game&&state.toonShader?.state===name&&state.toonShader?.available===available,{game,name,available});
+   assert.equal(shaderRequests.at(-1),game);
+  }
+  const shaderLink=page.locator('#toon-shader-download'),shaderStatus=page.locator('#toon-shader-status');
+  const kind=()=>shaderStatus.evaluate(e=>e.dataset.kind+':'+e.className);
+  const originalText={ja:/Community ShadersはこのZIPの対象（Bottled Shaders 1\.0\.22）です。次に、トゥーン描画用シェーダーのZIPを保存してVortex \/ MO2で導入してください。/,
+   en:/Community Shaders is the release this ZIP is for \(Bottled Shaders 1\.0\.22\)\. Next, save the toon shader ZIP and install it with Vortex \/ MO2\./};
+  const installedText={ja:/トゥーン描画用シェーダー（VRM2Skyrim-Toon-Shader-0\.13\.0\.zip）は導入済みです。/,
+   en:/The toon shader \(VRM2Skyrim-Toon-Shader-0\.13\.0\.zip\) is installed\./};
+  const otherText={ja:/導入されているCommunity Shadersのシェーダーは、このZIPの対象と異なります。このZIPはBottled Shaders 1\.0\.22用のため、このCommunity Shadersでは描画が崩れる場合があります。/,
+   en:/The installed Community Shaders shaders differ from the ones this ZIP is for\. This ZIP is for Bottled Shaders 1\.0\.22 and may break rendering with this Community Shaders\./};
+  const uncheckedText={ja:/Community Shadersの版を確認できませんでした（MO2ではシェーダーがMO2のmodsフォルダに置かれます）。このZIPはBottled Shaders 1\.0\.22用です。/,
+   en:/Could not check the Community Shaders release \(MO2 keeps the shaders in its own mods folder\)\. This ZIP is for Bottled Shaders 1\.0\.22\./};
+  await start();await sourceFile();await page.waitForFunction(()=>state.toonShader?.state==='original');
+  assert.equal(shaderRequests.at(-1),'Read-only fixture');
+  assert.equal(await shaderLink.textContent(),'トゥーン描画用シェーダーをダウンロード');assert.equal(await shaderLink.isVisible(),true);
+  assert.equal(await shaderLink.evaluate(e=>e.closest('[data-step]').dataset.step+':'+!!e.closest('#toon-settings')),'0:true');
+  assert.equal(await shaderStatus.isVisible(),true,'the supported release shows the download as the next step');
+  assert.match(await shaderStatus.textContent(),originalText.ja);assert.equal(await kind(),'information:hint','no warning for the supported release');
+  const shaderDownload=page.waitForEvent('download');await shaderLink.click();assert.equal((await shaderDownload).suggestedFilename(),archive);
+  for(const language of ['ja','en']){
+   await page.locator('#language').selectOption(language);
+   assert.equal(await shaderLink.textContent(),{ja:'トゥーン描画用シェーダーをダウンロード',en:'Download the toon shader'}[language]);
+   await shaderState('other');assert.equal(await shaderStatus.isVisible(),true);assert.match(await shaderStatus.textContent(),otherText[language]);
+   assert.equal(await kind(),'warning:note');
+   await toon.uncheck();assert.equal(await shaderStatus.isVisible(),false,'warning only while toon shading is on');
+   await toon.check();assert.equal(await shaderStatus.isVisible(),true);assert.equal(await toon.isEnabled(),true);
+   await shaderState('unchecked');assert.match(await shaderStatus.textContent(),uncheckedText[language]);assert.equal(await kind(),'warning:note');
+   await page.screenshot({path:path.join(fixture,`toon-shader-step01-${language}.png`),fullPage:true});
+   await shaderState('original');assert.match(await shaderStatus.textContent(),originalText[language]);assert.equal(await kind(),'information:hint');
+   await shaderState('installed');assert.match(await shaderStatus.textContent(),installedText[language]);assert.equal(await kind(),'information:hint');
+   assert.equal(await shaderLink.isVisible(),true);
+  }
+  // A shown warning follows a language change without another check.
+  await shaderState('other');const requests=shaderRequests.length;
+  await page.locator('#language').selectOption('ja');assert.match(await shaderStatus.textContent(),otherText.ja);assert.equal(shaderRequests.length,requests);
+  await shaderState('original',false);assert.equal(await shaderLink.isVisible(),false);
+  assert.match(await shaderStatus.textContent(),/トゥーン描画用シェーダーのZIP（VRM2Skyrim-Toon-Shader-0\.13\.0\.zip）が見つかりません。/);
+  assert.equal(await kind(),'warning:note');
+  // The result page repeats the download and the warning for a toon follower.
+  await shaderState('unchecked');await review();await page.locator('#create').click();await page.locator('#result').waitFor({state:'visible'});
+  const resultLink=page.locator('#toon-shader-result-download'),resultStatus=page.locator('#toon-shader-result-status');
+  await resultStatus.waitFor({state:'visible'});assert.equal(await resultLink.isVisible(),true);
+  assert.equal(await resultLink.textContent(),'トゥーン描画用シェーダーをダウンロード');assert.match(await resultStatus.textContent(),uncheckedText.ja);
+  const resultDownload=page.waitForEvent('download');await resultLink.click();assert.equal((await resultDownload).suggestedFilename(),archive);
+  toonShader={archive,available:true,release:'1.0.22',state:'other'};await page.locator('#language').selectOption('en');
+  assert.equal(await resultLink.textContent(),'Download the toon shader');assert.match(await resultStatus.textContent(),uncheckedText.en);
+  await page.locator('#again').click();await page.locator('[data-step="0"]').waitFor({state:'visible'});
+  jobToon=false;await sourceFile();await review();await page.locator('#create').click();await page.locator('#result').waitFor({state:'visible'});
+  await page.waitForFunction(()=>state.toonShader?.state==='other');
+  assert.equal(await page.locator('#toon-shader-result').isVisible(),false,'no shader download for a follower without toon shading');
   assert.deepEqual(errors,[]);console.log('PASS physics mesh persistence: navigation, downloaded JSON, both import orders, source guards and localization');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

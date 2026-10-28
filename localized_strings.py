@@ -39,6 +39,8 @@ def load_table(data, plugin, extension='strings', languages=('japanese', 'englis
     data = Path(data)
     archives = {} if archives is None else archives
     names = ['Skyrim - Interface.bsa'] if plugin.lower() in ('skyrim.esm', 'update.esm') else [Path(plugin).stem+'.bsa']
+    if plugin.lower() in ('dawnguard.esm', 'hearthfires.esm', 'dragonborn.esm'):
+        names.append('Skyrim - Interface.bsa')  # Special Edition ships the DLC tables there.
     for language in languages:
         filename = f'{Path(plugin).stem.lower()}_{language}.{extension}'
         loose = next((p for p in (data/'Strings'/filename, data/'strings'/filename) if p.is_file()), None)

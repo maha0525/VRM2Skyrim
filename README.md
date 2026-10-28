@@ -14,7 +14,7 @@ Followers start **inside the Temple of Kynareth in Whiterun**. The tool sets up 
 
 This development version is **0.13.0** (toon shading enabled by default). It includes a Japanese/English wizard, optional hair/cloth physics, removable original VRM headwear, seated height correction, material fidelity fixes, and class growth details with categorized Perks/spells. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
 
-**Toon shading is enabled by default.** It preserves the source MToon shade colours, MatCaps, rim lighting, world-space outlines and normal maps on converted avatars. Change it in **STEP 01**. The separate VRM2Skyrim Toon adapter and its supported Community Shaders build are required. See [installation and supported effects](docs/TOON.md).
+**Toon shading is enabled by default.** It preserves the source MToon shade colours, MatCaps, rim lighting, world-space outlines and normal maps on converted avatars. Change it in **STEP 01**. It also requires the toon shader ZIP shipped in the `toon-shader` folder (the wizard's **Download the toon shader** button saves it) and the Community Shaders installed by Bottled Shaders 1.0.22. VRM2Skyrim is MIT-licensed; the shader ZIP contains modified Community Shaders files and is GPL-3.0 with the Community Shaders exceptions. See [installation and supported effects](docs/TOON.md).
 
 For optional physics, enable **髪・布を揺らす** in the wizard, select the meshes, and start with the calm default. Garment roots and arm-adjacent sleeve attachments follow the body animation, while distal cloth moves independently. Geometry-scaled inertia and damping, restricted twist, and hidden single-owner contact patches reduce persistent oscillation in sleeves, hair, skirts, and capes. Original visible geometry and weights are preserved. Update the complete follower ZIP, including NIFs and XMLs. Generated followers require [Faster HDT-SMP](https://www.nexusmods.com/skyrimspecialedition/mods/57339) and matching SKSE64 when physics is enabled. See [physics setup and implementation](docs/FSMP.md).
 
@@ -67,13 +67,15 @@ After updating the tool, press **Ctrl+C** in its terminal and reopen **Launch.cm
 | Clothing separation | Enable/disable support; assign meshes to body, underwear, always-visible parts, or garments; preview the original VRM assignments |
 | Original outfit equipment | Combine into one item or split into items; names, occupied slots, clothing/light/heavy armor, armor rating, weight, value, and initial equipment |
 | Name and voice | NPC name, MOD name, unique MOD ID, author, sex, and 17 voice types with vanilla follower dialogue |
-| Combat and abilities | Warrior/two-handed/archer/destruction/conjuration presets, class, combat style, starting weapon, and ammunition |
+| Combat and abilities | Warrior/two-handed/archer/destruction/conjuration presets, class, combat style, starting weapon (official, or an original weapon from a GLB), and ammunition |
 | Growth and personality | Fixed/player-scaled level, multiplier and limits, automatic/manual stats, health/magicka/stamina, 18 skills, essential/protected/normal status, confidence, aggression, and crime behavior |
 | Details | Uniform overall size multiplier, marriage eligibility with supported voices, and placement offset inside the temple |
-| Perks and spells | Skill/school categories, labeled Perk stages, filtering by category/name/ID/description |
+| Perks, spells and shouts | Skill/school categories, labeled Perk stages, filtering by category/name/ID/description; 27 player shouts, including Dawnguard/Dragonborn shouts when installed |
 | Review and export | Save settings JSON, generate previews, and save the MOD ZIP |
 
 Perk and spell candidates are read from the selected game's `Skyrim.esm`. Spells are restricted to ordinary spells taught by spell tomes; blessings, passive abilities, and trap effects are excluded. This version does not list DLC/MOD perks and spells or independently recorded custom voices. With automatic calculation, health, magicka, and stamina are base values before class/level growth. With manual calculation, the specified attributes and 18 skill values are used directly, including when the NPC's level follows the player. The individual-skills panel includes a button to switch to manual calculation. Selected Perks are granted explicitly; increasing a skill does not automatically add Perks.
+
+Shouts are chosen from the 27 shouts the player can learn (20 from `Skyrim.esm`, 3 from Dawnguard, 4 from Dragonborn, such as Cyclone). DLC shouts appear only when that DLC is installed. A follower with a DLC shout requires that DLC; its ZIP README lists it. The wizard shows the combat style's Equipment Score Mult - Shout and warns when it is 0.
 
 The wizard displays each class's skill and health/magicka/stamina growth weights from the game records. Combat styles normally show candidates used by NPCs with the human character skeleton. Enable the all-styles option to include creature styles and styles without confirmed human usage; the selected style lists its example races. This filter is guidance, not a race restriction in the combat-style record. New followers default to **essential** and **no crime restrictions (morality 0)**. Explicit values in imported settings are preserved.
 
@@ -193,6 +195,8 @@ python converter.py avatar.vrm --settings my-follower.json
 python converter.py avatar.vrm --settings my-follower.json --game 'E:\SteamLibrary\steamapps\common\Skyrim Special Edition' --blender 'C:\path\blender.exe' --output build/my-new-build
 python wizard.py --no-browser --port 8768
 ```
+
+Settings with `"weapon_mode": "original"` also need the weapon GLB whose SHA256 is saved in `original_weapon`: add `--weapon-glb staff.glb`. The GLB is not included in the ZIP. In the wizard, choose **Original weapon** (`オリジナル武器`) for the starting weapon in STEP 03, then the GLB, weapon type, base weapon, grip and length; **Preview with the weapon** draws the follower holding it, the sheathed weapon, and a same-scale comparison with the base weapon. Imported settings ask for the same GLB again and refuse a different file.
 
 If you used `.venv` during setup, run `.venv\Scripts\python.exe`. You can also drag a VRM onto `Convert-VRM.cmd`. Outputs are written under `build/`, and previous conversions are not overwritten. An explicitly specified `--output` must be an empty folder.
 
