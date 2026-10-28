@@ -7,6 +7,7 @@ import unittest
 import zipfile
 
 from converter import package
+from plugin import write_plugin
 from settings import FollowerSettings
 
 
@@ -22,7 +23,8 @@ class PackageTests(unittest.TestCase):
                 model.parent.mkdir(parents=True)
                 model.write_bytes(b"model bytes unchanged")
                 plugin = mod / settings.plugin_name
-                plugin.write_bytes(b"plugin bytes unchanged")
+                # The README reads the plugin's master list, so the plugin is a real header.
+                write_plugin(plugin, [], author=mod_id)
                 # Simulate the actual shared files left by a pre-0.4.1 build.
                 (mod / "README.txt").write_text("old generated readme")
                 settings.save(mod / "VRM2Skyrim-settings.json")

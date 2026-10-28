@@ -13,7 +13,17 @@ Private fitted ARMA records retain original SNDD footstep references directly;
 only their required official masters are added to the follower. Local FormIDs
 are unchanged. Conversion/validation use canonical own-file index 1 while the
 serializer maps the real MAST order, including VMAD, race, outfit, head, combat
-style, relationship and placed-reference links. See follower_plugin.py.
+style, relationship, placed-reference links and the NPC spell list (SPLO, which
+holds both spells and shouts). See follower_plugin.py.
+
+Selected shouts (settings `shouts`, OfficialCatalog keys) are SPLO references to
+the official SHOU records, after the spells; SPCT counts both. A DLC shout adds
+its plugin and that plugin's masters to the follower, like footstep sounds. The
+extra masters are one combined, deduplicated list in OfficialCatalog plugin order
+(footsteps and shouts together), computed also without fitting; footstep SNDD and
+shout SPLO references are both numbered against it (shouts.official_references).
+The output gate reads the written ESP back and resolves each shout in its master
+file (shouts.validate_generated).
 
 Legacy 0.11.x and earlier shared patches must be removed only after every fitted
 follower depending on them has been re-exported/replaced. The wizard shows the
@@ -117,6 +127,8 @@ beast-specific addons. An item may have several humanoid addons, and enchanted
 variants share the same fitted addon geometry.
 
 The follower keeps its Skyrim-only master layout and existing saved local IDs.
+Exceptions: DLC/Creation masters needed by fitted footstep sounds (0.12.0) and by
+selected DLC shouts; see the independent registration section above.
 Fitted private ARMA records begin at `0x1000`, one per unique source addon. The
 combined armor patch adds them to the original ARMO, remapping all references,
 VMAD object properties and alternate texture sets into its master order. Original

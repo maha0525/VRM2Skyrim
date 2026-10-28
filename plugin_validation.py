@@ -52,6 +52,8 @@ def validate_private_records(generated, settings, output):
                     if value >> 24 == 1 and value not in local_ids:
                         raise ValueError("Dangling local record reference")
     validate_generated_style(generated, settings)
+    from shouts import validate_generated
+    validate_generated(generated, settings, output)
     from weapon import validate_weapon_records
     npc_path = output / 'npc.json'
     report = json.loads(npc_path.read_text(encoding='utf8')).get('original_weapon') if npc_path.is_file() else None

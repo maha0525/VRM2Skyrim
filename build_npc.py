@@ -119,7 +119,8 @@ def appearance_records(settings, catalog):
     return result, inventory
 
 
-def configure_actor(npc, settings, catalog, base_stats):
+def configure_actor(npc, settings, catalog, base_stats, shouts=()):
+    """shouts: follower-plugin FormIDs of settings.shouts (shouts.official_references)."""
     npc.remove(b"VMAD", b"SNAM", b"PKID", b"CNTO", b"COED", b"COCT", b"CRIF", b"TPLT", b"WNAM",
                b"SPCT", b"SPLO", b"PRKZ", b"PRKR", b"SOFT")
     npc.replace(b"EDID", text(settings.prefix + "NPC"))
@@ -161,9 +162,12 @@ def configure_actor(npc, settings, catalog, base_stats):
         factions.append(("PotentialMarriageFaction", 0))
     after(npc, b"ACBS", [(b"SNAM", uint(catalog.require(name, b"FACT").form_id)
                           + struct.pack("<b3x", rank)) for name, rank in factions])
-    if settings.spells:
-        after(npc, b"RNAM", [(b"SPCT", uint(len(settings.spells)))]
-              + [(b"SPLO", uint(catalog.require(name, b"SPEL").form_id)) for name in settings.spells])
+    # SPLO holds both SPEL and SHOU: spells first, then shouts; SPCT counts both.
+    spells = [catalog.require(name, b"SPEL").form_id for name in settings.spells] + list(shouts)
+    if len(shouts) != len(settings.shouts):
+        raise ValueError("Shout references do not match the selected shouts")
+    if spells:
+        after(npc, b"RNAM", [(b"SPCT", uint(len(spells)))] + [(b"SPLO", uint(value)) for value in spells])
     additions = []
     if settings.perks:
         additions += [(b"PRKZ", uint(len(settings.perks)))]
@@ -205,11 +209,12 @@ def build_npc(game_data, output, settings=None, catalog=None):
     struct.pack_into("<ff", data, 16, 1., 1.)
     race.replace(b"DATA", bytes(data))
     appearance, inventory = appearance_records(settings, catalog)
-    extra_masters, sound_refs = [], {}
+    fitting = json.loads((output / "armor-fitting.json").read_text()) if settings.fitting_enabled else None
+    from shouts import official_references
+    # Footsteps and shouts share one master order, so both are numbered against it.
+    official = official_references(game_data, settings, fitting)
+    extra_masters, sound_refs = official['masters'], official['sounds']
     if settings.fitting_enabled:
-        fitting = json.loads((output / "armor-fitting.json").read_text())
-        from skypatcher import footstep_bindings
-        extra_masters, sound_refs = footstep_bindings(game_data, fitting)
         seen = set()
         for item in fitting["equipment"]:
             if item['addon_local_id'] in seen:
@@ -229,7 +234,7 @@ def build_npc(game_data, output, settings=None, catalog=None):
     npc = copy.deepcopy(catalog.require(template, b"NPC_"))
     npc.form_id, npc.flags = NPC_ID, 0
     base_stats = struct.unpack_from("<fff", race.values(b"DATA")[0], 36)
-    factions = configure_actor(npc, settings, catalog, base_stats)
+    factions = configure_actor(npc, settings, catalog, base_stats, official['shouts'])
     if settings.combat_style_mode == 'custom':
         from combat_style import private_style
         style = private_style(settings, catalog)
@@ -308,7 +313,9 @@ def build_npc(game_data, output, settings=None, catalog=None):
                                    for g in settings.appearance_parts.get('garments', [])} if settings.armor_support else {},
               "records": [{"type": r.kind.decode(), "id": hex(r.form_id), "editor_id": r.editor_id} for r in generated],
               "weapon_mode": settings.weapon_mode, "original_weapon": weapon_report,
-              "game_verified": False}
+              # Read-only source of the official masters, for the output gate (shouts.validate_generated).
+              "game_data": str(Path(game_data).resolve()), "official_masters": extra_masters,
+              "shouts": settings.shouts, "game_verified": False}
     (output / "npc.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf8")
     logging.info("Follower plugin generated: %s; placement %s", plugin_path, cell.editor_id)
     return plugin_path

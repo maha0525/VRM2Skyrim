@@ -70,10 +70,12 @@ After updating the tool, press **Ctrl+C** in its terminal and reopen **Launch.cm
 | Combat and abilities | Warrior/two-handed/archer/destruction/conjuration presets, class, combat style, starting weapon (official, or an original weapon from a GLB), and ammunition |
 | Growth and personality | Fixed/player-scaled level, multiplier and limits, automatic/manual stats, health/magicka/stamina, 18 skills, essential/protected/normal status, confidence, aggression, and crime behavior |
 | Details | Uniform overall size multiplier, marriage eligibility with supported voices, and placement offset inside the temple |
-| Perks and spells | Skill/school categories, labeled Perk stages, filtering by category/name/ID/description |
+| Perks, spells and shouts | Skill/school categories, labeled Perk stages, filtering by category/name/ID/description; 27 player shouts, including Dawnguard/Dragonborn shouts when installed |
 | Review and export | Save settings JSON, generate previews, and save the MOD ZIP |
 
 Perk and spell candidates are read from the selected game's `Skyrim.esm`. Spells are restricted to ordinary spells taught by spell tomes; blessings, passive abilities, and trap effects are excluded. This version does not list DLC/MOD perks and spells or independently recorded custom voices. With automatic calculation, health, magicka, and stamina are base values before class/level growth. With manual calculation, the specified attributes and 18 skill values are used directly, including when the NPC's level follows the player. The individual-skills panel includes a button to switch to manual calculation. Selected Perks are granted explicitly; increasing a skill does not automatically add Perks.
+
+Shouts are chosen from the 27 shouts the player can learn (20 from `Skyrim.esm`, 3 from Dawnguard, 4 from Dragonborn, such as Cyclone). DLC shouts appear only when that DLC is installed. A follower with a DLC shout requires that DLC; its ZIP README lists it. Whether a follower actually uses each shout in combat has not been checked in the game. The wizard shows the combat style's Equipment Score Mult - Shout and warns when it is 0.
 
 The wizard displays each class's skill and health/magicka/stamina growth weights from the game records. Combat styles normally show candidates used by NPCs with the human character skeleton. Enable the all-styles option to include creature styles and styles without confirmed human usage; the selected style lists its example races. This filter is guidance, not a race restriction in the combat-style record. New followers default to **essential** and **no crime restrictions (morality 0)**. Explicit values in imported settings are preserved.
 

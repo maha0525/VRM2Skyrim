@@ -1,6 +1,6 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const state = {step:0, source:null, choices:null, defaults:null, job:null, imported:null, pendingSelects:null, perks:new Map(), spells:new Set(), nameDirty:false, idDirty:false};
+const state = {step:0, source:null, choices:null, defaults:null, job:null, imported:null, pendingSelects:null, perks:new Map(), spells:new Set(), shouts:new Set(), nameDirty:false, idDirty:false};
 const catalogSelects=['voice','combat_class','combat_style','weapon','ammunition'];
 const skills = ["OneHanded","TwoHanded","Marksman","Block","Smithing","HeavyArmor","LightArmor","Pickpocket","Lockpicking","Sneak","Alchemy","Speechcraft","Alteration","Conjuration","Destruction","Illusion","Restoration","Enchanting"];
 const skillLabels = ["片手武器","両手武器","弓術","防御","鍛冶","重装","軽装","スリ","開錠","隠密","錬金術","話術","変性","召喚","破壊","幻惑","回復","付呪"];
@@ -22,7 +22,7 @@ function applySettings(settings) {
   if(settings.physics_stiffness!==undefined&&!Array.from($('physics_stiffness').options).some(o=>o.value===String(settings.physics_stiffness)))$('physics_stiffness').add(new Option(tr("指定値 ")+settings.physics_stiffness,String(settings.physics_stiffness)));
   for(const [key,value] of Object.entries(settings)) {const input=$(key); if(!input)continue; if(input.type==='checkbox') input.checked=value; else input.value=String(value);}
   state.styleDirty=false;loadCombatStyle(settings);
-  state.perks=new Map((settings.perks||[]).map(item=>[item.editor_id,item.rank])); state.spells=new Set(settings.spells||[]);
+  state.perks=new Map((settings.perks||[]).map(item=>[item.editor_id,item.rank])); state.spells=new Set(settings.spells||[]); state.shouts=new Set(settings.shouts||[]);
   state.fitArmors=new Set(settings.fit_armors||[]); $('fit-enabled').checked=state.fitArmors.size>0||settings.fit_mode==='all_official';
   state.headOverrides=structuredClone(settings.head_overrides||{});
   $('head-hide-face').checked=settings.head_defaults?.hide_face??false; $('head-hide-hair').checked=settings.head_defaults?.hide_hair??true; setupFitting();
@@ -39,7 +39,7 @@ function collect() {
     const input=$(key); if(!input)continue;
     settings[key]=input.type==='checkbox'?input.checked:integers.has(key)?Number.parseInt(input.value,10):floats.has(key)?Number(input.value):typeof value==='boolean'?input.value==='true':input.value.trim();
   }
-  settings.perks=[...state.perks].map(([editor_id,rank])=>({editor_id,rank})); settings.spells=[...state.spells];
+  settings.perks=[...state.perks].map(([editor_id,rank])=>({editor_id,rank})); settings.spells=[...state.spells]; settings.shouts=[...state.shouts];
   settings.combat_preset=$('preset').value;
   settings.combat_style_custom=structuredClone(state.styleCustom||{});
   settings.skills=settings.auto_calculate?{}:Object.fromEntries(skills.map(key=>[key,Number($('skill-'+key).value)])); Object.assign(settings,wardrobeCollect());
@@ -214,7 +214,33 @@ function renderChoiceList(kind, term) {
     target.append(label);
   }
 }
-function renderChoices(){renderChoiceList('perks',$('perk-search').value);renderChoiceList('spells',$('spell-search').value);$('perk-count').textContent=state.perks.size;$('spell-count').textContent=state.spells.size;selectedTags('perks');selectedTags('spells');}
+function renderChoices(){renderChoiceList('perks',$('perk-search').value);renderChoiceList('spells',$('spell-search').value);$('perk-count').textContent=state.perks.size;$('spell-count').textContent=state.spells.size;selectedTags('perks');selectedTags('spells');renderShouts();}
+function shoutScore(){
+  // The custom style's edited value wins; otherwise the selected official style's value.
+  if($('combat_style_mode').value==='custom')return {custom:true,value:state.styleCustom?.values?.shout_score};
+  const style=state.choices?.styles.find(item=>item.id===$('combat_style').value);
+  return {custom:false,id:$('combat_style').value,value:style?.config?.values?.shout_score};
+}
+function renderShouts(){
+  const list=$('shouts');list.replaceChildren();
+  for(const item of state.choices?.shouts||[]){
+    const label=document.createElement('label');label.className='choice';
+    const check=document.createElement('input');check.type='checkbox';check.dataset.recordId=item.id;check.checked=state.shouts.has(item.id);
+    const title=document.createElement('strong');title.textContent=recordLabel(item);label.append(check,title);
+    if(item.dlc){const dlc=document.createElement('span');dlc.className='dlc';dlc.dataset.dlc=item.dlc;dlc.textContent=tr('{0} が必要',item.dlc);label.append(dlc);}
+    const desc=document.createElement('small');desc.textContent=item.editor_id+(recordDescription(item)?' · '+recordDescription(item):'');label.append(desc);
+    check.onchange=()=>{if(check.checked)state.shouts.add(item.id);else state.shouts.delete(item.id);renderShouts();};
+    list.append(label);
+  }
+  $('shout-count').textContent=state.shouts.size;
+  const tags=$('selected-shouts');tags.replaceChildren();
+  for(const id of state.shouts){const item=state.choices?.shouts?.find(item=>item.id===id);const button=document.createElement('button');button.type='button';button.textContent=(item?recordLabel(item):id)+' ×';button.onclick=()=>{state.shouts.delete(id);renderShouts();};tags.append(button);}
+  const score=shoutScore(),known=Number.isFinite(score.value),shown=state.shouts.size>0;
+  $('shout-score').hidden=!shown;$('shout-score-warning').hidden=!shown||score.value!==0;
+  const value=known?String(Number(score.value.toFixed(4))):'';
+  $('shout-score').textContent=!known?tr('戦闘スタイルにシャウトの優先度の値がありません。ゲーム既定の値を使います。'):score.custom?tr('専用の戦闘スタイルのシャウトの優先度: {0}',value):tr('戦闘スタイル {0} のシャウトの優先度: {1}',score.id,value);
+  $('shout-score-warning').textContent=tr('シャウトの優先度が 0 なので、この戦闘スタイルではシャウトを使いません。STEP 03 で別の戦闘スタイルを選ぶか、専用の戦闘スタイルで「シャウトの優先度」を上げてください。');
+}
 function updateStyles(selected=$('combat_style').value) {
   if(!state.choices)return;
   const items=state.choices.styles;
@@ -251,12 +277,14 @@ function showStep(step) {
   [...$('steps').children].forEach((li,index)=>{li.classList.toggle('active',index===step);li.classList.toggle('done',index<step);});
   $('back').hidden=step===0;$('next').hidden=step===4;$('create').hidden=step!==4;window.scrollTo(0,0);
   if(step===2)markWeaponPreviewStale();  // appearance inputs of STEP 01/02 are part of the preview
+  if(step===3)renderShouts();  // the shout priority follows the STEP 03 combat style
 }
 function summarize(settings) {
   state.reviewSettings=settings;
   const voice=state.choices.voices.find(item=>item.id===settings.voice);
   const rows=[[tr("アバター"),state.source.filename],[tr("NPC名"),settings.npc_name],['MOD',settings.mod_name+' / '+settings.mod_id+'.esp'],[tr("ボイス"),recordLabel(voice)||settings.voice],[tr("戦闘"),settings.combat_class+' / '+settings.combat_style],[tr("レベル"),settings.level_mode==='player'?tr("プレイヤー×{0}（{1}〜{2}）", settings.level_multiplier, settings.min_level, settings.max_level):String(settings.level)],[tr("生存"),{'protected':tr("保護"),'essential':tr("不死"),'mortal':tr("通常")}[settings.protection]],[tr("体力 / マジカ / スタミナ"),`${settings.health} / ${settings.magicka} / ${settings.stamina}${settings.auto_calculate?tr("（自動成長の補正に使用）"):''}`],[tr("Perk / 魔法"),`${settings.perks.length} / ${settings.spells.length}`],[tr("初期配置"),tr("ホワイトラン · キナレス聖堂")]];
   rows.push([tr("衣服"),settings.armor_support?tr("{0}品を着脱可能（初期装備{1}品）", settings.appearance_parts.garments.length, settings.appearance_parts.garments.filter(g=>g.equipped).length):tr("元の衣服を着脱しない")]);
+  rows.push([tr("シャウト"),settings.shouts.length?settings.shouts.map(id=>{const item=state.choices.shouts?.find(item=>item.id===id);return item?recordLabel(item):id;}).join(i18n.language==='en'?', ':'、'):tr("なし")]);
   rows.push([tr("トゥーン描画"),settings.toon_enabled?tr("有効"):tr("無効")]);
   rows.push([tr("開始武器"),weaponSummary(settings)]);
   if(settings.combat_style_mode==='custom')rows.push([tr('専用戦闘スタイル'),tr('コピー元: {0}',settings.combat_style_custom.source)]);

@@ -10,7 +10,7 @@
 <div class="layout">
   <aside><p class="eyebrow">FOLLOWER CREATOR</p><h1>あなたのアバターを、<br>旅の仲間に。</h1>
     <p class="intro">元の姿を保ったまま、<br>スカイリムの世界へ。</p>
-    <ol id="steps"><li class="active">VRMと制作環境</li><li>名前とボイス</li><li>戦闘と能力</li><li>Perkと魔法</li><li>確認して変換</li></ol>
+    <ol id="steps"><li class="active">VRMと制作環境</li><li>名前とボイス</li><li>戦闘と能力</li><li>Perk・魔法・シャウト</li><li>確認して変換</li></ol>
     <div class="destination"><span>待ち合わせ場所</span><strong>ホワイトラン<br>キナレス聖堂</strong><small>話しかけて、冒険へ誘えます。</small></div>
     <small class="version" id="version"></small>
   </aside>
@@ -111,11 +111,11 @@
         <details id="manual-skills"><summary>18種類のスキルレベルを設定</summary><p id="skills-hint" class="hint"></p><button type="button" id="use-manual-skills" class="secondary">スキルレベルを手動で設定する</button><div id="skill-inputs" hidden><div id="skills" class="grid three"></div></div></details>
       </section>
       <section data-step="3" hidden>
-        <p class="eyebrow">STEP 04</p><h2>得意技を加える</h2><p class="lead">Perkと魔法を追加できます（任意）。</p><p class="note">スキルレベルはSTEP 03で設定します。スキルを上げてもPerkは自動習得しません。</p>
+        <p class="eyebrow">STEP 04</p><h2>得意技を加える</h2><p class="lead">Perk・魔法・シャウトを追加できます（任意）。</p><p class="note">スキルレベルはSTEP 03で設定します。スキルを上げてもPerkは自動習得しません。</p>
         <p class="hint">同名Perkは説明を見て必要な段階を選んでください。</p>
         <p class="hint">隠術は欲しい段階を一つ選びます。最大効果なら5/5だけで十分です。複数選んでも加算されません。</p>
 
-        <div class="grid"><div><h3>Perk <span id="perk-count" class="count">0</span></h3><label>スキル・カテゴリ<select id="perk-category"><option value="all">すべて</option></select></label><input id="perk-search" type="search" placeholder="名前・IDで検索" aria-label="Perkを検索"><p id="perk-visible" class="hint"></p><div id="perks" class="choice-list"></div><div id="selected-perks" class="selected"></div></div><div><h3>唱える魔法 <span id="spell-count" class="count">0</span></h3><label>魔法系統<select id="spell-category"><option value="all">すべて</option></select></label><input id="spell-search" type="search" placeholder="名前・IDで検索" aria-label="魔法を検索"><p id="spell-visible" class="hint"></p><div id="spells" class="choice-list"></div><div id="selected-spells" class="selected"></div></div></div>
+        <div class="grid three"><div><h3>Perk <span id="perk-count" class="count">0</span></h3><label>スキル・カテゴリ<select id="perk-category"><option value="all">すべて</option></select></label><input id="perk-search" type="search" placeholder="名前・IDで検索" aria-label="Perkを検索"><p id="perk-visible" class="hint"></p><div id="perks" class="choice-list"></div><div id="selected-perks" class="selected"></div></div><div><h3>唱える魔法 <span id="spell-count" class="count">0</span></h3><label>魔法系統<select id="spell-category"><option value="all">すべて</option></select></label><input id="spell-search" type="search" placeholder="名前・IDで検索" aria-label="魔法を検索"><p id="spell-visible" class="hint"></p><div id="spells" class="choice-list"></div><div id="selected-spells" class="selected"></div></div><div><h3>シャウト <span id="shout-count" class="count">0</span></h3><p class="hint">フォロワーが戦闘でそのシャウトを使うかどうかは、ゲームで確かめていません。</p><p id="shout-score" class="hint" hidden></p><p id="shout-score-warning" class="note" hidden></p><div id="shouts" class="choice-list"></div><div id="selected-shouts" class="selected"></div></div></div>
       </section>
       <section data-step="4" hidden>
         <p class="eyebrow">STEP 05</p><h2>旅立ちの準備ができました</h2><p class="lead">この内容で、導入できるフォロワーMODのZIPを作ります。</p>

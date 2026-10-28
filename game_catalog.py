@@ -296,10 +296,15 @@ class GameCatalog:
                 raise ValueError(f"このPerkの指定ランクに効果がありません: {perk['editor_id']}")
         for spell in settings.spells:
             self.require(spell, b"SPEL")
-        if settings.fit_armors:
-            from armor_catalog import official_choices
+        equipment = None
+        if settings.fit_armors or settings.shouts:
             from official_catalog import OfficialCatalog
             equipment = OfficialCatalog(self.path.parent)
+        if settings.shouts:
+            from shouts import resolve
+            resolve(equipment, settings.shouts)
+        if settings.fit_armors:
+            from armor_catalog import official_choices
             allowed = {r.form_id for r in official_choices(equipment, settings.sex)}
             if any(equipment.require(key, b'ARMO').form_id not in allowed for key in settings.fit_armors):
                 raise ValueError('人型向けの公式装備を選んでください')
@@ -400,4 +405,6 @@ class GameCatalog:
                              'addons': [{'key': catalog.key(a), 'name': a.editor_id, 'mask': slot_mask(a)}
                                         for a in catalog.addon_records(r, sex)]}
                             for r in official_choices(catalog, sex)]
+        from shouts import choices as shout_choices
+        result['shouts'] = shout_choices(catalog)
         return result

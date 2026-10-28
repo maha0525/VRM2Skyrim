@@ -18,6 +18,10 @@ other races' appearances; add private-race addons through one combined patch.
   invalidate existing follower profiles when combining patches.
 - Keep the follower plugin's existing Skyrim-only master layout and saved IDs.
   DLC gear lists live in the combined patch, which remaps all native references.
+  Exceptions: the DLC masters of fitted footstep sounds (0.12.0,
+  per-follower-armor-registration.md) and of selected DLC shouts
+  (follower-shouts.md). A DLC shout record exists only in its DLC, so no
+  Skyrim-only alternative exists.
 - Face and hair are classified independently. Four permanent-layer NIF models
   each combine the visible face, hair and fixed accessories into one slot-60
   addon. Four private skin records select those models; an empty combination

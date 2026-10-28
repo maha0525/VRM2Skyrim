@@ -53,6 +53,7 @@ class FollowerSettings:
     ammunition: str = ""
     perks: list = field(default_factory=list)  # {editor_id, rank}; rank is CK's zero-based rank
     spells: list = field(default_factory=list)
+    shouts: list = field(default_factory=list)  # OfficialCatalog keys, e.g. Dragonborn.esm:0200C0
     skills: dict = field(default_factory=dict)
     spawn_offset_x: float = 0.0
     spawn_offset_y: float = 0.0
@@ -122,6 +123,10 @@ class FollowerSettings:
                 raise ValueError("Perks require editor_id and a zero-based integer rank")
         if any(not isinstance(spell, str) for spell in self.spells):
             raise ValueError("Spell IDs must be strings")
+        if not isinstance(self.shouts, list) or any(
+                not isinstance(key, str) or not re.fullmatch(r'[A-Za-z0-9_-]+\.(?:esm|esl|esp):[0-9A-Fa-f]{6}', key)
+                for key in self.shouts) or len({key.casefold() for key in self.shouts}) != len(self.shouts):
+            raise ValueError('シャウトは「プラグイン名:6桁の番号」の重複しない一覧で指定してください')
         for name in ("auto_calculate", "marriage", "render_previews", "armor_support", "physics_enabled",
                      "sitting_enabled", "sitting_auto", "toon_enabled"):
             if type(getattr(self, name)) is not bool:

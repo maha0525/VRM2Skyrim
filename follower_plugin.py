@@ -9,7 +9,8 @@ from plugin import records, write_plugin
 # Internally slot 0 is Skyrim, slot 1 is this follower; optional masters start at 2.
 # On disk all masters precede the follower. Never remap numeric/material payloads.
 REFS = {
-    b"NPC_": {b"RNAM", b"WNAM", b"DOFT", b"PNAM", b"ZNAM"},
+    # SPLO: spells stay index 0; DLC shouts use 2+ like SNDD.
+    b"NPC_": {b"RNAM", b"WNAM", b"DOFT", b"PNAM", b"ZNAM", b"SPLO"},
     b"RACE": {b"WNAM", b"HEAD"},
     b"ARMO": {b"RNAM", b"MODL"},
     b"ARMA": {b"RNAM", b"MODL", b"SNDD"},
