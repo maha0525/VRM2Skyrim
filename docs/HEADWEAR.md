@@ -1,34 +1,56 @@
-# Original VRM hats and helmets / 元VRMの帽子・兜
+# 頭装備と髪・耳の表示ガイド (兜・フード・オリジナル頭飾り)
 
-Since 0.10.0-dev, original VRM meshes can become removable headwear.
-Enable clothing/armor separation, add an item under generated clothes, and assign
-the hat mesh to it. Choose **帽子・兜** as its purpose. The automatic equip slot is
-30 (head); manual slots 30 and 31 are also available. Another item occupying the
-same slot replaces it through Skyrim's native equip handling.
+VRM アバターは髪型にボリュームがあったり、ケモ耳・角・帽子などの装飾がついていたりすることが多いため、Skyrim 内の兜やフードをそのままかぶせると髪や耳が突き抜けてしまいます。
 
-Each head item can optionally hide the classified face or hair while equipped.
-Both options are off by default, preserving the avatar's original hat/hairstyle.
-Visibility switching requires matching SKSE64 and separately classified existing
-face/hair meshes. Removing the item restores those original meshes. No VRM-side
-hat-removal gimmick is required, and no fitted Skyrim armor is required.
+このガイドでは、**頭装備を着けたときに顔や髪を自動で隠す仕組み**と、**VRM に含まれる帽子やリボンなどを着脱可能な「頭装備」として扱う方法**を説明します。
 
-This does not create hair under a hat or cut a combined hat/hair mesh apart.
-If the original VRM lacks the uncovered hairstyle, that geometry must be authored
-in the model. Ordinary hat removal with visibility options off uses native equip
-slots and does not itself require SKSE64; enabled seating/physics may still do so.
+---
 
-## 日本語
+## 1. 必要な環境と基本条件
 
-0.10.0-devから、元VRMの帽子・兜を着脱する頭装備にできます。
+- **元 VRM の帽子・兜を単に「着脱する衣服」として脱ぎ着するだけの場合**
+  追加の前提 MOD は不要です（Skyrim 本体のみで動作します）。
+- **頭装備を着けたときに「顔」や「髪」を自動で隠す場合（表示切替）**
+  1. **SKSE64**（`skse64_loader.exe` からゲームを起動すること）
+  2. STEP 01 で **「衣服・防具の分離」** を **「対応あり：身体・下着・衣服を分けて着脱」** にし、元の VRM の**顔メッシュ**と**髪メッシュ**がそれぞれ「顔」「髪」として分類されていること
+  3. ゲーム内の既存兜・フードも体型合わせして使う場合は **SkyPatcher** も導入すること
 
-1. 「衣服・防具の扱い」を対応ありにします。
-2. 「生成する衣服」で一品追加し、帽子のメッシュを「着脱する衣服」としてその品へ割り当てます。
-3. 「部位・用途」を「帽子・兜」にします。装備枠は自動で30（頭）になります。
-4. 顔や髪を隠したい場合だけ、その頭装備のチェックを入れます。標準では両方を残します。
+---
 
-顔・髪の切替には、上の一覧で対応する元メッシュを顔・髪として分類し、SKSE64を導入してください。
-帽子を外すと元のメッシュへ戻ります。VRM側に着脱ギミックを用意する必要はありません。
-Skyrimの既存装備を変換しなくても利用できます。
+## 2. VRM に入っている帽子・リボン・兜を着脱可能にする（STEP 01）
 
-帽子の下の髪を新しく作る機能ではありません。帽子と髪が一体の場合は事前のメッシュ分離が必要で、
-元モデルに帽子を外した髪型が存在しない場合は制作側で用意します。
+元の VRM モデルに帽子・カチューシャ・リボン・兜などのメッシュが含まれている場合、STEP 01 の **「身体と衣服のメッシュ分類」** でどう扱いたいかを選べます。
+
+### パターン A：いつも身につけたままにする（脱がない髪飾り・ケモ耳など）
+- メッシュの役割を **「髪」**（または顔の一部なら **「顔」**）に設定します。
+- 普段は頭部の一部として常に表示され、髪を隠す兜やフードをかぶったときだけ髪と一緒に隠れます。
+
+### パターン B：ゲーム内で外したり着け直したりできる「頭装備」にする
+1. メッシュ一覧で、その帽子・兜メッシュの役割を **「着脱する衣服」** に設定します。
+2. 下の **「生成する衣服」** 一覧で、そのアイテムの **「部位・用途」** を **「帽子・兜」** に変更します。
+   - 自動的に装備枠が **`30（頭）`**（ヘッドギア枠）に切り替わります。
+3. 同じカード内に表示される 2 つのチェックボックスで、かぶったときの表示切替を選べます（初期値は両方オフ）：
+   - **「この頭装備を着けたら髪を隠す」** (`hide_hair`) — 深い帽子やフード・兜で、元の髪が突き抜ける場合にオンにします。
+   - **「この頭装備を着けたら顔を隠す」** (`hide_face`) — フルヘルムや仮面など、顔全体を覆う装備の場合にオンにします。
+   - 小さなリボンやベレー帽など、**髪も顔もそのまま残したい場合は両方オフ**のままにします（または「部位・用途」を「装身具・小物」にして `42（サークレット）` 枠に割り当てることもできます）。
+
+---
+
+## 3. ゲーム内の既存兜・フードで「顔・髪を隠すか」を個別に変える
+
+「ゲーム内の防具をこの体型に合わせる」をオンにしている場合、Skyrim 本体や DLC の兜・フードごとに、かぶったとき顔や髪を隠すかどうかを個別に調整できます。
+
+### 設定手順（STEP 01）
+1. STEP 01 で **「衣服・防具の分離」** をオンにし、**「ゲーム内の防具をこの体型に合わせる」** にチェックを入れます。
+2. 下部にある **「頭装備ごとの顔・髪の表示」**（詳細設定）を開きます。
+3. 検索欄に兜やフードの名前を入力して絞り込み、各装備ごとに **「髪を隠す」** / **「顔を隠す」** を切り替えます。
+
+---
+
+## 4. 技術仕様（開発者向けリファレンス）
+
+- **FaceGen ヘッドの無効化と専用頭パーツ (`head_visibility.py`)**
+  - フォロワー専用種族（`RACE` `0x804`）の `DATA` フラグから `FaceGen Head` ビット（`0x2`）を落とし、空の `HDPT`（`0x80C`）とメッシュなしの `FaceGeom` を配置することで、装備を着脱してもバニラの人間頭部が VRM の顔の上に重なって描画されるのを防いでいます。
+- **頭装備による顔・髪の動的切替 (`gear_head_runtime.py`)**
+  - 分離された顔（`ARMA` `0x850`）と髪（`ARMA` `0x851`）に対し、通常 Skin（`0x801`）のほか、顔非表示・髪非表示・両方非表示の切り替え用 Skin `ARMO`（`0x852`–`0x854`）と対応バリアント `ARMA`（`0x860`–`0x862`）を生成します。
+  - 顔を隠す頭装備は `FLST` `0x855`、髪を隠す頭装備は `FLST` `0x856` に登録され（元の VRM の帽子・兜はプラグイン内の `ARMO` が直接登録され、既存の公式頭装備は `<フォロワー名>.esp.ini` の SkyPatcher ルール経由で起動時に登録されます）、SKSE64 ランタイムスクリプトが装備変更時に該当 Skin へ自動で切り替えます。

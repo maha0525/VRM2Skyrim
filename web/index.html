@@ -1,17 +1,40 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="converter-version" content="__CONVERTER_VERSION__">
-  <title>VRM2Skyrim — フォロワー制作</title><link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="converter-version" content="__CONVERTER_VERSION__">
+  <title>VRM2Skyrim — フォロワー制作</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header><a class="brand" href="/">VRM<span>2</span>Skyrim</a><div class="header-tools"><span class="local">● このPC内で変換</span><select id="language" aria-label="Language / 言語" data-no-i18n><option value="ja">日本語</option><option value="en">English</option></select></div></header>
+<header>
+  <a class="brand" href="/">VRM<span>2</span>Skyrim</a>
+  <div class="header-tools">
+    <span class="local">● このPC内で変換</span>
+    <select id="language" aria-label="Language / 言語" data-no-i18n>
+      <option value="ja">日本語</option>
+      <option value="en">English</option>
+    </select>
+  </div>
+</header>
 <div class="layout">
-  <aside><p class="eyebrow">FOLLOWER CREATOR</p><h1>あなたのアバターを、<br>旅の仲間に。</h1>
+  <aside>
+    <p class="eyebrow">FOLLOWER CREATOR</p>
+    <h1>あなたのアバターを、<br>旅の仲間に。</h1>
     <p class="intro">元の姿を保ったまま、<br>スカイリムの世界へ。</p>
-    <ol id="steps"><li class="active">VRMと制作環境</li><li>名前とボイス</li><li>戦闘と能力</li><li>Perk・魔法・シャウト</li><li>確認して変換</li></ol>
-    <div class="destination"><span>待ち合わせ場所</span><strong>ホワイトラン<br>キナレス聖堂</strong><small>話しかけて、冒険へ誘えます。</small></div>
+    <ol id="steps">
+      <li class="active">VRMと制作環境</li>
+      <li>名前とボイス</li>
+      <li>戦闘と能力</li>
+      <li>Perk・魔法・シャウト</li>
+      <li>確認して変換</li>
+    </ol>
+    <div class="destination">
+      <span>待ち合わせ場所</span>
+      <strong>ホワイトラン<br>キナレス聖堂</strong>
+      <small>話しかけて、冒険へ誘えます。</small>
+    </div>
     <small class="version" id="version"></small>
   </aside>
   <main>
@@ -19,72 +42,225 @@
     <p id="legacy-armor-notice" class="note" hidden>旧式の防具互換パッチが見つかりました。移行する場合は、体型合わせを使う全フォロワーをこの版で再出力してMODを置き換え、その後でVRM2SkyrimArmorPatch.espを無効にしてください。</p>
     <form id="wizard" novalidate>
       <section data-step="0">
-        <section id="saved-results" hidden><h3>前に作ったフォロワー</h3><label>変換結果<select id="saved-job"></select></label><button id="open-saved" type="button" class="secondary">結果と装備編集を開く</button></section>
-        <p class="eyebrow">STEP 01</p><h2>連れていくアバターを選ぶ</h2><p class="lead">人型のVRM 0 / 1に対応。元の衣装でフォロワーを作ります。</p>
-        <label class="dropzone" for="source"><svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 8v22m-8-14 8-8 8 8M10 29v11h28V29" stroke="currentColor" stroke-width="2"/></svg><strong>VRMファイルを選択</strong><span>クリック、またはここへドラッグ</span><input id="source" type="file" accept=".vrm" aria-label="VRMファイル"></label>
+        <section id="saved-results" hidden>
+          <h3>前に作ったフォロワー</h3>
+          <label>変換結果<select id="saved-job"></select></label>
+          <button id="open-saved" type="button" class="secondary">結果と装備編集を開く</button>
+        </section>
+        <p class="eyebrow">STEP 01</p>
+        <h2>連れていくアバターを選ぶ</h2>
+        <p class="lead">人型の VRM 0.x / 1.0 アバターに対応しています。衣装の着脱や揺れものもここで設定できます。</p>
+        <label class="dropzone" for="source">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 8v22m-8-14 8-8 8 8M10 29v11h28V29" stroke="currentColor" stroke-width="2"/></svg>
+          <strong>VRMファイルを選択</strong>
+          <span>クリック、またはここへドラッグ</span>
+          <input id="source" type="file" accept=".vrm" aria-label="VRMファイル">
+        </label>
         <p id="source-status" class="source-status" aria-live="polite">まだ選択されていません</p>
+
         <div id="toon-settings">
           <label class="checkbox"><input id="toon_enabled" type="checkbox" checked>トゥーン描画</label>
-          <p class="hint">トゥーン描画用シェーダーのZIPと、対応するCommunity Shadersが必要です。ZIPはVortex / MO2で導入します。プレビューには反映されません。</p>
-          <div class="toon-shader"><a id="toon-shader-download" class="secondary" href="/api/toon-shader" download>トゥーン描画用シェーダーをダウンロード</a><p id="toon-shader-status" class="note" role="status" hidden></p></div>
+          <p class="hint">アバターをアニメ調の陰影と輪郭線で描画します（Community Shaders と下のシェーダーZIPが必要です。Blenderの確認プレビューには反映されません）。</p>
+          <div class="toon-shader">
+            <a id="toon-shader-download" class="secondary" href="/api/toon-shader" download>トゥーン描画用シェーダーをダウンロード</a>
+            <p id="toon-shader-status" class="note" role="status" hidden></p>
+          </div>
         </div>
-        <label>衣服・防具の扱い<select id="armor_support"><option value="false">対応なし：元の衣服を着脱しない</option><option value="true">対応あり：身体・下着・衣服を分けて着脱</option></select></label>
+
+        <label>衣服・防具の扱い
+          <select id="armor_support">
+            <option value="false">固定衣装：元の服をそのまま着せる（着脱なし）</option>
+            <option value="true">着脱に対応：身体・下着・衣服を分けて着替え可能にする</option>
+          </select>
+        </label>
+
         <div id="wardrobe-editor" hidden>
           <label class="checkbox"><input id="fit-enabled" type="checkbox" aria-describedby="catalog-status">既存装備をこの身体に合わせる</label>
           <p id="catalog-status" class="hint" role="status" aria-live="polite" hidden></p>
-          <div id="fit-panel" hidden><p class="hint">SkyPatcherとSKSE64が必要です。</p>
-            <label>対応させる装備<select id="fit_mode"><option value="all_official">公式装備すべて（本体・導入済みDLC・公式追加コンテンツ）</option><option value="selected">一覧から選んだ公式装備</option></select></label>
-            <p class="hint">MODで追加された装備は対象外です。</p>
-            <label>元にする装備の見た目<select id="fit_source"><option value="official">標準の見た目（公式の元モデル）</option><option value="installed">置き換えた見た目（UNP/CBBE版・BodySlide出力など）</option></select></label>
-            <p class="hint">置き換えていない装備は、標準の見た目を使います。</p>
-            <p class="hint">置換モデルを使う場合は、身体と装備のBodySlideプリセットを揃えてください。</p>
+          <div id="fit-panel" hidden>
+            <p class="hint">ゲーム内の防具をこのアバターの体型に合わせて変形します（SKSE64 と SkyPatcher が必要です）。</p>
+            <label>対応させる装備
+              <select id="fit_mode">
+                <option value="all_official">公式装備すべて（本体・導入済みDLC・公式追加コンテンツ）</option>
+                <option value="selected">一覧から選んだ公式装備</option>
+              </select>
+            </label>
+            <p class="hint">MODで新規追加された装備は対象外です（バニラ・DLC・Creation装備のリプレイサーには対応しています）。</p>
+            <label>元にする装備の見た目
+              <select id="fit_source">
+                <option value="official">標準の見た目（公式の元モデル）</option>
+                <option value="installed">置き換えた見た目（UNP/CBBE版・BodySlide出力など）</option>
+              </select>
+            </label>
+            <p class="hint">リプレイサーが入っていない装備は標準モデルを使います。UNP / CBBE 等の置換モデルを使う場合は、素体と防具の BodySlide プリセットを揃えておくと綺麗に馴染みます。</p>
             <label id="fit-selection">対応させる公式装備（複数選択）<select id="fit-armors" multiple size="8"></select></label>
             <p id="fit-count" class="hint"></p>
-            <details><summary>頭装備で顔・髪を隠す設定</summary>
+            <details>
+              <summary>頭装備で顔・髪を隠す設定</summary>
+              <p class="hint">全体デフォルト設定（下の検索から装備ごとに個別変更もできます）：</p>
               <label class="checkbox"><input id="head-hide-face" type="checkbox">顔を隠す（既定）</label>
               <label class="checkbox"><input id="head-hide-hair" type="checkbox" checked>髪を覆う装備では髪を隠す（既定）</label>
               <p class="hint">初回プレビューは約1分かかる場合があります。</p>
               <label>装備を検索<input id="head-search" type="search" placeholder="兜・フードの名前"></label>
-              <label>見た目を確認する頭装備<select id="head-model"></select></label><p id="head-count" class="hint"></p><div id="head-policies"></div><p id="head-preview-status" class="hint" role="status"></p><div id="head-preview-images" class="preview-grid"></div><p class="hint">付呪違いにも適用されます。サークレットは既定で髪を隠しません。</p>
+              <label>見た目を確認する頭装備<select id="head-model"></select></label>
+              <p id="head-count" class="hint"></p>
+              <div id="head-policies"></div>
+              <p id="head-preview-status" class="hint" role="status"></p>
+              <div id="head-preview-images" class="preview-grid"></div>
+              <p class="hint">付呪違いにも適用されます。サークレットは既定で髪を隠しません。</p>
             </details>
             <p class="hint">鎧・手袋・靴を装備すると、同じ部位の元衣装が外れます。</p>
           </div>
-          <h3>身体と衣服を分類する</h3><p class="hint">各メッシュの用途を確認してください。身体と服が一体の場合は分けられません。</p>
 
+          <h3>身体と衣服を分類する</h3>
+          <p class="hint">VRM内の各メッシュが「身体」「下着」「衣服」「顔・髪」のどれにあたるか確認してください（素体と服が1つのメッシュに結合されているモデルは分離できません）。</p>
           <p id="wardrobe-warning" role="status"></p>
           <div id="wardrobe-parts" class="wardrobe-parts"></div>
-          <details class="reset-help"><summary>メッシュの割り当てをやり直す</summary><p class="hint">手動の割り当てと衣服グループを破棄します。</p><button type="button" id="wardrobe-reset" class="secondary">読み込み時の自動割り当てに戻す</button></details>
-          <h3>生成する衣服</h3><p class="hint">同じ部位の防具と入れ替わります。マントやアクセサリーは併用できます。</p><p id="wardrobe-migration" class="hint" hidden>以前の設定を読み込み、鎧と入れ替える衣服を部位ごとのセットへまとめました。衣服名・装備枠・初期装備を確認してください。</p><div class="wardrobe-actions"><button type="button" id="wardrobe-combine" class="secondary">衣服を一品にまとめる</button><button type="button" id="wardrobe-split" class="secondary">胴・手袋・靴に分ける</button></div><div id="wardrobe-garments"></div><button type="button" id="wardrobe-add" class="add-garment">＋ 衣服を追加</button><p class="hint">追加した衣服に、上の一覧からメッシュを割り当ててください。</p><p class="hint">同じ枠の衣服は同時に着られません。重ね着は一品にまとめるか、追加枠を使ってください。</p>
+          <details class="reset-help">
+            <summary>メッシュの割り当てをやり直す</summary>
+            <p class="hint">手動で変更したメッシュの割り当てと衣服のグループ分けを初期状態に戻します。</p>
+            <button type="button" id="wardrobe-reset" class="secondary">読み込み時の自動割り当てに戻す</button>
+          </details>
+
+          <h3>生成する衣服</h3>
+          <p class="hint">ここで設定した衣服はゲーム内のアイテムになり、同じ部位の鎧や靴を装備すると自動で着替えます。マントやアクセサリーは防具と重ね着できます。</p>
+          <p id="wardrobe-migration" class="hint" hidden>以前の設定を読み込み、鎧と入れ替える衣服を部位ごとのセットへまとめました。衣服名・装備枠・初期装備を確認してください。</p>
+          <div class="wardrobe-actions">
+            <button type="button" id="wardrobe-combine" class="secondary">衣服を一品にまとめる</button>
+            <button type="button" id="wardrobe-split" class="secondary">胴・手袋・靴に分ける</button>
+          </div>
+          <div id="wardrobe-garments"></div>
+          <button type="button" id="wardrobe-add" class="add-garment">＋ 衣服を追加</button>
+          <p class="hint">追加した衣服に、上の一覧からメッシュを割り当ててください。</p>
+          <p class="hint">同じ枠の衣服は同時に着られません。重ね着は一品にまとめるか、追加枠を使ってください。</p>
         </div>
+
         <div id="physics-settings">
-        <label class="checkbox"><input id="physics_enabled" type="checkbox">髪・布を揺らす（FSMP）</label>
-        <div id="physics-panel" hidden><p class="hint">Faster HDT-SMPとSKSE64が必要です。独立したボーンのある髪・衣服に対応します。</p><label>揺れの硬さ<select id="physics_stiffness"><option value="0.3">柔らかめ（揺れが大きめ）</option><option value="1">穏やか（標準）</option><option value="3">硬め（揺れが小さめ）</option></select></label><p class="hint">未選択なら髪・衣服を自動選択します。身体や硬い小物は選ばないでください。</p><p id="physics-warning" class="warning" role="status" hidden></p><div id="physics-meshes" class="choices"></div></div>
+          <label class="checkbox"><input id="physics_enabled" type="checkbox">髪・布を揺らす（FSMP）</label>
+          <div id="physics-panel" hidden>
+            <p class="hint">VRMの揺れもの（Spring Bone）をゲーム内で揺らします。SKSE64 と Faster HDT-SMP が必要です（選んだ硬さに応じて減衰を自動調整します）。</p>
+            <label>揺れの硬さ
+              <select id="physics_stiffness">
+                <option value="0.3">柔らかめ（揺れが大きめ）</option>
+                <option value="1">穏やか（標準）</option>
+                <option value="3">硬め（揺れが小さめ）</option>
+              </select>
+            </label>
+            <p class="hint">チェックを入れない場合は、揺れものボーンを持つ髪・衣服を自動で選びます。素体や硬い装飾品は外しておいてください。</p>
+            <p id="physics-warning" class="warning" role="status" hidden></p>
+            <div id="physics-meshes" class="choices"></div>
+          </div>
         </div>
+
         <div id="wardrobe-preview-panel" hidden>
           <h3>プレビュー</h3>
-          <label>全体の見た目をプレビュー<select id="wardrobe-preview-state"><option value="all">全ての服を着る</option><option value="underwear">服を外す（身体と下着）</option></select></label><button type="button" id="wardrobe-preview" class="secondary">プレビュー</button>
-          <p id="wardrobe-preview-status" class="hint" aria-live="polite"></p><div id="wardrobe-preview-images" class="preview-grid"></div>
+          <label>全体の見た目をプレビュー
+            <select id="wardrobe-preview-state">
+              <option value="all">全ての服を着る</option>
+              <option value="underwear">服を外す（身体と下着）</option>
+            </select>
+          </label>
+          <button type="button" id="wardrobe-preview" class="secondary">プレビュー</button>
+          <p id="wardrobe-preview-status" class="hint" aria-live="polite"></p>
+          <div id="wardrobe-preview-images" class="preview-grid"></div>
         </div>
-        <div class="environment"><h3>制作環境</h3><label>Skyrim Special Editionのフォルダ<input id="game" type="text" placeholder="…/steamapps/common/Skyrim Special Edition" required></label><label>Blender 4.5 LTSの実行ファイル<input id="blender" type="text" placeholder="…/blender.exe" required></label><p class="hint">見つかった環境を自動入力します。初回準備は同梱の <code>Setup.cmd</code> を実行してください。</p><div id="checks" class="checks"></div></div>
-        <div class="import-row"><label class="link-button">保存した設定を読み込む<input type="file" id="import-settings" accept=".json" hidden></label><span id="import-status"></span></div>
+
+        <div class="environment">
+          <h3>制作環境</h3>
+          <label>Skyrim Special Editionのフォルダ<input id="game" type="text" placeholder="…/steamapps/common/Skyrim Special Edition" required></label>
+          <label>Blender 4.5 LTSの実行ファイル<input id="blender" type="text" placeholder="…/blender.exe" required></label>
+          <p class="hint">見つかった環境を自動入力します。初回準備は同梱の <code>Setup.cmd</code> を実行してください。</p>
+          <div id="checks" class="checks"></div>
+        </div>
+
+        <div class="import-row">
+          <label class="link-button">保存した設定を読み込む<input type="file" id="import-settings" accept=".json" hidden></label>
+          <span id="import-status"></span>
+        </div>
       </section>
+
       <section data-step="1" hidden>
-        <p class="eyebrow">STEP 02</p><h2>名前と声を決める</h2>
-        <div class="grid"><label>NPC名<input id="npc_name" required maxlength="128"></label><label>MOD名<input id="mod_name" required maxlength="128"></label><label>MOD ID<input id="mod_id" required pattern="[A-Za-z][A-Za-z0-9_]{0,63}"><small>英数字と_。ほかのMODと異なるIDにしてください。</small></label><label>作者名<input id="author" maxlength="128" placeholder="任意"></label><label>性別<select id="sex"><option value="female">女性</option><option value="male">男性</option></select></label><label>ボイス<select id="voice"></select><small>標準のフォロワー会話を持つボイスから選択。</small></label></div>
-        <div class="note">NPC名・MOD名は日本語も使えます。</div>
+        <p class="eyebrow">STEP 02</p>
+        <h2>名前と声を決める</h2>
+        <div class="grid">
+          <label>NPC名<input id="npc_name" required maxlength="128"></label>
+          <label>MOD名<input id="mod_name" required maxlength="128"></label>
+          <label>MOD ID<input id="mod_id" required pattern="[A-Za-z][A-Za-z0-9_]{0,63}"><small>半角の英数字とアンダースコア（_）のみ。他のMODと重ならない固有のIDにします。</small></label>
+          <label>作者名<input id="author" maxlength="128" placeholder="任意"></label>
+          <label>性別
+            <select id="sex">
+              <option value="female">女性</option>
+              <option value="male">男性</option>
+            </select>
+          </label>
+          <label>ボイス<select id="voice"></select><small>バニラのフォロワー勧誘・同行セリフに対応しているボイスから選べます。</small></label>
+        </div>
+        <div class="note">NPC名とMOD名には日本語もそのまま使えます（MOD ID は半角英数字で自動生成されます）。</div>
       </section>
+
       <section data-step="2" hidden>
-        <p class="eyebrow">STEP 03</p><h2>冒険での役割を決める</h2><p class="lead">プリセットから始めて、好みに合わせて調整できます。</p>
-        <label>戦闘プリセット<select id="preset"><option value="warrior">片手武器の戦士</option><option value="twohand">両手武器の戦士</option><option value="archer">弓使い</option><option value="mage">破壊魔法の使い手</option><option value="conjurer">召喚魔法の使い手</option><option value="custom">個別に設定</option></select></label>
-        <div class="grid"><label>能力の成長タイプ（クラス）<select id="combat_class"></select></label><label>戦闘スタイル<select id="combat_style"></select></label><label>開始武器<select id="weapon_mode"><option value="official">公式の武器</option><option value="original">オリジナル武器</option></select></label><label id="official-weapon">公式の武器<select id="weapon"></select></label><label>矢・弾（100本）<select id="ammunition"></select></label><label>レベル<select id="level_mode"><option value="player">プレイヤーのレベルに追従</option><option value="fixed">固定レベル</option></select></label><label id="fixed-level">固定レベル<input id="level" type="number" min="1" max="1000"></label><label id="mult-level">追従倍率<input id="level_multiplier" type="number" min=".1" max="10" step=".1"></label><label>最低レベル<input id="min_level" type="number" min="1" max="1000"></label><label>能力の計算<select id="auto_calculate"><option value="true">クラスとレベルから自動成長</option><option value="false">個別スキルを手動指定</option></select></label><label>最高レベル<input id="max_level" type="number" min="1" max="1000"></label></div>
+        <p class="eyebrow">STEP 03</p>
+        <h2>冒険での役割を決める</h2>
+        <p class="lead">プリセットから始めて、好みに合わせて調整できます。</p>
+        <label>戦闘プリセット
+          <select id="preset">
+            <option value="warrior">片手武器の戦士</option>
+            <option value="twohand">両手武器の戦士</option>
+            <option value="archer">弓使い</option>
+            <option value="mage">破壊魔法の使い手</option>
+            <option value="conjurer">召喚魔法の使い手</option>
+            <option value="custom">個別に設定</option>
+          </select>
+        </label>
+        <div class="grid">
+          <label>能力の成長タイプ（クラス）<select id="combat_class"></select></label>
+          <label>戦闘スタイル<select id="combat_style"></select></label>
+          <label>開始武器
+            <select id="weapon_mode">
+              <option value="official">公式の武器</option>
+              <option value="original">オリジナル武器</option>
+            </select>
+          </label>
+          <label id="official-weapon">公式の武器<select id="weapon"></select></label>
+          <label>矢・弾（100本）<select id="ammunition"></select></label>
+          <label>レベル
+            <select id="level_mode">
+              <option value="player">プレイヤーのレベルに追従</option>
+              <option value="fixed">固定レベル</option>
+            </select>
+          </label>
+          <label id="fixed-level">固定レベル<input id="level" type="number" min="1" max="1000"></label>
+          <label id="mult-level">追従倍率<input id="level_multiplier" type="number" min=".1" max="10" step=".1"></label>
+          <label>最低レベル<input id="min_level" type="number" min="1" max="1000"></label>
+          <label>能力の計算
+            <select id="auto_calculate">
+              <option value="true">クラスとレベルから自動成長</option>
+              <option value="false">個別スキルを手動指定</option>
+            </select>
+          </label>
+          <label>最高レベル<input id="max_level" type="number" min="1" max="1000"></label>
+        </div>
+
         <section id="original-weapon-panel" class="original-weapon-panel" hidden>
           <h3>オリジナル武器</h3>
-          <p class="hint">GLBファイルの武器を、このフォロワー専用の武器にします。攻撃力・音・付呪・持ち方は、元にする公式の武器から受け継ぎます。</p>
-          <input id="weapon-glb" type="file" accept=".glb" hidden><button type="button" id="weapon-glb-choose" class="secondary">武器のGLBファイルを選ぶ</button>
+          <p class="hint">手元の GLB ファイル（.glb）を変換して、このフォロワー専用の初期武器として持たせます。攻撃力・効果音・モーション・付呪は「元にする公式の武器」から引き継がれます。</p>
+          <input id="weapon-glb" type="file" accept=".glb" hidden>
+          <button type="button" id="weapon-glb-choose" class="secondary">武器のGLBファイルを選ぶ</button>
           <p id="weapon-glb-status" class="source-status" aria-live="polite">まだ選択されていません</p>
-          <div id="weapon-glb-mismatch" class="note" role="alert" hidden><span id="weapon-glb-mismatch-text"></span><button type="button" id="weapon-glb-forget" class="secondary">設定のGLBを使わず、別のGLBにする</button></div>
-          <p class="hint">公式の武器の三角形ポリゴン数は、およそ366〜2,066です。それよりずっと多い武器は、ゲームが重くなる場合があります。ポリゴン数は自動では減らしません。</p>
-          <div class="grid"><label>武器の種類<select id="weapon-kind"></select></label><label>元にする公式の武器<select id="weapon-base"></select><small>この武器の性能を受け継ぎます。</small></label><label>ゲームでの表示名<input id="weapon-name" maxlength="128"></label><label>握る位置（下端からの割合、%）<input id="weapon-grip" type="number" min="0" max="100" step="any"></label><label>全長<input id="weapon-length" type="number" min="0" max="1000" step="any"><small>Skyrimの長さの単位。1単位は約1.43cmです。</small></label><label>回転（度）<input id="weapon-roll" type="number" min="0" max="360" step="any"><small>長い向きを軸に回します。刃の向きを変えるときに使います。</small></label><label class="checkbox"><input id="weapon-flip" type="checkbox">上下を反転する</label></div>
+          <div id="weapon-glb-mismatch" class="note" role="alert" hidden>
+            <span id="weapon-glb-mismatch-text"></span>
+            <button type="button" id="weapon-glb-forget" class="secondary">設定のGLBを使わず、別のGLBにする</button>
+          </div>
+          <p class="hint">※Skyrim公式武器のポリゴン数は約366〜2,066三角形です。ポリゴン数の自動削減は行わないため、極端に高精細なモデルを入れるとゲーム内の負荷が高くなることがあります。</p>
+          <div class="grid">
+            <label>武器の種類<select id="weapon-kind"></select></label>
+            <label>元にする公式の武器<select id="weapon-base"></select><small>この武器の性能を受け継ぎます。</small></label>
+            <label>ゲームでの表示名<input id="weapon-name" maxlength="128"></label>
+            <label>握る位置（下端からの割合、%）<input id="weapon-grip" type="number" min="0" max="100" step="any"></label>
+            <label>全長<input id="weapon-length" type="number" min="0" max="1000" step="any"><small>Skyrimの長さの単位。1単位は約1.43cmです。</small></label>
+            <label>回転（度）<input id="weapon-roll" type="number" min="0" max="360" step="any"><small>長い向きを軸に回します。刃の向きを変えるときに使います。</small></label>
+            <label class="checkbox"><input id="weapon-flip" type="checkbox">上下を反転する</label>
+          </div>
           <p id="weapon-base-status" class="hint" role="status"></p>
           <button type="button" id="weapon-reset-size" class="secondary">握る位置と全長を元の武器に合わせる</button>
           <h3>プレビュー</h3>
@@ -93,50 +269,207 @@
           <p id="weapon-preview-status" class="hint" role="status" aria-live="polite"></p>
           <div id="weapon-preview-images" class="preview-grid"></div>
         </section>
-        <div id="class-details" class="note" aria-live="polite"></div><label class="checkbox"><input id="all-styles" type="checkbox">動物・怪物向けを含む、すべての戦闘スタイルを表示</label><p id="style-details" class="hint" aria-live="polite"></p><p class="hint">動物・怪物用のスタイルは、人型で正常に動かない場合があります。</p>
+
+        <div id="class-details" class="note" aria-live="polite"></div>
+        <label class="checkbox"><input id="all-styles" type="checkbox">動物・怪物向けを含む、すべての戦闘スタイルを表示</label>
+        <p id="style-details" class="hint" aria-live="polite"></p>
+        <p class="hint">動物・怪物用のスタイルは、人型で正常に動かない場合があります。</p>
+
         <section class="combat-style-panel">
-          <label>戦闘スタイルの使い方<select id="combat_style_mode"><option value="existing">既存スタイルをそのまま使う</option><option value="custom">このフォロワー専用に調整する</option></select></label>
-          <p class="hint">コピー元を選び直すだけでは、調整中の値は変わりません。</p>
+          <label>戦闘スタイルの使い方
+            <select id="combat_style_mode">
+              <option value="existing">既存スタイルをそのまま使う</option>
+              <option value="custom">このフォロワー専用に調整する</option>
+            </select>
+          </label>
+          <p class="hint">上の「戦闘スタイル」を選び直したあと、下のボタンを押すとそのスタイルの数値をコピーして微調整できます。</p>
           <button id="copy-combat-style" type="button" class="secondary">選択中のスタイルからコピーして調整</button>
           <div id="combat-style-editor" hidden>
             <h3 id="combat-style-source"></h3>
-            <p class="hint">装備優先度は行動の選択に使う重みです。攻撃力の倍率や、固定の使用確率ではありません。</p>
-            <div id="combat-style-basic"></div><div id="combat-style-advanced"></div>
+            <p class="hint">「装備優先度」はAIがどの戦闘手段を選ぶかの判断ウェイトです（ダメージ倍率や固定の発動確率ではありません）。</p>
+            <div id="combat-style-basic"></div>
+            <div id="combat-style-advanced"></div>
             <button id="reset-combat-style" type="button" class="secondary">すべてコピー元へ戻す</button>
             <p class="hint">空欄の項目はゲーム既定の値を使います。</p>
           </div>
         </section>
-        <div class="grid three"><label>基礎体力<input id="health" type="number" min="1" max="32000"></label><label>基礎マジカ<input id="magicka" type="number" min="0" max="32000"></label><label>基礎スタミナ<input id="stamina" type="number" min="0" max="32000"></label></div><p class="hint" id="stat-hint">成長前の基礎値を指定します。レベル追従または自動計算を有効にすると、クラスとレベルに応じた成長分が加わります。</p>
-        <details><summary>生存・性格・サイズ・配置を調整</summary><div class="grid"><label>死亡ルール<select id="protection"><option value="protected">保護：プレイヤー以外には倒されない</option><option value="essential" selected>不死：誰にも倒されない</option><option value="mortal">通常：死亡する</option></select></label><label>勇敢さ<select id="confidence"><option value="4">恐れ知らず</option><option value="3">勇敢</option><option value="2">普通</option><option value="1">慎重</option><option value="0">臆病</option></select></label><label>攻撃性<select id="aggression"><option value="0">自分や仲間を守る</option><option value="1">敵対者を攻撃する</option><option value="2">中立の相手にも攻撃する</option></select></label><label>犯罪への対応<select id="morality"><option value="3">犯罪をしない</option><option value="2">盗みを許容する</option><option value="1">敵への暴力を許容する</option><option value="0" selected>制限しない</option></select></label><label>全体の大きさ<input id="height_scale" type="number" min=".25" max="3" step=".05"><small>体型の比率を保つ一様な倍率。</small></label><label class="checkbox"><input id="marriage" type="checkbox">結婚候補にする</label><label>聖堂内の左右オフセット<input id="spawn_offset_x" type="number" min="-200" max="200" step="8"></label><label>聖堂内の前後オフセット<input id="spawn_offset_y" type="number" min="-200" max="200" step="8"></label></div></details>
-        <details id="sitting-settings"><summary>椅子に座ったときの高さ補正</summary><label class="checkbox"><input id="sitting_enabled" type="checkbox" checked>着座中の高さを補正する（SKSE64が必要）</label><label class="checkbox"><input id="sitting_auto" type="checkbox" checked>元の体型と公式の着座姿勢から自動計算する</label><label>高さの微調整<input id="sitting_offset" type="number" min="-100" max="100" step="0.5"><small>Skyrim単位。＋で上へ、−で下へ。自動計算を使う場合は、その結果に加算します。</small></label><p class="hint">公式の椅子・ベンチに対応します。他のMODで着座の高さを補正する場合はオフにしてください。</p></details>
-        <details id="manual-skills"><summary>18種類のスキルレベルを設定</summary><p id="skills-hint" class="hint"></p><button type="button" id="use-manual-skills" class="secondary">スキルレベルを手動で設定する</button><div id="skill-inputs" hidden><div id="skills" class="grid three"></div></div></details>
-      </section>
-      <section data-step="3" hidden>
-        <p class="eyebrow">STEP 04</p><h2>得意技を加える</h2><p class="lead">Perk・魔法・シャウトを追加できます（任意）。</p><p class="note">スキルレベルはSTEP 03で設定します。スキルを上げてもPerkは自動習得しません。</p>
-        <p class="hint">同名Perkは説明を見て必要な段階を選んでください。</p>
-        <p class="hint">隠術は欲しい段階を一つ選びます。最大効果なら5/5だけで十分です。複数選んでも加算されません。</p>
 
-        <div class="grid three"><div><h3>Perk <span id="perk-count" class="count">0</span></h3><label>スキル・カテゴリ<select id="perk-category"><option value="all">すべて</option></select></label><input id="perk-search" type="search" placeholder="名前・IDで検索" aria-label="Perkを検索"><p id="perk-visible" class="hint"></p><div id="perks" class="choice-list"></div><div id="selected-perks" class="selected"></div></div><div><h3>唱える魔法 <span id="spell-count" class="count">0</span></h3><label>魔法系統<select id="spell-category"><option value="all">すべて</option></select></label><input id="spell-search" type="search" placeholder="名前・IDで検索" aria-label="魔法を検索"><p id="spell-visible" class="hint"></p><div id="spells" class="choice-list"></div><div id="selected-spells" class="selected"></div></div><div><h3>シャウト <span id="shout-count" class="count">0</span></h3><p id="shout-score" class="hint" hidden></p><p id="shout-score-warning" class="note" hidden></p><div id="shouts" class="choice-list"></div><div id="selected-shouts" class="selected"></div></div></div>
+        <div class="grid three">
+          <label>基礎体力<input id="health" type="number" min="1" max="32000"></label>
+          <label>基礎マジカ<input id="magicka" type="number" min="0" max="32000"></label>
+          <label>基礎スタミナ<input id="stamina" type="number" min="0" max="32000"></label>
+        </div>
+        <p class="hint" id="stat-hint">成長前の基礎値を指定します。レベル追従または自動計算を有効にすると、クラスとレベルに応じた成長分が加わります。</p>
+
+        <details>
+          <summary>生存・性格・サイズ・配置を調整</summary>
+          <div class="grid">
+            <label>死亡ルール
+              <select id="protection">
+                <option value="protected">保護：プレイヤー以外には倒されない</option>
+                <option value="essential" selected>不死：誰にも倒されない</option>
+                <option value="mortal">通常：死亡する</option>
+              </select>
+            </label>
+            <label>勇敢さ
+              <select id="confidence">
+                <option value="4">恐れ知らず</option>
+                <option value="3">勇敢</option>
+                <option value="2">普通</option>
+                <option value="1">慎重</option>
+                <option value="0">臆病</option>
+              </select>
+            </label>
+            <label>攻撃性
+              <select id="aggression">
+                <option value="0">自分や仲間を守る</option>
+                <option value="1">敵対者を攻撃する</option>
+                <option value="2">中立の相手にも攻撃する</option>
+              </select>
+            </label>
+            <label>犯罪への対応
+              <select id="morality">
+                <option value="3">犯罪をしない</option>
+                <option value="2">盗みを許容する</option>
+                <option value="1">敵への暴力を許容する</option>
+                <option value="0" selected>制限しない</option>
+              </select>
+            </label>
+            <label>全体の大きさ<input id="height_scale" type="number" min=".25" max="3" step=".05"><small>体型の比率を保つ一様な倍率。</small></label>
+            <label class="checkbox"><input id="marriage" type="checkbox">結婚候補にする</label>
+            <label>聖堂内の左右オフセット<input id="spawn_offset_x" type="number" min="-200" max="200" step="8"></label>
+            <label>聖堂内の前後オフセット<input id="spawn_offset_y" type="number" min="-200" max="200" step="8"></label>
+          </div>
+        </details>
+
+        <details id="sitting-settings">
+          <summary>椅子に座ったときの高さ補正</summary>
+          <label class="checkbox"><input id="sitting_enabled" type="checkbox" checked>着座中の高さを補正する（SKSE64が必要）</label>
+          <label class="checkbox"><input id="sitting_auto" type="checkbox" checked>アバターの脚の長さと標準の着座姿勢から高さを自動計算する</label>
+          <label>高さの微調整<input id="sitting_offset" type="number" min="-100" max="100" step="0.5"><small>Skyrim単位。＋で上へ、−で下へ。自動計算を使う場合は、その結果に加算します。</small></label>
+          <p class="hint">公式の椅子・ベンチに対応します。他のMODで着座の高さを補正する場合はオフにしてください。</p>
+        </details>
+
+        <details id="manual-skills">
+          <summary>18種類のスキルレベルを設定</summary>
+          <p id="skills-hint" class="hint"></p>
+          <button type="button" id="use-manual-skills" class="secondary">スキルレベルを手動で設定する</button>
+          <div id="skill-inputs" hidden>
+            <div id="skills" class="grid three"></div>
+          </div>
+        </details>
       </section>
+
+      <section data-step="3" hidden>
+        <p class="eyebrow">STEP 04</p>
+        <h2>得意技を加える</h2>
+        <p class="lead">Perk・魔法・シャウトを追加できます（任意）。</p>
+        <p class="note">スキルレベルはSTEP 03で設定します。スキルを上げてもPerkは自動習得しません。</p>
+        <p class="hint">段階があるPerk（1/5〜5/5など）は、説明を見て習得させたい段階を選んでください。</p>
+        <p class="hint">※「隠術（Stealth）」のように上位段階が下位の効果を含むPerkは、欲しい段階を1つだけ選べば十分です（複数選んでも効果は重複しません）。</p>
+
+        <div class="grid three">
+          <div>
+            <h3>Perk <span id="perk-count" class="count">0</span></h3>
+            <label>スキル・カテゴリ<select id="perk-category"><option value="all">すべて</option></select></label>
+            <input id="perk-search" type="search" placeholder="名前・IDで検索" aria-label="Perkを検索">
+            <p id="perk-visible" class="hint"></p>
+            <div id="perks" class="choice-list"></div>
+            <div id="selected-perks" class="selected"></div>
+          </div>
+          <div>
+            <h3>唱える魔法 <span id="spell-count" class="count">0</span></h3>
+            <label>魔法系統<select id="spell-category"><option value="all">すべて</option></select></label>
+            <input id="spell-search" type="search" placeholder="名前・IDで検索" aria-label="魔法を検索">
+            <p id="spell-visible" class="hint"></p>
+            <div id="spells" class="choice-list"></div>
+            <div id="selected-spells" class="selected"></div>
+          </div>
+          <div>
+            <h3>シャウト <span id="shout-count" class="count">0</span></h3>
+            <p id="shout-score" class="hint" hidden></p>
+            <p id="shout-score-warning" class="note" hidden></p>
+            <div id="shouts" class="choice-list"></div>
+            <div id="selected-shouts" class="selected"></div>
+          </div>
+        </div>
+      </section>
+
       <section data-step="4" hidden>
-        <p class="eyebrow">STEP 05</p><h2>旅立ちの準備ができました</h2><p class="lead">この内容で、導入できるフォロワーMODのZIPを作ります。</p>
+        <p class="eyebrow">STEP 05</p>
+        <h2>旅立ちの準備ができました</h2>
+        <p class="lead">この内容で、導入できるフォロワーMODのZIPを作ります。</p>
         <div id="summary" class="review"></div>
         <label class="checkbox"><input id="render_previews" type="checkbox" checked>出力モデルの静止・歩行・剣動作のプレビューを作る</label>
         <button type="button" id="export-settings" class="secondary">設定JSONを保存</button>
-
       </section>
-      <nav id="navigation"><button id="back" type="button" class="secondary" hidden>戻る</button><span></span><button id="next" type="button" class="primary">次へ →</button><button id="create" type="button" class="primary" hidden>フォロワーMODを作る</button></nav>
+
+      <nav id="navigation">
+        <button id="back" type="button" class="secondary" hidden>戻る</button>
+        <span></span>
+        <button id="next" type="button" class="primary">次へ →</button>
+        <button id="create" type="button" class="primary" hidden>フォロワーMODを作る</button>
+      </nav>
     </form>
-    <section id="progress" hidden><p class="eyebrow">CONVERTING</p><h2>世界への入口を作っています</h2><p id="stage" aria-live="polite"></p><div class="progress-bar"><div></div></div><ol id="events"></ol><pre id="failure" hidden></pre></section>
-    <section id="result" hidden><p class="eyebrow">READY TO INSTALL</p><h2 id="result-title"></h2><a id="download" class="primary" download>MOD ZIPを保存</a><div id="toon-shader-result" class="toon-shader" hidden><h3>トゥーン描画</h3><p class="hint">このフォロワーのトゥーン描画には、シェーダーのZIPと対応するCommunity Shadersを別に導入します。</p><a id="toon-shader-result-download" class="secondary" href="/api/toon-shader" download>トゥーン描画用シェーダーをダウンロード</a><p id="toon-shader-result-status" class="note" role="status" hidden></p></div><div id="armor-patch-result" hidden><h3>防具の体型合わせ</h3><div id="skypatcher-install-help"><p class="hint">SkyPatcherを導入してください。変更後はゲームの再起動が必要です。</p><p class="hint">SkyPatcher.iniのiEnableArmorPatchingとiEnableFormlistPatchingを1にしてください。</p></div><p id="deployed-patch-status" role="status"></p><button id="check-deployed-patch" type="button" class="secondary">Deploy後に確認</button></div><div class="install"><h3>ゲームへ迎える</h3><ol><li>ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行。</li><li><code id="plugin-name"></code>を有効にして、Skyrimを起動し直す。</li><li>ホワイトランのキナレス聖堂で話しかけて仲間にする。</li></ol></div><div id="previews" class="preview-grid"></div><p class="hint">転倒時の物理は未対応です。</p><button id="again" type="button" class="secondary">もう一体作る</button><p id="output-folder" class="hint"></p></section>
+
+    <section id="progress" hidden>
+      <p class="eyebrow">CONVERTING</p>
+      <h2>世界への入口を作っています</h2>
+      <p id="stage" aria-live="polite"></p>
+      <div class="progress-bar"><div></div></div>
+      <ol id="events"></ol>
+      <pre id="failure" hidden></pre>
+    </section>
+
+    <section id="result" hidden>
+      <p class="eyebrow">READY TO INSTALL</p>
+      <h2 id="result-title"></h2>
+      <a id="download" class="primary" download>MOD ZIPを保存</a>
+      <div id="toon-shader-result" class="toon-shader" hidden>
+        <h3>トゥーン描画</h3>
+        <p class="hint">このフォロワーのトゥーン描画には、シェーダーのZIPと対応するCommunity Shadersを別に導入します。</p>
+        <a id="toon-shader-result-download" class="secondary" href="/api/toon-shader" download>トゥーン描画用シェーダーをダウンロード</a>
+        <p id="toon-shader-result-status" class="note" role="status" hidden></p>
+      </div>
+      <div id="armor-patch-result" hidden>
+        <h3>防具の体型合わせ</h3>
+        <div id="skypatcher-install-help">
+          <p class="hint">SkyPatcherを導入してください。変更後はゲームの再起動が必要です。</p>
+          <p class="hint">SkyPatcher.iniのiEnableArmorPatchingとiEnableFormlistPatchingを1にしてください。</p>
+        </div>
+        <p id="deployed-patch-status" role="status"></p>
+        <button id="check-deployed-patch" type="button" class="secondary">Deploy後に確認</button>
+      </div>
+      <div class="install">
+        <h3>ゲームへ迎える</h3>
+        <ol>
+          <li>ZIPをVortex / MO2でインストール・有効化。VortexではDeployも実行。</li>
+          <li><code id="plugin-name"></code>を有効にして、Skyrimを起動し直す。</li>
+          <li>ホワイトランのキナレス聖堂で話しかけて仲間にする。</li>
+        </ol>
+      </div>
+      <div id="previews" class="preview-grid"></div>
+      <p class="hint">※ラグドール（転倒時）の衝突判定は標準骨格のままとなります。</p>
+      <button id="again" type="button" class="secondary">もう一体作る</button>
+      <p id="output-folder" class="hint"></p>
+    </section>
+
     <section id="equipment-edit" hidden>
-      <h3>Outfit Studioで形を仕上げる</h3><a id="edit-kit-download" class="secondary" download>身体・骨格・編集用装備を保存</a>
+      <h3>Outfit Studioで形を仕上げる</h3>
+      <a id="edit-kit-download" class="secondary" download>身体・骨格・編集用装備を保存</a>
       <label>仕上げた装備を戻す<select id="edit-mesh"></select></label>
       <label>編集済みNIF<input id="edit-nif" type="file" accept=".nif"></label>
       <button id="import-edit" type="button" class="secondary">形を取り込み、MOD ZIPを更新</button>
-      <p class="hint">形の変更に対応します。編集手順はZIP内のREADME.txtを参照してください。</p><p id="edit-status" role="status"></p>
+      <p class="hint">形の変更に対応します。編集手順はZIP内のREADME.txtを参照してください。</p>
+      <p id="edit-status" role="status"></p>
     </section>
   </main>
 </div>
-<script src="translations.js"></script><script src="i18n.js"></script><script src="wardrobe.js"></script><script src="combat-style.js"></script><script src="weapon.js"></script><script src="wizard.js"></script>
-</body></html>
+<script src="translations.js"></script>
+<script src="i18n.js"></script>
+<script src="wardrobe.js"></script>
+<script src="combat-style.js"></script>
+<script src="weapon.js"></script>
+<script src="wizard.js"></script>
+</body>
+</html>

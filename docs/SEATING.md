@@ -1,84 +1,50 @@
-# Chair and bench height correction
+# 着席時の高さ調整ガイド (椅子・ベンチの位置補正)
 
-[日本語](#日本語)
+VRM アバターは Skyrim の標準体型と比べて頭身や脚の長さが異なることが多く、そのまま椅子やベンチに座らせると「座面より上に浮いてしまう」または「座面に深く沈み込んでしまう」ことがあります。
 
-0.9.9 retries entry-state detection up to 40 times at 0.1-second intervals when events
-precede the engine state. It also marks the offset as applied before the native
-node write, preventing a nested event during that call from adding it twice.
+VRM Skyrim Converter には、アバターの骨格から座ったときの腰の高さを計算し、**椅子やベンチに座っている間だけ自然な高さへ補正する機能**が備わっています。
 
-0.9.8 applies the correction from chair-entry animations instead of waiting for
-the seated idle. Original behavior start events and time-zero animation annotations
-trigger a check of the real chair and sit state. Cancelled entry restores the
-previous root height. Animation replacements retain the OnSit fallback.
+---
 
-Since 0.9.6-dev, STEP 03 includes chair/bench height correction, enabled by
-default. This requires matching [SKSE64](https://skse.silverlock.org/); launch
-the game through `skse64_loader.exe`. RaceMenu is not required.
+## 1. 必要な環境
 
-Automatic mode samples the official male/female chair idle animation on both
-the original game skeleton and the generated avatar skeleton. The median seated
-pelvis-height difference is the offset. This detects short bones even when the
-NPC and skeleton scale values are both 1.0. It does not enlarge the avatar.
+- **SKSE64**（`skse64_loader.exe` からゲームを起動すること）
 
-The manual field adds an offset in Skyrim units: positive moves up, negative
-moves down. With automatic calculation off, this is the entire correction.
-Turn the correction off when using another furniture-height correction MOD.
+> [!NOTE]
+> 着席時の高さ補正には SKSE64 の関数（`NetImmerse.SetNodeLocalPosition`）を使用します。RaceMenu などの追加 MOD は不要です。SKSE64 がない環境でもフォロワーは通常通り椅子に座りますが、高さのオフセット補正は行われません。
 
-The existing unanimated NPC node applies the correction while the follower is
-seated. Its original parent and standing transforms stay unchanged; no root
-wrapper is added. The script saves the pre-correction height and restores only
-the value it still owns. Standing code does not force the height to zero.
-The script reconciles state on load, sitting/getting up, skeleton
-rebuilds and updates during furniture use; repeated events do not add offsets.
-It never moves the placed reference or changes equipment.
+---
 
-The generated list includes Skyrim.esm chair/bench records whose FNPR markers
-are all Sit (type 1), excluding workbenches, perches and invisible markers. Beds,
-horses, floor/ledge idles and DLC/MOD-only furniture are outside this list. Vanilla
-furniture appearance replacers keep working because the original form is used.
-Unusual/custom sitting animations may need manual adjustment. The calculation
-uses the pelvis as its reference; cushion contact also depends on the mesh shape.
+## 2. ウィザードでの設定方法（STEP 03）
 
-The computed offset, sampled animation, frame count and residual are saved in
-`seating.json` and included under the follower's private metadata directory.
-Papyrus logs transitions as `VRM2Skyrim: seated height=...`.
+この機能は**初期状態でオン（自動計算）**になっています。細かく調整したい場合は、**STEP 03（戦闘スタイルと基礎能力）** の下部にある **「椅子の座り位置（SKSE64 使用時）」** を開いてください。
 
-Implementation sources: [SKSE NetImmerse functions](https://github.com/ianpatt/skse64/blob/master/scripts/modified/NetImmerse.psc),
-[SKSE furniture-reference function](https://github.com/ianpatt/skse64/blob/master/scripts/modified/Actor.psc),
-and [xEdit's FURN schema](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.6/Core/wbDefinitionsTES5.pas).
-The runtime is original MIT-licensed code, not a copy of another height-fix MOD.
+| 設定項目 | 説明 |
+| :--- | :--- |
+| **着席時の高さを調整する** (`sitting_enabled`) | オンにすると、フォロワーが椅子やベンチに座ったときに高さを補正するスクリプトを同梱します（初期値：オン）。 |
+| **体型から高さを自動計算する** (`sitting_auto`) | 元の VRM の脚の長さと Skyrim 標準の着座姿勢を比べて、ちょうど座面に腰が乗る高さを自動で算出します（初期値：オン）。 |
+| **高さの微調整（Skyrim 単位）** (`sitting_offset`) | 自動計算した位置からさらに手動で上下させたい場合に入力します（**1 単位 ≈ 約 1.43 cm**）。プラス（例：`+2.0`）で上に持ち上がり、マイナス（例：`-2.0`）で下に下がります。「自動計算」をオフにした場合は、この数値だけがそのまま使われます。 |
 
-Version 0.9.7 replaces 0.9.6's unsafe root wrapper. Replace the whole follower ZIP
-and restart Skyrim so both the skeleton and every appearance mesh are replaced.
+---
 
-## 日本語
+## 3. ゲーム内での動きと対象となる家具
 
-STEP 03の「椅子に座ったときの高さ補正」で設定します。初期値は補正有効・
-自動計算オン・微調整0です。生成したMODにはゲームに対応するSKSE64が必要です。
-`skse64_loader.exe`から起動してください。RaceMenuは不要です。
+- **座ったときだけ働き、立ち上がると元に戻ります**
+  フォロワーが椅子やベンチに座り始めると自動で高さが補正され、立ち上がると元の身長・位置へ戻ります。歩行時や戦闘時の見た目に影響することはありません。
+- **対象となる家具**
+  - `Skyrim.esm` に含まれる通常の椅子・ベンチ（宿屋や自宅の椅子・長椅子など）が対象です。バニラの椅子・ベンチの見た目を置き換えるメッシュ置換 MOD を入れていてもそのまま動作します。
+  - ベッド、馬への騎乗、鍛冶や錬金などの作業台、地面への座り込み、および DLC や他 MOD が独自の FormID で追加した椅子は補正の対象外です。
+- **ゲーム内で座り位置を見てから微調整したいとき**
+  1. まずは初期設定（自動計算オン、微調整 `0`）のまま変換して、宿屋の椅子などで座り姿を確認します。
+  2. 「もう少しだけ低く座らせたい」と感じたら、ウィザードの微調整に `-1.5` や `-3.0`（Skyrim 単位）を入れて再作成します。
+  3. 逆に「スカートが座面にめり込むので少し浮かせたい」という場合は、`+1.5` や `+3.0` のようにプラスの値を入れると綺麗に収まります。
 
-自動計算は公式の着座アニメーションを使い、標準骨格とアバターの腰の高さを
-比較します。倍率が1.0でも、元VRMの脚や腰が短いことを検出できます。
-微調整はSkyrim単位で、＋なら上へ、−なら下へ動きます。自動計算をオフにすると
-微調整の数値だけを使います。他の家具高さ補正MODを使うときは本機能をオフにします。
+---
 
-本体ゲームの椅子・ベンチが対象です。ベッド・馬・作業台・地面に座る動作と、
-DLCや追加MOD独自の家具は対象リストに含みません。元の家具を使う見た目の置換MODは
-対象を維持します。独自の着座アニメーションや座面への接触具合は微調整で合わせられます。
+## 4. 技術仕様（開発者向けリファレンス）
 
-立っているときの身長・体型は変えません。立ち上がり・再ロード・装備による骨格の
-再生成にも対応し、補正を重ねて加算しません。衣服の装備やNPC参照の座標は操作しません。
-計算結果は各フォロワーの`seating.json`に保存します。
-
-0.9.7では、0.9.6で立ち姿を壊したルートの親ノード追加を撤去しました。正常版の
-骨格・モデル階層を保ち、既存のNPCノードを着座時だけ補正します。全身のNIFと
-スクリプトを含むフォロワーZIP全体を置き換えてDeployし、Skyrimを再起動してください。
-
-0.9.8では座り始めのアニメーションイベントを受けて補正し、着座完了まで待つ遅れを
-減らしました。実際の椅子と着座状態を確認してから適用し、着座を中断したときも
-元の高さへ戻します。アニメーション置換で開始イベントが届かない場合は、従来の
-着座完了イベントで補正します。
-
-0.9.9では、開始イベントと着座状態の切り替わりに時間差がある場合も、0.1秒間隔で最大40回
-確認を続けます。骨格への書き込み前に適用済み状態を確定し、別イベントによる二重加算も
-防ぎます。補正値は座り始めと着座後で同じです。
+- **算出ロジック (`seating.py`)**
+  Blender でのモデル変換時に、VRM の大腿・下腿ボーン長と Skyrim 標準骨格の着座姿勢の差分から推奨オフセット（Skyrim 単位）を算出し、`conversion.json` に記録します。
+- **ゲーム内での適用方法**
+  - 生成されるフォロワーの Actor レコードに専用スクリプトをアタッチし、対象となる椅子・ベンチのリスト（`FLST` `0x870`）と設定されたオフセット量を渡します。
+  - 骨格に余分なルートラッパーは追加せず、`OnSit` / `OnGetUp` イベントおよび着席状態の監視によって、既存の非アニメーション NPC ノードのローカル座標を着席中のみオフセットさせ、離席・ロード復帰時にリセットします。
