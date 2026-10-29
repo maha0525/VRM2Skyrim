@@ -60,7 +60,7 @@ def main():
         preview_face_culling(material, info.get('doubleSided', False))
     if settings.toon_enabled:
         from toon_preview import apply_toon_preview
-        apply_toon_preview(output, meshes, source_glb=glb)
+        apply_toon_preview(output, meshes, source_glb=glb, units_per_metre=1.0)
     bounds = []
     for obj in meshes:
         node = int(obj.name.split("_")[-1].split(".")[0])

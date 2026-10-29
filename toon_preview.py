@@ -17,6 +17,7 @@ from toon import parameters_for
 
 LOG = logging.getLogger(__name__)
 PREFIX = 'V2SOutline_'
+UNITS_PER_METRE = 70.0
 EXTENSION_MAP = {10497: 'REPEAT', 33071: 'EXTEND', 33648: 'MIRROR'}
 FLOAT_FIELDS = ('rim_r', 'rim_g', 'rim_b', 'rim_power', 'rim_lift', 'rim_mix',
                 'outline_r', 'outline_g', 'outline_b', 'outline_mix')
@@ -86,7 +87,9 @@ def _is_baked_preview_image(image):
     return bool(image and image.filepath and 'dds-preview' in Path(image.filepath).parts)
 
 
-def _find_base_texture_node(tree):
+def _find_base_texture_node(tree, policy=None):
+    if policy is not None and 'baseColorTexture' not in policy.get('pbrMetallicRoughness', {}):
+        return None, False
     diffuse = tree.nodes.get('Diffuse_Texture')
     if diffuse is not None and diffuse.type == 'TEX_IMAGE' and diffuse.image is not None:
         return diffuse, True
@@ -97,9 +100,6 @@ def _find_base_texture_node(tree):
             found = linked_texture_nodes(shader.inputs[socket_name])
             if found:
                 return found[0], _is_baked_preview_image(found[0].image)
-    for node in tree.nodes:
-        if node.type == 'TEX_IMAGE' and node.image is not None and 'flat_n' not in node.image.filepath:
-            return node, _is_baked_preview_image(node.image)
     return None, False
 
 
@@ -161,6 +161,159 @@ def _make_tex_node(tree, image, wrap=None):
     if wrap and wrap[0] in EXTENSION_MAP:
         node.extension = EXTENSION_MAP[wrap[0]]
     return node
+
+
+def _sample_outline_width_mask(image, wrap, uvs):
+    columns, height = image.size
+    if columns <= 0 or height <= 0:
+        return np.ones(len(uvs), dtype=np.float32)
+    # Blender image.pixels is bottom-up RGBA, matching Blender's bottom-up UV coordinates.
+    values = np.asarray(image.pixels[:], dtype=np.float32).reshape((height, columns, 4))[..., 1]
+    uv = np.asarray(uvs, dtype=np.float64)
+
+    def addressed(index, count, mode):
+        if mode == 33071:
+            return np.clip(index, 0, count - 1)
+        if mode == 33648:
+            result = index % (2 * count)
+            return np.where(result < count, result, 2 * count - 1 - result)
+        return index % count
+
+    x, y = uv[:, 0] * columns - 0.5, uv[:, 1] * height - 0.5
+    ix, iy = np.floor(x).astype(int), np.floor(y).astype(int)
+    wx, wy = x - ix, y - iy
+    u_mode, v_mode = wrap if wrap else (10497, 10497)
+
+    def sample(dx, dy):
+        return values[addressed(iy + dy, height, v_mode), addressed(ix + dx, columns, u_mode)]
+
+    return ((sample(0, 0) * (1 - wx) + sample(1, 0) * wx) * (1 - wy)
+            + (sample(0, 1) * (1 - wx) + sample(1, 1) * wx) * wy).astype(np.float32)
+
+
+def _vertex_uvs(mesh):
+    n_verts = len(mesh.vertices)
+    uvs = np.zeros((n_verts, 2), dtype=np.float32)
+    uv_layer = mesh.uv_layers.active
+    if uv_layer is None or not len(mesh.loops):
+        return uvs
+    n_loops = len(mesh.loops)
+    loop_verts = np.empty(n_loops, dtype=np.int32)
+    loop_uvs = np.empty(n_loops * 2, dtype=np.float32)
+    mesh.loops.foreach_get('vertex_index', loop_verts)
+    uv_layer.data.foreach_get('uv', loop_uvs)
+    # Assign in reverse so the first loop of each vertex wins deterministically.
+    uvs[loop_verts[::-1]] = loop_uvs.reshape((-1, 2))[::-1]
+    return uvs
+
+
+def _transparent_non_outline_material():
+    name = 'V2S_TransparentNonOutline'
+    mat = bpy.data.materials.get(name)
+    if mat is not None:
+        return mat
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    tree = mat.node_tree
+    tree.nodes.clear()
+    out = tree.nodes.new('ShaderNodeOutputMaterial')
+    trans = tree.nodes.new('ShaderNodeBsdfTransparent')
+    tree.links.new(trans.outputs['BSDF'], out.inputs['Surface'])
+    return mat
+
+
+def _slot_outline_widths(cache_dir, document, binary, mesh, policy, uvs, units_per_metre):
+    mtoon = policy.get('extensions', {}).get('VRMC_materials_mtoon', {})
+    if not isinstance(mtoon, dict):
+        return None
+    mode = mtoon.get('outlineWidthMode', 'none')
+    width = float(mtoon.get('outlineWidthFactor', 0.0))
+    if mode != 'worldCoordinates' or not np.isfinite(width) or width <= 0.0:
+        return None
+    mask = np.ones(len(mesh.vertices), dtype=np.float32)
+    if 'outlineWidthMultiplyTexture' in mtoon and document is not None and binary is not None:
+        try:
+            loaded = _load_glb_texture(cache_dir, document, binary, mtoon['outlineWidthMultiplyTexture'], 'Non-Color')
+            if loaded is not None:
+                mask = _sample_outline_width_mask(loaded[0], loaded[1], uvs)
+        except Exception as exc:
+            LOG.warning('Falling back to unmasked outline width for %s: %s', mesh.name, exc)
+    return width * float(units_per_metre) * mask
+
+
+def ensure_preview_outline_meshes(output, meshes, document=None, binary=None, units_per_metre=UNITS_PER_METRE):
+    """Create inverted-hull V2SOutline_* preview objects when the scene does not already include them."""
+    if bpy is None:
+        return []
+    cache_dir = Path(output) / 'toon-preview-cache'
+    existing_names = {o.name for o in bpy.context.scene.objects}
+    created = []
+    for obj in list(meshes):
+        if obj.type != 'MESH' or obj.hide_render or obj.name.startswith(PREFIX) or not len(obj.data.vertices):
+            continue
+        hull_name = outline_name(obj.name)
+        if hull_name in existing_names:
+            continue
+        uvs = None
+        slot_widths = {}
+        for index, mat in enumerate(obj.data.materials):
+            if not mat or not mat.get('V2S_Preview_Policy'):
+                continue
+            policy = json.loads(mat['V2S_Preview_Policy'])
+            if uvs is None:
+                uvs = _vertex_uvs(obj.data)
+            widths = _slot_outline_widths(cache_dir, document, binary, obj.data, policy, uvs, units_per_metre)
+            if widths is not None:
+                slot_widths[index] = (widths, policy)
+        if not slot_widths:
+            continue
+
+        hull_mesh = obj.data.copy()
+        n_verts = len(hull_mesh.vertices)
+        verts = np.empty(n_verts * 3, dtype=np.float32)
+        norms = np.empty(n_verts * 3, dtype=np.float32)
+        hull_mesh.vertices.foreach_get('co', verts)
+        hull_mesh.vertices.foreach_get('normal', norms)
+        verts = verts.reshape((-1, 3))
+        norms = norms.reshape((-1, 3))
+        norms = norms / np.maximum(np.linalg.norm(norms, axis=1)[:, None], 1e-12)
+
+        if len(slot_widths) == 1 and len(obj.data.materials) <= 1:
+            vertex_widths = next(iter(slot_widths.values()))[0]
+        else:
+            vertex_widths = np.zeros(n_verts, dtype=np.float32)
+            for poly in hull_mesh.polygons:
+                if poly.material_index in slot_widths:
+                    w = slot_widths[poly.material_index][0]
+                    for v_idx in poly.vertices:
+                        vertex_widths[v_idx] = w[v_idx]
+
+        verts = verts + norms * vertex_widths[:, None]
+        hull_mesh.vertices.foreach_set('co', verts.reshape(-1))
+        hull_mesh.flip_normals()
+        hull_mesh.normals_split_custom_set_from_vertices(norms.tolist())
+        hull_mesh.update()
+
+        hull_obj = obj.copy()
+        hull_obj.data = hull_mesh
+        hull_obj.name = hull_name
+        hull_obj.visible_shadow = False
+        for index, mat in enumerate(hull_obj.data.materials):
+            if index in slot_widths and mat is not None:
+                mat_copy = mat.copy()
+                mat_copy.name = f'{hull_name}_OutlineMat_{index}'
+                mat_copy['V2S_Preview_Outline'] = True
+                mat_copy['V2S_Preview_Policy'] = json.dumps(slot_widths[index][1])
+                hull_obj.data.materials[index] = mat_copy
+            else:
+                hull_obj.data.materials[index] = _transparent_non_outline_material()
+        collections = obj.users_collection or (bpy.context.scene.collection,)
+        for col in collections:
+            col.objects.link(hull_obj)
+        existing_names.add(hull_name)
+        meshes.append(hull_obj)
+        created.append(hull_obj)
+    return created
 
 
 def assign_toon_shape_policies(output, meshes):
@@ -227,7 +380,7 @@ def build_toon_material_nodes(material, output, document=None, binary=None):
     if culling is not None:
         tree.nodes.remove(culling)
 
-    base_tex_node, baked_rgb = _find_base_texture_node(tree)
+    base_tex_node, baked_rgb = _find_base_texture_node(tree, policy=policy)
     pbr = policy.get('pbrMetallicRoughness', {})
     base_factor = pbr.get('baseColorFactor', [1.0, 1.0, 1.0, 1.0])
     alpha_mode = policy.get('alphaMode', 'OPAQUE')
@@ -415,13 +568,14 @@ def build_toon_material_nodes(material, output, document=None, binary=None):
     return True
 
 
-def apply_toon_preview(output, meshes=None, source_glb=None):
-    """Apply MToon preview shader nodes to all VRM-owned materials in the current scene."""
+def apply_toon_preview(output, meshes=None, source_glb=None, units_per_metre=UNITS_PER_METRE):
+    """Apply MToon preview shader nodes and outline hulls to all VRM-owned materials in the current scene."""
     output = Path(output)
     if meshes is None:
         meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH' and not o.hide_render]
     assign_toon_shape_policies(output, meshes)
     document, binary = _load_source_glb(output, source_glb=source_glb)
+    ensure_preview_outline_meshes(output, meshes, document=document, binary=binary, units_per_metre=units_per_metre)
     materials = {m for obj in meshes if obj.type == 'MESH' and not obj.hide_render
                  for m in obj.data.materials if m and m.get('V2S_Preview_Policy')}
     count = 0

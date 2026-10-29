@@ -366,3 +366,29 @@ class ToonTests(unittest.TestCase):
             self.assertNotIn('V2S_Preview_Policy', armor_obj.data.materials[0])
             self.assertEqual(json.loads(multi_obj.data.materials[0]['V2S_Preview_Policy']), {'name': 'MatA'})
             self.assertEqual(json.loads(multi_obj.data.materials[1]['V2S_Preview_Policy']), {'name': 'MatB'})
+
+    def test_base_texture_lookup_ignores_non_base_color_textures(self):
+        from types import SimpleNamespace
+        from toon_preview import _find_base_texture_node
+
+        normal_img = SimpleNamespace(filepath='textures/normal.png')
+        normal_node = SimpleNamespace(name='Normal_Texture', type='TEX_IMAGE', image=normal_img)
+        shader_node = SimpleNamespace(
+            name='Principled BSDF', type='BSDF_PRINCIPLED',
+            inputs={'Base Color': SimpleNamespace(is_linked=False, links=[])})
+
+        class FakeNodes(list):
+            def get(self, name):
+                return next((n for n in self if n.name == name), None)
+
+        tree = SimpleNamespace(nodes=FakeNodes([shader_node, normal_node]))
+        solid_with_normal = {'pbrMetallicRoughness': {'baseColorFactor': [0.8, 0.2, 0.2, 1.0]},
+                             'normalTexture': {'index': 0}}
+        self.assertEqual(_find_base_texture_node(tree, policy=solid_with_normal), (None, False))
+        # Even if a dummy Diffuse_Texture node exists on a solid NIF material, policy without baseColorTexture stays solid.
+        diffuse_node = SimpleNamespace(name='Diffuse_Texture', type='TEX_IMAGE',
+                                       image=SimpleNamespace(filepath='dds-preview/solid.png'))
+        tree_with_dummy = SimpleNamespace(nodes=FakeNodes([shader_node, diffuse_node, normal_node]))
+        self.assertEqual(_find_base_texture_node(tree_with_dummy, policy=solid_with_normal), (None, False))
+        textured_policy = {'pbrMetallicRoughness': {'baseColorFactor': [1, 1, 1, 1], 'baseColorTexture': {'index': 0}}}
+        self.assertEqual(_find_base_texture_node(tree_with_dummy, policy=textured_policy), (diffuse_node, True))
