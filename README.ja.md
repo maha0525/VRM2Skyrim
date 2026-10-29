@@ -15,9 +15,9 @@
 - **元の衣装の着脱と、ゲーム内防具の体型合わせ**
   VRM のメッシュを「身体・下着・衣服」に分けて、ゲーム内で服を脱いだり別の鎧に着替えたりできるように変換できます。また、Skyrim 本体の防具や導入済み MOD 防具をアバターの体型に合わせて自動変形するパッチも同時に作れます。
 - **髪・スカートなどの揺れもの対応（Faster HDT-SMP）**
-  VRM に含まれる揺れもの設定（Spring Bone）を読み取り、Faster HDT-SMP 用の物理設定と当たり判定を自動生成します。風の強さや重さ、動きの柔らかさもウィザード上で調整できます。
+  VRM に含まれる揺れもの設定（Spring Bone）を読み取り、Faster HDT-SMP 用の物理設定と当たり判定を自動生成します。揺れの硬さプリセットや揺らす部位の選択もウィザード上で行えます。
 - **アニメ調のトゥーン描画（Community Shaders）**
-  VRM らしい柔らかい陰影、リムライト、輪郭線を Skyrim 内で再現する専用シェーダーに対応しています。
+  元 VRM の MToon 材質設定（影色・明暗の境界・リムライト・輪郭線など）を読み取り、Skyrim 内でアニメ調の質感を再現する専用シェーダーに対応しています。
 - **オリジナル武器の同梱（GLB）**
   Blender 等から書き出した `.glb` ファイルを読み込んで、フォロワー専用の武器（片手剣・両手武器・弓・杖など）として同梱し、初期装備に持たせることができます。
 - **頭身に合わせた着席位置の自動調整**
@@ -32,8 +32,8 @@
 | 項目 | 要件 |
 | :--- | :--- |
 | **OS** | Windows 10 / 11（64-bit） |
-| **Python** | Python 3.11 以上 |
-| **Blender** | Blender 4.2 以上 |
+| **Python** | Python 3.11 または 3.12 |
+| **Blender** | Blender 4.5 LTS |
 | **Skyrim 本体** | Steam 版 Skyrim Special Edition（または Anniversary Edition）がインストールされていること |
 
 ### Skyrim 側で必要な前提 MOD
@@ -43,9 +43,10 @@
 | 使いたい機能 | 必要な前提 MOD | 備考 |
 | :--- | :--- | :--- |
 | **基本のフォロワー・元の衣装の着脱・オリジナル武器** | なし | Skyrim 本体（および装備やシャウトで選んだ公式 DLC / Creation）のみで動きます。 |
-| **着席時の高さ調整** | **SKSE64** | 椅子に座ったときの高さをスクリプトで補正します（`skse64_loader.exe` から起動）。 |
+| **頭装備による顔・髪の表示切替** | **SKSE64** | 兜や帽子を着けたときに顔や髪を自動で隠す場合に必要です（`skse64_loader.exe` から起動）。 |
+| **着席時の高さ調整** | **SKSE64** | 椅子やベンチに座ったときの高さをスクリプトで補正します。 |
 | **髪や服の揺れもの（物理演算）** | **SKSE64** + **Faster HDT-SMP** | VRM の Spring Bone をゲーム内で揺らすために必要です。 |
-| **トゥーン描画（アニメ調の陰影・輪郭線）** | **SKSE64** + **Community Shaders 1.4.x** + **専用シェーダーアドオン** | 専用シェーダーアドオンの ZIP は、STEP 01 または変換完了画面から保存できます。 |
+| **トゥーン描画（アニメ調の陰影・輪郭線）** | **SKSE64** + **Community Shaders（Bottled Shaders 1.0.22 / DLL 1.9.0.0）** + **トゥーン描画用シェーダー ZIP** | 同梱の `VRM2Skyrim-Toon-Shader-0.13.0.zip` は **Bottled Shaders 1.0.22** 専用です（STEP 01 または完了画面から保存できます）。 |
 | **ゲーム内の既存防具の体型合わせ** | **SKSE64** + **SkyPatcher** | 既存の鎧や兜をフォロワーの体型に合わせて着せる場合に使います。 |
 
 ---
@@ -81,7 +82,7 @@ Python の仮想環境（`.venv`）の作成と、変換に必要な Blender ア
    - 「自動提案に戻す」「1品ずつ分ける」「1着にまとめる」ボタンで素早く整理でき、Blender の確認プレビューで脱衣時の見た目もその場でチェックできます。
    - ゲーム内の防具を着せたい場合は **「ゲーム内の防具をこの体型に合わせる」** にチェックを入れ、合わせたい防具を選びます。
 4. **揺れもの（Faster HDT-SMP）の設定（任意）**
-   VRM に Spring Bone が入っている場合、どのパーツ（髪・スカートなど）を揺らすか選択し、揺れの硬さや風の影響を調整できます。
+   VRM に Spring Bone が入っている場合、どのパーツ（髪・スカートなど）を揺らすか選択し、揺れの硬さプリセット（`0.3` / `1` / `3`）を調整できます。
 5. **過去データの再表示・設定ファイルの読み込み（任意）**
    画面上部の「保存済みの作成結果」から過去に作った MOD の完了画面を開き直したり、下部の「保存した設定の読み込み」から以前保存した設定 JSON を復元したりできます。
 
@@ -137,18 +138,18 @@ Skyrim は一度出会った NPC の装備や状態をセーブデータに記�
 
 ## コマンドライン（CLI）からの変換
 
-ブラウザのウィザードを使わず、コマンドラインから直接変換することもできます（`Convert-VRM.cmd` も利用できます）。
+ブラウザのウィザードを使わず、コマンドラインから直接変換することもできます（`Convert-VRM.cmd` も利用できます）。VRM ファイルは位置引数で渡し、細かい設定はウィザードの「設定をJSONで保存」で書き出した設定ファイルを `--settings` に指定します。
 
 ```powershell
 # ウィザードを起動する
+Launch.cmd
+# または
 .venv\Scripts\python.exe wizard.py
 
 # VRM ファイルから直接フォロワー MOD を出力する
-.venv\Scripts\python.exe converter.py ^
-  --input "path\to\avatar.vrm" ^
-  --output "build\my-follower" ^
-  --npc-name "Follower Name" ^
-  --plugin-name "MyFollower.esp"
+Convert-VRM.cmd "path\to\avatar.vrm" --settings "path\to\settings.json" --output "build\my-follower"
+# または
+.venv\Scripts\python.exe converter.py "path\to\avatar.vrm" --settings "path\to\settings.json" --output "build\my-follower"
 ```
 
 ---

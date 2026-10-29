@@ -15,9 +15,9 @@ Guided by a 5-step browser wizard, you can convert your 3D model, set up removab
 - **Removable Outfits & Fitted Skyrim Armor**
   Split your VRM meshes into body, underwear, and garments so your follower can unequip their default outfit or wear other armor in-game. You can also automatically fit base-game or mod armor meshes to your avatar's proportions.
 - **Hair & Cloth Physics (Faster HDT-SMP)**
-  Reads VRM Spring Bone chains and generates Faster HDT-SMP cloth XML and collision bodies automatically, with presets and sliders for stiffness, gravity, damping, and wind.
+  Reads VRM Spring Bone chains and generates Faster HDT-SMP cloth XML and collision bodies automatically, with presets for stiffness and per-mesh physics toggles in the wizard.
 - **Anime-Style Toon Shading (Community Shaders)**
-  Supports a custom Community Shaders 1.4.x addon that brings soft cel shading, rim lighting, and ink outlines to your follower.
+  Reads the source VRM's MToon material properties (shade color, shading boundary, rim lighting, MatCap, and outlines) and reproduces anime-style shading in Skyrim via a dedicated Community Shaders package.
 - **Custom Weapons from GLB**
   Upload a `.glb` weapon model, adjust its scale and grip orientation with live previews, and bundle it as your follower's signature weapon.
 - **Automatic Sitting Height Adjustment**
@@ -32,8 +32,8 @@ Guided by a 5-step browser wizard, you can convert your 3D model, set up removab
 | Component | Requirement |
 | :--- | :--- |
 | **OS** | Windows 10 / 11 (64-bit) |
-| **Python** | Python 3.11 or newer |
-| **Blender** | Blender 4.2 or newer |
+| **Python** | Python 3.11 or 3.12 |
+| **Blender** | Blender 4.5 LTS |
 | **Skyrim** | Skyrim Special Edition (or Anniversary Edition) installed locally |
 
 ### In-Game Mod Requirements (For Playing with the Generated Follower)
@@ -43,9 +43,10 @@ Basic follower features (recruiting, combat, removable outfits, and custom weapo
 | Optional Feature | Required Skyrim Mods | Notes |
 | :--- | :--- | :--- |
 | **Basic Follower, Removable Outfits, Custom Weapon** | None | Runs on vanilla Skyrim SE/AE (plus any official DLC/Creations you select for gear or shouts). |
-| **Sitting Height Adjustment** | **SKSE64** | Adjusts seat height via script when sitting (launch via `skse64_loader.exe`). |
+| **Headwear Face / Hair Visibility Switching** | **SKSE64** | Required when hiding face or hair meshes automatically while wearing helmets or headwear (launch via `skse64_loader.exe`). |
+| **Sitting Height Adjustment** | **SKSE64** | Adjusts seat height via script when sitting on chairs or benches. |
 | **Hair & Cloth Physics** | **SKSE64** + **Faster HDT-SMP** | Required to animate converted VRM Spring Bone chains in-game. |
-| **Toon Shading** | **SKSE64** + **Community Shaders 1.4.x** + **VRM2Skyrim Toon Shader Addon** | Download the Toon Shader Addon ZIP from STEP 01 or the completion screen. |
+| **Toon Shading** | **SKSE64** + **Community Shaders (Bottled Shaders 1.0.22 / DLL 1.9.0.0)** + **Toon Shader ZIP** | The bundled `VRM2Skyrim-Toon-Shader-0.13.0.zip` is built specifically for **Bottled Shaders 1.0.22** (downloadable from STEP 01 or the completion screen). |
 | **Existing Armor Fitting** | **SKSE64** + **SkyPatcher** | Required when fitting official Skyrim armor/headgear to your follower's body. |
 
 ---
@@ -81,7 +82,7 @@ This starts the local server and opens the wizard in your default web browser.
    - Use **Reset to suggested**, **One item per mesh**, or **Combine into one outfit** to organize garments quickly, and render a Blender preview to check how dressed, underwear, and nude states look.
    - Enable **Fit existing Skyrim armor to this body** to conform vanilla or replacer armor to your avatar's body shape.
 4. **Physics Settings (Optional)**
-   If your VRM includes Spring Bones, choose which meshes should sway and adjust their stiffness and damping.
+   If your VRM includes Spring Bones, choose which meshes should sway and select a stiffness preset (`0.3` / `1` / `3`).
 5. **Environment Paths & Saved Sessions (Optional)**
    Reopen previously built follower ZIPs from the top of STEP 01, verify Skyrim/Blender paths, or load a saved `.json` settings file.
 
@@ -136,18 +137,18 @@ Skyrim caches NPC state and inventory in your save file once you have met them. 
 
 ## Command-Line Usage (CLI)
 
-You can also run conversions directly from the command line (or via `Convert-VRM.cmd`) without opening the browser wizard:
+You can also run conversions directly from the command line (or via `Convert-VRM.cmd`) without opening the browser wizard. Pass the VRM path as a positional argument and supply detailed follower options via `--settings` (using a JSON file exported from the wizard):
 
 ```powershell
 # Launch the web wizard
+Launch.cmd
+# or
 .venv\Scripts\python.exe wizard.py
 
 # Convert a VRM directly into a follower mod directory
-.venv\Scripts\python.exe converter.py ^
-  --input "path\to\avatar.vrm" ^
-  --output "build\my-follower" ^
-  --npc-name "Follower Name" ^
-  --plugin-name "MyFollower.esp"
+Convert-VRM.cmd "path\to\avatar.vrm" --settings "path\to\settings.json" --output "build\my-follower"
+# or
+.venv\Scripts\python.exe converter.py "path\to\avatar.vrm" --settings "path\to\settings.json" --output "build\my-follower"
 ```
 
 ---

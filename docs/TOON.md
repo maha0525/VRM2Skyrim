@@ -1,8 +1,8 @@
 # トゥーン描画ガイド (Community Shaders 対応)
 
-VRM Skyrim Converter は、変換したフォロワーを **VRM らしいアニメ調の陰影・リムライト・輪郭線**で描画する「トゥーン描画」に対応しています。
+VRM Skyrim Converter は、元の VRM アバターに設定された **MToon 材質（影色・明暗の境界・リムライト・MatCap・輪郭線）** を読み取り、Skyrim 内でアニメ調の質感として再現する「トゥーン描画」に対応しています。
 
-Skyrim 標準のリアルな陰影ではなく、段差のある柔らかいセルシェーディングでフォロワーを表示したい場合に使います。他の一般 NPC や背景の見た目には影響せず、**トゥーン描画を有効にして作成した VRM フォロワーだけ**に適用されます。
+他の一般 NPC や背景、フォロワーに着せた Skyrim 既存の鎧・武器の見た目には影響せず、**トゥーン描画を有効にして作成した VRM フォロワー本体の肌・顔・髪・元の衣服だけ**に適用されます。
 
 ---
 
@@ -11,72 +11,93 @@ Skyrim 標準のリアルな陰影ではなく、段差のある柔らかいセ�
 トゥーン描画を使うには、Skyrim 側に以下の 3 つが必要です。
 
 1. **SKSE64**（`skse64_loader.exe` からゲームを起動すること）
-2. **Community Shaders 1.4.x**（動作確認バージョン：`1.4.18`）
-3. **VRM2Skyrim Toon Shader アドオン**（`VRM2Skyrim-Toon-Shader-0.13.0.zip`）
-   - ウィザードの変換完了画面にある **「トゥーンシェーダーを保存」** ボタンからダウンロードできます（リポジトリ内の `toon-shader/VRM2Skyrim-Toon-Shader-0.13.0.zip` と同じものです）。
+2. **Community Shaders（Bottled Shaders 1.0.22 / `CommunityShaders.dll` バージョン `1.9.0.0`）**
+3. **トゥーン描画用シェーダー ZIP**（`VRM2Skyrim-Toon-Shader-0.13.0.zip`）
+   - ウィザードの **STEP 01** または **変換完了画面** にある **「トゥーン描画用シェーダーをダウンロード」** ボタンから保存できます（リポジトリ内の `toon-shader/VRM2Skyrim-Toon-Shader-0.13.0.zip` と同じものです）。
+   - 1 回導入すれば、作成した複数の VRM フォロワーで共通して使えます。
 
 > [!IMPORTANT]
-> **ENB との併用について**
-> Community Shaders は ENB（`d3d11.dll`）が入っているとシェーダー置き換えを自動で無効化します。トゥーン描画を使う場合は ENB を外すか無効化してください。
+> **対応する Community Shaders の配布版について**
+> 同梱の `VRM2Skyrim-Toon-Shader-0.13.0.zip` は、Nexus Mods で配布されている **Bottled Shaders 1.0.22**（Mod Organizer 2 等で `Bottled Shaders` として導入される、`CommunityShaders.dll` バージョン `1.9.0.0` のパッケージ）専用です。
+> 同じ DLL バージョン `1.9.0.0` であっても、`Bottled Shaders 1.0.4` など他の配布版とはシェーダー本体（`Lighting.hlsl` / `DeferredCompositeCS.hlsl`）の内容が異なるため、そのまま重ねて使うことはできません。
+
+> [!NOTE]
+> トゥーン描画を使わない場合は、STEP 01 の「トゥーン描画を使う」のチェックを外してフォロワーを作成してください。その場合は SKSE64 や Community Shaders がなくても通常のフォロワー MOD として動作します。
 
 ---
 
-## 2. 導入と使いかた
+## 2. 導入手順（MO2 / Vortex）
 
 ### 手順 1：ウィザードの STEP 01 でトゥーン描画を有効にする
 
-1. ウィザードの **STEP 01（アバターと制作環境）** にある **「トゥーン描画（Community Shaders 用）」** を開きます。
-2. **「トゥーン描画を使う」** にチェックを入れます。
-3. STEP 05 まで進んでフォロワー MOD を作成します。
+1. ウィザードの **STEP 01（アバターと制作環境）** にある **「トゥーン描画（Community Shaders 用）」** を確認します（初期状態で **「トゥーン描画を使う」** にチェックが入っています）。
+2. STEP 01 または完了画面の **「トゥーン描画用シェーダーをダウンロード」** から **`VRM2Skyrim-Toon-Shader-0.13.0.zip`** を保存します。
+3. STEP 05 まで進んでフォロワー MOD の ZIP を作成・保存します。
 
-### 手順 2：Mod Organizer 2 / Vortex に導入する
+### 手順 2：Mod Organizer 2 (MO2) で導入する場合
 
-1. STEP 01 のシェーダー欄または完了画面にある **「トゥーン描画用シェーダーをダウンロード」** ボタンから、**`VRM2Skyrim-Toon-Shader-0.13.0.zip`** を保存します。
-2. Mod Organizer 2 または Vortex で、以下の両方をインストールして有効化します：
-   - **Community Shaders 本体**
-   - **VRM2Skyrim Toon Shader アドオン**（1 度導入すれば、すべての VRM フォロワーで共通して使えます）
-   - **作成したフォロワー MOD**
-3. **`skse64_loader.exe`** から Skyrim を起動します。
+1. **Community Shaders 本体（`Bottled Shaders 1.0.22`）** を導入して有効化します。
+2. **`VRM2Skyrim-Toon-Shader-0.13.0.zip`** を「アーカイブから MOD をインストール」で追加し、左ペインの並び順で **Community Shaders 本体より下（優先度が高い側）** に置いて有効化します。
+   - `Shaders/Lighting.hlsl` と `Shaders/DeferredCompositeCS.hlsl` が `VRM2Skyrim-Toon-Shader` 側で上書きされる状態にします。
+3. 作成した **フォロワー MOD の ZIP** をインストールして有効化し、右ペインの「プラグイン」タブで `<フォロワー名>.esp` にチェックが入っていることを確認します。
+4. **ゲームを終了した状態で**、Skyrim の `Data/ShaderCache` フォルダ（MO2 の `Overwrite` 内に `ShaderCache` が出力されている場合はそちらも）を別名に退避または削除します。
+5. MO2 から **`skse64_loader.exe`** で Skyrim を起動します。
+
+### 手順 3：Vortex で導入する場合
+
+1. **Community Shaders 本体（`Bottled Shaders 1.0.22`）**、**`VRM2Skyrim-Toon-Shader-0.13.0.zip`**、および作成した **フォロワー MOD の ZIP** を Vortex に追加して有効化します。
+2. ファイル競合のルール確認が表示されたら、`VRM2Skyrim-Toon-Shader-0.13.0` を **Community Shaders 本体より後（After / 優先）** に設定し、**Deploy Mods** を実行します。
+3. 「プラグイン」タブで `<フォロワー名>.esp` が有効になっていることを確認します。
+4. **ゲームを終了した状態で**、`Data/ShaderCache` フォルダを別名に退避または削除してから **`skse64_loader.exe`** で起動します。
 
 ---
 
-## 3. 詳細パラメータ（設定 JSON・CLI オプション）
+## 3. 元 VRM から引き継がれる MToon 表現
 
-ウィザードの STEP 01 で「トゥーン描画を使う」にチェックを入れると、VRM アバター向けに調整された標準値で変換されます。さらに細かく色味や陰影を調整したい場合は、保存した設定 JSON または `converter.py` の CLI オプションで以下の項目を指定できます。
+トゥーン描画では、手動で数値を調整する代わりに **元の VRM ファイルに含まれる MToon 材質（`VRMC_materials_mtoon`）の設定値**を自動で読み取って変換します。
 
-| 項目名 | 初期値 | 設定範囲 | 効果の説明 |
-| :--- | :---: | :---: | :--- |
-| **陰影の濃さ** (`toon_shadow_strength`) | `0.38` | `0.0` 〜 `1.0` | 影が落ちる部分の暗さです。数値を下げるほど影が薄くフラットになり、上げるほど明暗の差がはっきりします。 |
-| **陰影の境界** (`toon_shadow_threshold`) | `-0.05` | `-0.6` 〜 `0.6` | 光が当たる面と影になる面の境目の位置です。マイナスにすると明るい面が広くなり、プラスにすると影の面積が増えます。 |
-| **境界のぼかし** (`toon_shadow_feather`) | `0.06` | `0.005` 〜 `0.5` | 明暗の境目のなめらかさです。小さくするとアニメ塗りらしいパキッとした境界になり、大きくすると柔らかいグラデーションになります。 |
-| **陰影の色味（赤・緑・青）** (`toon_shadow_tint`) | `0.90, 0.84, 0.92` | 各 `0.2` 〜 `1.2` | 影の部分に乗せる色味です。肌や髪が灰色にくすまないよう、わずかに紫や暖色を混ぜておくと綺麗に発色します。 |
-| **輪郭線の太さ** (`toon_outline_width`) | `0.45` | `0.0` 〜 `2.0` | キャラクターの周囲に描かれるインク線の太さです。`0` にするか「輪郭線を追加する」のチェックを外すと輪郭線なしになります。 |
-| **輪郭線の色（赤・緑・青）** (`toon_outline_color`) | `0.16, 0.13, 0.14` | 各 `0.0` 〜 `1.0` | 輪郭線の色です。真っ黒（`0, 0, 0`）よりも少し茶色や紫がかった濃い色にすると自然に馴染みます。 |
-| **リムライトの強さ** (`toon_rim_power`) | `0.22` | `0.0` 〜 `1.0` | 逆光時などに輪郭の内側へ入るハイライト（縁の光）の強さです。 |
-| **リムライトの幅** (`toon_rim_Drop` / `toon_rim_feather`) | `0.32` | `0.05` 〜 `0.9` | リムライトが回り込む広さです。 |
+- **引き継がれる要素**
+  - 基本色テクスチャ・乗算色・アルファ透過（`OPAQUE` / `MASK` / `BLEND`）・両面描画設定（`doubleSided`）
+  - 影色（`shadeColorFactor`）と影色テクスチャ（`shadeMultiplyTexture`）
+  - 明暗境界の鋭さ（`shadingToonyFactor`）と境界位置（`shadingShiftFactor`）
+  - 環境光の均一化設定（`giEqualizationFactor`）と暗所での最低環境光下限
+  - ノーマルマップと凹凸の強さ（`normalTexture.scale`）
+  - MatCap テクスチャと加算色（`matcapTexture` / `matcapFactor`）
+  - リムライトの色・強さ・広がり・光源追従・リムマスクテクスチャ（`parametricRimColorFactor` / `parametricRimFresnelPowerFactor` / `parametricRimLiftFactor` / `rimLightingMixFactor` / `rimMultiplyTexture`）
+  - 実寸幅（`worldCoordinates`）の輪郭線（太さ・色・輪郭線幅マスク `outlineWidthMultiplyTexture`）
+- **現在の変換で省略される要素**
+  - 画面比率（`screenCoordinates`）指定の輪郭線、自己発光テクスチャ（`emissiveTexture`）、UV アニメーションは未対応のため省略されます。
+- **設定 JSON での指定キー**
+  - 設定 JSON ファイル（`--settings`）で切り替える場合のキーは `"toon_enabled": true`（または `false`）のみです。
 
 > [!TIP]
-> **既存の防具や武器を着せた場合の見え方**
-> VRM 本体の衣装・肌・髪にはトゥーン陰影と輪郭線が適用されますが、ゲーム内の既存防具（体型合わせしたバニラ防具や MOD 防具）や武器にはトゥーン設定を付けないため、金属や革の質感がそのまま保たれます。
+> **Screen Space GI や既存防具との併用**
+> Community Shaders の **Screen Space GI** は有効のまま併用できます。また、フォロワーに Skyrim 既存の鎧や武器を着せた場合、それらの装備品には通常の Skyrim 質感（金属や革の陰影）がそのまま使われます。
 
 ---
 
-## 4. うまく反映されないときの確認ポイント
+## 4. 注意点とトラブルシューティング
 
-- **ゲーム内で通常のリアルな陰影のまま表示される場合**
+- **Community Shaders 本体を更新するとき**
+  Community Shaders 本体を新しいバージョンへ更新する際は、先に `VRM2Skyrim-Toon-Shader-0.13.0.zip` を無効化してから更新してください。
+- **フォロワーが通常のリアルな陰影のまま表示される場合**
   1. `skse64_loader.exe` から起動しているか確認してください。
-  2. Community Shaders と `VRM2Skyrim-Toon-Shader-0.13.0.zip` の両方が MOD マネージャー上で有効になっているか確認してください。
-  3. 別の MOD が `Data/Shaders/Lighting.hlsl` を上書きしていないか確認してください（MO2 の右ペイン「データ」タブで `Shaders/Lighting.hlsl` の提供元が `VRM2Skyrim-Toon-Shader` になっている必要があります）。
-  4. Community Shaders のシェーダーキャッシュが残っている場合は、ゲーム内で `End` キーを押して Community Shaders のメニューを開き、**Clear Shader Cache（シェーダーキャッシュのクリア）** を実行してください。
+  2. `Data/Shaders/Lighting.hlsl` と `Data/Shaders/DeferredCompositeCS.hlsl` が `VRM2Skyrim-Toon-Shader-0.13.0.zip` のもので上書きされているか確認してください。
+  3. ゲームを一度終了し、`Data/ShaderCache`（および MO2 の `Overwrite/ShaderCache`）を別名に退避してから起動し直してください。古いシェーダーキャッシュが残っていると変更後のシェーダーが読み込まれません。
 
 ---
 
-## 5. 技術仕様（開発者向けリファレンス）
+## 5. 技術仕様とライセンス（開発者向けリファレンス）
 
-- **対象マテリアルの識別マーカー**
-  トゥーン有効時、VRM 由来の `BSLightingShaderProperty` の `SpecularColor` に識別用の組 `(0.1725, 0.5608, 0.8667)`、`Glossiness` に `61.0` を設定します。輪郭線用の背面押し出しパスには `(0.8667, 0.5608, 0.1725)` と `63.0` を設定します。
-- **シェーダー構成**
-  - `Data/Shaders/Lighting.hlsl` — Community Shaders 1.4.18 の `Lighting.hlsl` に `VRM2Skyrim/ToonLighting.hlsli` のインクルードを追加したもの。
-  - `Data/Shaders/VRM2Skyrim/ToonLighting.hlsli` — マーカーを持つピクセルに対してのみ 2 段シェード・色味補正・リムライト・輪郭線出力を適用し、それ以外のオブジェクトは標準の PBR/バニラ計算をそのまま通します。
-- **CLI オプション**
-  `converter.py` からは `--toon`、`--no-toon-outline`、`--toon-shadow-strength`、`--toon-shadow-threshold`、`--toon-shadow-feather`、`--toon-shadow-tint R G B`、`--toon-outline-width`、`--toon-outline-color R G B`、`--toon-rim-power`、`--toon-rim-feather` で指定できます。
+- **NIF と制御テクスチャの構造 (`toon.py`)**
+  - トゥーン対象の `BSLightingShaderProperty` には Glowmap シェーダータイプ（`ShaderType=2`、`SLSF1_Cast_Shadows`、`SLSF2_Glow_Map`、`EmissiveColor=(0,0,0)`、`EmissiveMultiple=0.0`）を設定し、テクスチャスロット 2（シェーダー側の `t6` Glowmap）に制御テクスチャ `textures/<asset_dir>/toon_<hash>.dds` を割り当てます。
+  - 制御テクスチャの 1 行目（左端 4 ピクセル）には識別マーカー（通常シェイプは `R=18, G=229, B=164, A=255`、背面押し出しの輪郭線シェイプは `R=19, G=229, B=164, A=255`）と、MToon の影色・境界・リムライト・MatCap・法線強度・輪郭線色を記録します。影テクスチャ・リムマスク・MatCap がある場合は、同じアトラス内の縦 3 段（256×768）に連結して格納します。
+  - `Shaders/VRM2Skyrim/ToonCommon.hlsli`・`ToonLighting.hlsli`・`ToonComposite.hlsli` が `t6` のマーカーを検査し、一致したピクセルのみ MToon 計算へ分岐させます（マーカーを持たない一般の Glowmap メッシュは `EmissiveMultiple` がそのまま働くため影響を受けません）。
+- **シェーダー ZIP の再ビルド方法**
+  手元に展開した `Bottled Shaders 1.0.22` の `Shaders` フォルダを指定して、以下のコマンドで `toon-shader/VRM2Skyrim-Toon-Shader-0.13.0.zip` を再生成・検証できます：
+  ```powershell
+  .venv\Scripts\python.exe toon.py --shader-root "<Bottled Shaders 1.0.22 の展開先>\Shaders"
+  ```
+- **ライセンス表記**
+  - `VRM2Skyrim` 本体のソースコードは [MIT License](../LICENSE) です。
+  - `VRM2Skyrim-Toon-Shader-0.13.0.zip` に含まれる `Shaders/Lighting.hlsl`、`Shaders/DeferredCompositeCS.hlsl`、および `Shaders/VRM2Skyrim/*.hlsli` は Community Shaders（Bottled Shaders 1.0.22）のシェーダーを改変したものであり、**GPL-3.0（Community Shaders Modding Exception および GPL-3.0 Linking Exception 付き）** の下で配布されます。ライセンス全文はシェーダー ZIP 内の `Shaders/VRM2Skyrim/Licenses/` およびリポジトリの [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) に同梱されています。
