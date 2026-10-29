@@ -58,6 +58,9 @@ def main():
         info = source_materials.get(material.name, {})
         material['V2S_Preview_Policy'] = json.dumps(info)
         preview_face_culling(material, info.get('doubleSided', False))
+    if settings.toon_enabled:
+        from toon_preview import apply_toon_preview
+        apply_toon_preview(output, meshes, source_glb=glb)
     bounds = []
     for obj in meshes:
         node = int(obj.name.split("_")[-1].split(".")[0])

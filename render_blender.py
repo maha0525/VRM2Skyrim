@@ -146,9 +146,11 @@ def main():
     parser.add_argument('--keep-clothes', action='store_true')
     parser.add_argument('--head-closeup', action='store_true')
     parser.add_argument('--physics-frame', type=int)
+    parser.add_argument('--toon', action=argparse.BooleanOptionalAction, default=None)
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
     output = args.output.resolve()
     settings = load_settings(output)
+    toon_enabled = settings.toon_enabled if args.toon is None else args.toon
     refs = reference_root(output)
     original_weapon = None
     if args.weapon_nif:
@@ -335,20 +337,27 @@ def main():
                 if path.exists():
                     image.filepath = str(path)
                     image.reload()
-    elif args.animation in ("walk", "attack") or args.weapon_preview:
-        bpy.ops.object.select_all(action="DESELECT")
-        rig.select_set(True)
-        bpy.context.view_layer.objects.active = rig
-        base = refs / "meshes/actors/character"
-        if args.weapon_preview:
-            from weapon_nif import DRAWN_IDLES
-            animation = base / "animations" / DRAWN_IDLES[original_weapon['kind']]
-        else:
-            animation = base / (f"animations/{settings.sex}/mt_walkforward.hkx" if args.animation == "walk"
-                                else "animations/1hm_attackright.hkx")
-        bpy.ops.import_scene.pynifly_hkx(filepath=str(animation), rename_bones=False,
-                                       reference_skel=str(base / "character assets/skeleton.hkx"))
-        frames = [1] if args.weapon_preview else [1, 8, 16, 24] if args.animation == "walk" else [1, 5, 10, 16]
+        if toon_enabled:
+            from toon_preview import apply_toon_preview
+            apply_toon_preview(output)
+    else:
+        if toon_enabled:
+            from toon_preview import apply_toon_preview
+            apply_toon_preview(output, meshes)
+        if args.animation in ("walk", "attack") or args.weapon_preview:
+            bpy.ops.object.select_all(action="DESELECT")
+            rig.select_set(True)
+            bpy.context.view_layer.objects.active = rig
+            base = refs / "meshes/actors/character"
+            if args.weapon_preview:
+                from weapon_nif import DRAWN_IDLES
+                animation = base / "animations" / DRAWN_IDLES[original_weapon['kind']]
+            else:
+                animation = base / (f"animations/{settings.sex}/mt_walkforward.hkx" if args.animation == "walk"
+                                    else "animations/1hm_attackright.hkx")
+            bpy.ops.import_scene.pynifly_hkx(filepath=str(animation), rename_bones=False,
+                                           reference_skel=str(base / "character assets/skeleton.hkx"))
+            frames = [1] if args.weapon_preview else [1, 8, 16, 24] if args.animation == "walk" else [1, 5, 10, 16]
     weapon = weapon_meshes = weapon_node_name = None
     if original_weapon is not None and (args.animation in ("attack", "sheathed") or args.weapon_preview):
         from custom_skeleton import NifFile

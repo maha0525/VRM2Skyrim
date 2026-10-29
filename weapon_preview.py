@@ -179,7 +179,7 @@ def preview(workspace, source, glb, game, blender, settings, catalog, progress):
             textures = publish_textures(built, root, texture_key)
     else:
         plan = json.loads((built/'weapon-plan.json').read_text(encoding='utf8'))
-    render_key = digest(dict(avatar=avatar_key, weapon=weapon_key))
+    render_key = digest(dict(avatar=avatar_key, weapon=weapon_key, toon=settings.toon_enabled))
     previews = [f'previews/weapon-{render_key}-{view}.png' for view in VIEWS]
     render_reused = all(valid_image(base/p) for p in previews)
     if not render_reused:
@@ -188,7 +188,8 @@ def preview(workspace, source, glb, game, blender, settings, catalog, progress):
         drawn_animation(game/'Data', refs, weapon['kind'])
         run_blender(blender, 'render_blender.py',
                     ['--output', base, '--weapon-preview', render_key, '--weapon-nif', built/'mod'/plan['nif'],
-                     '--weapon-textures', textures/'dds-preview', '--weapon-kind', weapon['kind']], base, 'Weapon preview')
+                     '--weapon-textures', textures/'dds-preview', '--weapon-kind', weapon['kind'],
+                     '--toon' if settings.toon_enabled else '--no-toon'], base, 'Weapon preview')
         shutil.copyfile(built/'compare.png', base/previews[3])
     report = json.loads((built/'weapon.json').read_text(encoding='utf8'))
     elapsed = time.perf_counter()-started
