@@ -113,7 +113,7 @@ function renderWeaponPreview(){
     image.src=fileURL(job.id,path);image.alt=tr(weaponViews[job.views[index]]);caption.textContent=image.alt;figure.dataset.weaponView=job.views[index];
     figure.append(image,caption);$('weapon-preview-images').append(figure);
   });
-  $('weapon-preview-status').textContent=job.stale?tr('プレビューの後で値を変えました。もう一度描いてください。'):tr('このプレビューはBlenderでの確認用です。ゲームでの見え方は確認していません。');
+  $('weapon-preview-status').textContent=job.stale?tr('プレビューの後で値を変えました。もう一度描いてください。'):tr('このプレビューはBlenderでの確認用です（握る位置や大きさの目安として確認できます）。');
 }
 async function weaponPreview(){
   if(state.weaponPreviewLoading)return;

@@ -1,239 +1,169 @@
-# VRM2Skyrim
+# VRM Skyrim Converter
 
-**English** | [日本語](README.ja.md)
+[日本語 README](README.ja.md)
 
-**0.11.2 fixes severe FSMP stalls in fixed-appearance followers.** Earlier output could attach the same avatar physics ten times. Update the tool, restart the wizard, rebuild affected followers with the same settings and ESP name, replace/deploy their ZIPs, and fully restart Skyrim. Updating the tool alone does not repair previously generated MODs. This fix preserves record IDs and does not require a follower reset.
+**VRM Skyrim Converter** is a local tool that turns a VRM avatar (`.vrm`) into a ready-to-install follower mod (ZIP archive) for **Skyrim Special Edition / Anniversary Edition**.
 
-**Turn your VRM avatar into a companion for your Skyrim adventures.**
+Guided by a 5-step browser wizard, you can convert your 3D model, set up removable outfits and body-fitted armor, generate Faster HDT-SMP hair and cloth physics, enable anime-style toon shading for Community Shaders, and configure combat classes, spells, perks, shouts, and custom GLB weapons—all packaged cleanly for Mod Organizer 2 or Vortex.
 
-VRM2Skyrim is a local tool that creates Skyrim Special Edition follower MODs from humanoid VRM 0/1 models. It generates a dedicated race and skeleton to preserve the avatar's proportions, face, hair, and original outfit. Configure the follower in a five-step wizard and export a ZIP for Vortex or Mod Organizer 2.
+---
 
-Materials retain the original VRM's single/double-sided rendering and transparency settings. Version 0.6.2 corrected the earlier behavior that forced all materials to render double-sided, resolving eyelashes appearing over the whites of the eyes. You do not need to delete eyelashes or expression parts from the VRM.
+## Key Features
 
-Followers start **inside the Temple of Kynareth in Whiterun**. The tool sets up the vanilla follower factions, a friendly relationship with the player, a recruitment-compatible voice, and a persistent placed reference, so the NPC can be recruited through dialogue.
+- **5-Step Browser Wizard**
+  Configure your follower's name, voice, meeting location, combat role, starting gear, perks, spells, and shouts step by step. The wizard scans your Skyrim installation and active load order automatically, so you never have to look up raw FormIDs.
+- **Removable Outfits & Fitted Skyrim Armor**
+  Split your VRM meshes into body, underwear, and garments so your follower can unequip their default outfit or wear other armor in-game. You can also automatically fit base-game or mod armor meshes to your avatar's proportions.
+- **Hair & Cloth Physics (Faster HDT-SMP)**
+  Reads VRM Spring Bone chains and generates Faster HDT-SMP cloth XML and collision bodies automatically, with presets and sliders for stiffness, gravity, damping, and wind.
+- **Anime-Style Toon Shading (Community Shaders)**
+  Supports a custom Community Shaders 1.4.x addon that brings soft cel shading, rim lighting, and ink outlines to your follower.
+- **Custom Weapons from GLB**
+  Upload a `.glb` weapon model, adjust its scale and grip orientation with live previews, and bundle it as your follower's signature weapon.
+- **Automatic Sitting Height Adjustment**
+  Compensates for your avatar's leg length and proportions so they sit at a natural height on chairs and benches.
 
-This development version is **0.13.0** (toon shading enabled by default). It includes a Japanese/English wizard, optional hair/cloth physics, removable original VRM headwear, seated height correction, material fidelity fixes, and class growth details with categorized Perks/spells. It can fit humanoid equipment from the base game, installed DLC, and official additional content in one batch, including helmets, shields, rings, and necklaces. You can configure face/hair visibility and import finishing edits made in Outfit Studio.
+---
 
-**Toon shading is enabled by default.** It preserves the source MToon shade colours, MatCaps, rim lighting, world-space outlines and normal maps on converted avatars. Change it in **STEP 01**. It also requires the toon shader ZIP shipped in the `toon-shader` folder (the wizard's **Download the toon shader** button saves it) and the Community Shaders installed by Bottled Shaders 1.0.22. VRM2Skyrim is MIT-licensed; the shader ZIP contains modified Community Shaders files and is GPL-3.0 with the Community Shaders exceptions. See [installation and supported effects](docs/TOON.md).
+## Requirements
 
-For optional physics, enable **髪・布を揺らす** in the wizard, select the meshes, and start with the calm default. Garment roots and arm-adjacent sleeve attachments follow the body animation, while distal cloth moves independently. Geometry-scaled inertia and damping, restricted twist, and hidden single-owner contact patches reduce persistent oscillation in sleeves, hair, skirts, and capes. Original visible geometry and weights are preserved. Update the complete follower ZIP, including NIFs and XMLs. Generated followers require [Faster HDT-SMP](https://www.nexusmods.com/skyrimspecialedition/mods/57339) and matching SKSE64 when physics is enabled. See [physics setup and implementation](docs/FSMP.md).
+### PC Requirements (For Running the Converter)
 
-Version 0.8.1 fixes Engine Fixes texture-load warnings caused by compressing small or unaligned images as BC7. These images now use uncompressed RGBA8 DDS, keeping their original dimensions and pixels. DDS format, dimensions, and mip storage are checked during conversion and output validation. This is a texture-only correction; existing followers do not need a save reset for this update.
+| Component | Requirement |
+| :--- | :--- |
+| **OS** | Windows 10 / 11 (64-bit) |
+| **Python** | Python 3.11 or newer |
+| **Blender** | Blender 4.2 or newer |
+| **Skyrim** | Skyrim Special Edition (or Anniversary Edition) installed locally |
 
-Use the **日本語 / English** selector at the upper right to change the wizard language without resetting your work. It initially follows your browser language and remembers your choice. Game names and descriptions come directly from Skyrim's localized data: for example, the skill **Sneak** and the Perk **Stealth** retain their distinct original names. If English strings are missing, Editor IDs are shown. Japanese overrides stored under English filenames fall back to native English archive entries. NPC names, clothing names, IDs and exported settings are preserved when switching languages.
+### In-Game Mod Requirements (For Playing with the Generated Follower)
 
-## Getting started
+Basic follower features (recruiting, combat, removable outfits, and custom weapons) **do not require any additional prerequisite mods**. Depending on the optional features you enable, install the following in your Skyrim load order:
 
-Requirements:
+| Optional Feature | Required Skyrim Mods | Notes |
+| :--- | :--- | :--- |
+| **Basic Follower, Removable Outfits, Custom Weapon** | None | Runs on vanilla Skyrim SE/AE (plus any official DLC/Creations you select for gear or shouts). |
+| **Sitting Height Adjustment** | **SKSE64** | Adjusts seat height via script when sitting (launch via `skse64_loader.exe`). |
+| **Hair & Cloth Physics** | **SKSE64** + **Faster HDT-SMP** | Required to animate converted VRM Spring Bone chains in-game. |
+| **Toon Shading** | **SKSE64** + **Community Shaders 1.4.x** + **VRM2Skyrim Toon Shader Addon** | Download the Toon Shader Addon ZIP from STEP 01 or the completion screen. |
+| **Existing Armor Fitting** | **SKSE64** + **SkyPatcher** | Required when fitting official Skyrim armor/headgear to your follower's body. |
 
-- Windows and Python **3.11 or 3.12**.
-- Skyrim Special Edition, including `Skyrim.esm` and the base-game BSAs.
-- **Blender 4.5 LTS**. Validation used version 4.5.12.
-- A humanoid VRM model to convert.
+---
 
-1. Clone this repository, or use Code → Download ZIP and extract it.
-2. Run **`Setup.cmd`** once. It installs Python dependencies into a dedicated `.venv` and downloads pinned versions of PyNifly and texconv into `dependencies/`.
-3. Run **`Launch.cmd`** to open the wizard in your browser. It uses the project `.venv`; run Setup first if that environment is missing. Setup checks native dependency loading and LZ4 decompression before completing.
-4. Select the VRM and check the Skyrim folder and Blender executable. Detected locations are filled in automatically.
-5. Configure the follower and select **Create follower MOD** (`フォロワーMODを作る`). Download the ZIP and previews from the result page.
+## Getting Started
 
-Processing runs on your PC. Models are not uploaded to external services. The tool does not modify the input VRM, game Data folder, or saves, and it does not change your Blender user preferences. To stop the wizard, press Ctrl+C in the terminal that launched it.
+### 1. First-Time Setup
 
-If the wizard's port is already in use, the launcher selects a free port and opens that instance's URL. Use the newly opened page or the URL printed in its terminal; an older tab can still point to an older process. Existing processes are not stopped automatically.
+After downloading the repository, double-click **`Setup.cmd`** once.
+It creates a local Python virtual environment (`.venv`) and prepares the required Blender add-on and conversion tools.
 
-Install Blender separately from its [official website](https://www.blender.org/download/lts/). Toon shading, headgear face/hair switching, seated height correction and physics require [SKSE64](https://skse.silverlock.org/). With all four disabled, generated followers do not require SKSE64. Creation Kit, RaceMenu, and XPMSSE are not mandatory.
+### 2. Launching the Wizard
 
-Version 0.9.6 adds **seated height correction** in STEP 03. Automatic calculation uses the official sitting pose and the original avatar proportions, with an optional manual adjustment. It preserves standing proportions and corrects sinking into base-game chairs and benches. Generated MODs with this option enabled require SKSE64. See [settings and supported furniture](docs/SEATING.md).
+Double-click **`Launch.cmd`** whenever you want to create or edit a follower.
+This starts the local server and opens the wizard in your default web browser.
 
-0.9.7 removes the root wrapper introduced in 0.9.6 that broke standing avatars. It preserves the original skeleton/mesh root hierarchy and shifts the existing NPC node only while seated. Replace the complete follower ZIP and restart Skyrim.
+> [!TIP]
+> After updating this tool, close any running command window from an earlier session and launch `Launch.cmd` again so the latest server code is loaded.
 
-0.9.8 starts chair-height correction during the entry animation. It listens for chair-entry events, verifies the furniture and restores the previous height if entry is cancelled.
+---
 
-0.9.9 fixes a missed chair-entry retry when engine state becomes visible late, and prevents a nested event from adding the offset twice.
+## Creating a Follower (5 Steps)
 
-0.10.0 adds removable original VRM hats/helmets with automatic head-slot allocation and optional per-item face/hair visibility. Existing meshes are restored on removal; no VRM-side hat-removal gimmick is needed. See [headwear settings](docs/HEADWEAR.md).
+### STEP 01: Avatar, Wardrobe & Rendering Setup
 
-0.10.1 preserves original material tints, correctly interprets VRM0 MToon sRGB colors, and retains explicit eyelash/eye draw priorities in NIFs. Diffuse RGB is baked without changing texture alpha or shader opacity. Source/output previews also honor alpha queues and allow enough transparent rays for layered eyes. Regenerate and replace the complete follower ZIP; item records and scripts are unchanged, so no save reset is needed for this material correction.
+1. **Select Your VRM File**
+   Upload your `.vrm` file to inspect its meshes, triangle count, and Spring Bone chains.
+2. **Toon Shading (Optional)**
+   Open **Toon shading (for Community Shaders)** and enable it if you want anime-style cel shading.
+3. **Removable Outfits & Armor Fitting (Optional)**
+   Switch **Clothing and armor separation** to **Enabled: separate body, underwear, and clothes** if you want your follower's clothing to be removable in-game.
+   - Assign each VRM mesh to Body, Underwear, Clothing, Face, Hair, or Ears/Horns.
+   - Use **Reset to suggested**, **One item per mesh**, or **Combine into one outfit** to organize garments quickly, and render a Blender preview to check how dressed, underwear, and nude states look.
+   - Enable **Fit existing Skyrim armor to this body** to conform vanilla or replacer armor to your avatar's body shape.
+4. **Physics Settings (Optional)**
+   If your VRM includes Spring Bones, choose which meshes should sway and adjust their stiffness and damping.
+5. **Environment Paths & Saved Sessions (Optional)**
+   Reopen previously built follower ZIPs from the top of STEP 01, verify Skyrim/Blender paths, or load a saved `.json` settings file.
 
-0.10.2 adds skill categories for Perks and school categories for spells. Separate Perk chain stages are labeled; an effect-rank selector appears only when a record actually has several effect ranks. New followers default to essential protection and unrestricted morality. FSMP recentering preserves native rotations/scales without rejecting float rounding, and hidden sleeve contact geometry is validated separately from the visible avatar.
+### STEP 02: Identity & Profile
 
-After updating the tool, press **Ctrl+C** in its terminal and reopen **Launch.cmd**. Reloading the browser alone does not reload Python. The wizard detects mixed running/frontend versions and explains restarting. Explicit imported settings are preserved.
+- **Follower Name, Mod Name, and Plugin Name**: Set the in-game display name and the generated `.esp` filename.
+- **Sex, Height, and Weight**: Choose the animation skeleton (Female / Male) and body scale.
+- **Voice Type & Marriage Dialogue**: Pick from Skyrim's available voice types and marriage options.
 
-## Wizard settings
+### STEP 03: Combat Style, Starting Gear & Behavior
 
-| Area | Settings |
-| --- | --- |
-| VRM and environment | VRM file, Skyrim/Blender locations, loading saved settings |
-| Clothing separation | Enable/disable support; assign meshes to body, underwear, always-visible parts, or garments; preview the original VRM assignments |
-| Original outfit equipment | Combine into one item or split into items; names, occupied slots, clothing/light/heavy armor, armor rating, weight, value, and initial equipment |
-| Name and voice | NPC name, MOD name, unique MOD ID, author, sex, and 17 voice types with vanilla follower dialogue |
-| Combat and abilities | Warrior/two-handed/archer/destruction/conjuration presets, class, combat style, starting weapon (official, or an original weapon from a GLB), and ammunition |
-| Growth and personality | Fixed/player-scaled level, multiplier and limits, automatic/manual stats, health/magicka/stamina, 18 skills, essential/protected/normal status, confidence, aggression, and crime behavior |
-| Details | Uniform overall size multiplier, marriage eligibility with supported voices, and placement offset inside the temple |
-| Perks, spells and shouts | Skill/school categories, labeled Perk stages, filtering by category/name/ID/description; 27 player shouts, including Dawnguard/Dragonborn shouts when installed |
-| Review and export | Save settings JSON, generate previews, and save the MOD ZIP |
+- **Combat Preset**: Pick a role preset (such as One-Handed Warrior, Ranger, or Destruction Mage) to automatically populate matching class, weapon, and stat defaults.
+- **Starting Weapon & Custom GLB Weapon**:
+  - Choose an existing weapon from your game, or select **Original weapon** to upload a `.glb` model and tune its length, grip position, and orientation with live previews.
+- **Protection & Morality**: Set whether the follower is Essential, Protected, or Mortal, and how they react to crimes.
+- **Stats, Skills & Sitting Height**: Let Skyrim auto-calculate skills by class, manually set all 18 skill values and base Health / Magicka / Stamina, or fine-tune chair/bench sitting height.
 
-Perk and spell candidates are read from the selected game's `Skyrim.esm`. Spells are restricted to ordinary spells taught by spell tomes; blessings, passive abilities, and trap effects are excluded. This version does not list DLC/MOD perks and spells or independently recorded custom voices. With automatic calculation, health, magicka, and stamina are base values before class/level growth. With manual calculation, the specified attributes and 18 skill values are used directly, including when the NPC's level follows the player. The individual-skills panel includes a button to switch to manual calculation. Selected Perks are granted explicitly; increasing a skill does not automatically add Perks.
+### STEP 04: Perks, Spells & Shouts
 
-Shouts are chosen from the 27 shouts the player can learn (20 from `Skyrim.esm`, 3 from Dawnguard, 4 from Dragonborn, such as Cyclone). DLC shouts appear only when that DLC is installed. A follower with a DLC shout requires that DLC; its ZIP README lists it. The wizard shows the combat style's Equipment Score Mult - Shout and warns when it is 0.
+- Select starting **Perks**, **Spells**, and **Shouts** for your follower.
+- Filter by skill school or search by name/FormID; selected items appear as removable tags at the top of each section.
 
-The wizard displays each class's skill and health/magicka/stamina growth weights from the game records. Combat styles normally show candidates used by NPCs with the human character skeleton. Enable the all-styles option to include creature styles and styles without confirmed human usage; the selected style lists its example races. This filter is guidance, not a race restriction in the combat-style record. New followers default to **essential** and **no crime restrictions (morality 0)**. Explicit values in imported settings are preserved.
+### STEP 05: Review & Build
 
-The MOD ID determines the ESP name, Editor IDs, and private mesh/texture paths. Use **different MOD IDs** when installing multiple avatars together. NPC names and display names can also use Japanese text.
+- Review your configuration summary and click **Build Follower Mod**.
+- You can also click **Export Settings JSON** beforehand so you can reload and tweak the same setup later.
 
-## Separating body, underwear, and clothing
+---
 
-Since version 0.6.0, clothing is added as ordinary NPC inventory, with the default-outfit field left empty. A private NPC script equips the selected initial clothing once. It does not replenish items after removal or rewrite AFT outfit sets.
+## Installing into Skyrim
 
-Clothing replacement uses Skyrim's native equipment-slot exclusion: torso outfits use 32, gloves 33, and shoes 37. To wear a shirt, jacket, skirt, and tights together, combine them into one torso outfit item. Equipping armor or boots replaces clothing in the same slots. There is no equipment-event script that removes clothing afterward. Slot exclusion also applies to equipment outside the conversion catalog when it occupies the same slot.
+1. **Install the Follower Mod ZIP**
+   Once conversion finishes, download the generated **Follower Mod ZIP**, install and enable it in Mod Organizer 2 or Vortex, and meet your follower inside the **Temple of Kynareth in Whiterun**.
+2. **If You Enabled Toon Shading**
+   Click **Download the toon shader** in STEP 01 or on the completion screen, and install that ZIP alongside Community Shaders (only needed once).
+3. **If You Enabled Existing Armor Fitting**
+   Install SKSE64 and SkyPatcher, and make sure `iEnableArmorPatching` and `iEnableFormlistPatching` are set to `1` in `SkyPatcher.ini` (you can verify your setup directly from the completion screen using **Check after deploying**).
+4. **Refining Meshes in Outfit Studio (Optional)**
+   Use the **Finish equipment in Outfit Studio** section on the completion screen to download the editing kit ZIP, tweak any fitted `.nif` in Outfit Studio, and import it back to update the mod ZIP.
 
-Use **Split into torso, gloves, and shoes** (`胴・手袋・靴に分ける`) to group meshes by region, or **Combine clothing into one item** (`衣服を一品にまとめる`) for a full-body set occupying torso/glove/shoe slots. Selecting a body region/purpose automatically chooses the slot; select a number directly only when needed, from 32–49 or 53–59. If several initial items occupy the same slot, the wizard asks you to combine them instead of silently moving them to extra slots. Cloaks and accessories assigned to extra slots coexist with armor.
+---
 
-ARMO equipment occupancy and ARMA body coverage are handled separately. A torso item occupies slot 32, while its displayed model retains the avatar's original skin for regions 32, 34, and 38. A full-body outfit also retains hand and foot skin. Slots 52 (underwear) and 60 (face/hair) are reserved internally. SkyUI item types and icons mainly depend on equipment slots. Legacy settings for scripted clothing replacement are migrated to regional outfit sets when loaded, with a notice in the wizard.
+## Troubleshooting
 
-The hidden internal head item used in version 0.5.1 was removed because AFT could remove the default outfit and expose a human face. FaceGen head generation is disabled for the dedicated race, and the NPC and race point to an empty head model. The VRM face and hair are part of the skin in slot 60, with separate variants containing or hiding each according to headgear settings. The dedicated race's empty-head configuration is shared by every visibility state.
+### "Restart the wizard" appears on screen
+If you updated the repository while an older `Launch.cmd` window was still running, press `Ctrl+C` in the old terminal (or close it), run `Launch.cmd` again, and use the newly opened browser tab.
 
-For a normal update, replace and deploy the new ZIP using the same ESP name, then quit and restart Skyrim. If only the old 3D appearance remains, select the NPC in the console, run `disable`, and run `enable` without changing the selection. If clothing-structure changes or other updates cause inventory/equipment problems, use the [reset procedure](#follower-update-reset) below.
+### An existing save does not show updated follower gear or appearance
+Skyrim caches NPC state and inventory in your save file once you have met them. When testing a rebuilt follower with the same plugin name, use a save made before meeting the follower, or travel to another cell and reset the actor via the console (`recycleactor`).
 
-Choose wardrobe support in the first screen to see suggested assignments for the VRM meshes. Suggestions are inferred from names and materials, so **check the body, underwear, always-visible parts such as face/hair, and removable garments yourself**. This version does not cut apart or reconstruct meshes where body and clothing are fused together.
+---
 
-You can combine garments into a single item or split them into separate equipment. Use **+ Add clothing** (`＋ 衣服を追加`) in the **Generated clothing** (`生成する衣服`) list to add groups, then assign each mesh to an equipment group to combine several meshes into one garment. Expand equipment details to adjust names, slots, stats, and initial equipment. Use **Remove clothing** or **Remove one item**, then **Preview overall appearance** (`全体の見た目をプレビュー`) to check that the body and underwear remain before conversion. This preview shows the original VRM; output NIF images are generated after conversion.
+## Command-Line Usage (CLI)
 
-The body, underwear, always-visible parts, and each garment are exported as separate NIFs using the same dedicated skeleton. Underwear remains when no equipment is worn. Clothing can use standard slots 32–43 and layering slots 44–49 or 53–59. Garments occupying body slots also retain the original VRM body needed for exposed areas. Slots 52 and 60 are reserved for underwear and always-visible parts. Initially equipping conflicting items is rejected. All items are added to the NPC's inventory, and initial-equipment settings apply to the first equip only. Inventory/dropped-item views use a generic base-game clothing model; the equipped model uses the converted original VRM geometry.
-
-Mesh assignments are associated with the input VRM's SHA256. If you load settings into a different VRM, open **Redo mesh assignments** (`メッシュの割り当てをやり直す`) in the first screen and choose **Restore automatic assignments from import** (`読み込み時の自動割り当てに戻す`). This clears manual assignments and clothing groups, restoring the initial suggestions based on names and materials. Every enabled mesh must be assigned exactly once; omissions and duplicates are rejected.
-
-The generated README includes clothing IDs and equipment-trading instructions. Original clothing can be given or taken through ordinary follower inventory dialogue.
-
-Search for and select headgear one item at a time to configure face/hair visibility and check an equipped preview. **Global defaults** (`全体デフォルト設定`) apply to items without an individual override. **Reset** (`リセット`) removes that item's override. **Preview with this headgear** (`この頭装備を着せてプレビュー`) fits the selected helmet to the VRM body and renders it. Changing only visibility settings reuses the fitted geometry.
-
-Choose the source-data mode based on the **equipment you want to convert**. For standard base-game/DLC equipment, choose **Convert standard base-game/DLC equipment** (`本体・DLCの標準装備を変換`). For UNP/CBBE equipment replacers or BodySlide-generated equipment, choose **Convert currently installed equipment** (`現在導入している装備を変換`) after building and deploying both the body and equipment with the same body preset. Installing a body MOD alone does not require the latter option. The destination body is always the original VRM in either mode.
-
-Version 0.7.1 also fixed export-name collisions when splitting large meshes with several materials. You do not need to consolidate materials or meshes in the VRM.
-
-Headgear preserves source model partition identifiers such as 130 (full-face helmet) and 131 (hood). These are separate from ESP equipment slots 30 and 31; model partition 131 is not rewritten as ordinary hair slot 31. Generated data is checked against the original equipment.
-
-## Installing in Skyrim
-
-1. Install and enable the generated ZIP with Vortex or MO2. In Vortex, also run Deploy.
-2. Enable the generated `<MOD ID>.esp` in the plugin list.
-3. Quit and restart Skyrim, then visit **Whiterun's Temple of Kynareth** using a test save.
-4. Talk to the NPC and choose the standard recruitment dialogue. Check recruitment, following, waiting, dismissal, and re-recruitment.
-
-The NPC uses the vanilla follower slot. Dismiss another follower first if that slot is occupied. A follower is already placed inside the temple, so `player.placeatme` is normally unnecessary. The console command for moving to the temple during testing is `coc WhiterunTempleofKynareth`.
-
-The generated README includes a command to find the placed reference and instructions for using its FormID with your actual load order. If you used the 0.1/0.2 Sophie prototype, it is a different plugin from SophieFollower; disable the old prototype in a test save when checking the new follower.
-
-<a id="follower-update-reset"></a>
-
-## Resetting a follower after a problematic update
-
-If an update prevents opening inventory or causes incorrect equipment behavior, use these steps to reinstall the follower. This recovery procedure can be used for updates that merge or split clothing items. It resets the follower rather than retaining its inventory and follower-manager configuration.
-
-1. **Restore the previous follower MOD and armor patch, then load a save from before the update.** Keep that save and the old ZIPs as backups.
-2. **Recover entrusted items.** Take back weapons, armor, and other items except the original clothing added by this follower MOD. Also check equipment and cargo stored separately by AFT or another manager. If you moved the follower's original clothing to the player or a storage container, return it to that follower.
-3. **Dismiss the follower and unregister it from your follower manager, if used.** Complete the AFT preparation below where applicable. Then move to another location without the follower, save manually into a new slot, and quit the game.
-4. **Disable the follower MOD and armor patches that reference it, then load the save from step 3.** In Vortex, also deploy. For legacy shared patches, migrate the other fitted followers to 0.12.0 before removing the patch; new exports have independent SkyPatcher registration. Do not leave an enabled patch that depends on the disabled follower ESP.
-5. **Save manually into another slot and quit.** Do not overwrite the original backup or the save from step 3.
-6. **Install and enable the updated follower MOD (and its bundled SkyPatcher configuration), then load the save from step 5.** Deploy again in Vortex.
-7. **Recruit the follower again at Whiterun's Temple of Kynareth.** Return the recovered equipment and redo the follower-manager settings you use.
-
-**AFT preparation:** Dismissal alone leaves the management registration in place, so use the individual **Reset NPC** in step 3. The AFT author's sequence is: recover gear and turn off outfit management → dismiss this follower and all other active followers → wait 24 in-game hours → fast travel elsewhere and enter an interior → save, quit, restart, and reload that save → talk to the target NPC and choose **Settings → Reset NPC** → save and quit. This is different from resetting all of AFT. Translations may use different menu names. [AFT author's instructions](https://www.nexusmods.com/skyrimspecialedition/mods/80675?tab=posts)
-
-If step 4 asks whether to reactivate inactive content (**Activate now?**), select **No**: this question would enable the MOD you deliberately disabled. For the subsequent warning that some objects may no longer be available (**Continue loading?**), select **Yes** to continue.
-
-This is a recovery procedure for reinstalling a follower, not a guarantee that every reference in saves or external MOD data is removed. If recovery fails, restore the backup save and the old follower MOD/armor patch from step 1.
-
-## Conversion scope
-
-- Humanoid VRM 0/1 skeletons, arbitrary node/mesh names, and splitting large geometry where needed.
-- Unit conversion and joint rotations preserving the original proportions, without stretching individual regions to the standard Skyrim body.
-- Dedicated race and skeleton, fixed appearance or removable original-outfit equipment, vanilla follower settings, and initial placement.
-- Secondary-rig mapping checked against position and orientation; clothing and hair made with separate rigs are integrated into the same output skeleton.
-- OPAQUE/MASK/BLEND materials and DDS alpha. Initial expression-morph values are baked into the fixed appearance.
-- NIF/DDS read-back checks, vertex comparison against the original VRM in the same pose, and standard walking/one-handed-sword animation checks and images.
-
-With wardrobe support enabled, the assigned original garments can be equipped and removed. **Fit existing equipment to this body** (`既存装備をこの身体に合わせる`) converts either **all official equipment** or **selected equipment**. It reads the base game, installed Dawnguard/HearthFires/Dragonborn, and installed `cc*.esm`/`cc*.esl` files, using equipment Addons intended for humanoids. Human and beast-race models are selected separately. Enchanted variants using the same Addon share a single fitted model.
-
-Besides torso, hand, and foot equipment, fitting covers headgear, circlets, shields, rings, and necklaces. The armor is deformed while the original skin vertices and faces are preserved, and exposed regions include the original skin. Texture Set variations, equipment slots, and original item stats are retained.
-
-**Hide face** and **Hide hair** are independent headgear options. By default, the face remains visible and headgear occupying hair slots hides the hair. Circlets retain hair. An item override also applies to enchanted variants sharing the same Addon. In the mesh-assignment screen, identify the face, hair, and always-visible accessories.
-
-Source body/equipment data can come from the original official archives or currently installed files. **For UNP/CBBE equipment replacements, build both the body and equipment using the same BodySlide preset before choosing installed data.** Source and destination vertex counts may differ. Additional physics bones are consolidated into body-following weights.
-
-The result page's **Outfit Studio editing kit** contains a reference NIF preserving the original VRM body, the dedicated skeleton, fitted equipment, and private textures. Refine shapes with brushes, export a NIF without including the reference body, and load it through **Import finished equipment** (`仕上げた装備を戻す`) to update the MOD ZIP. It imports vertices and normals while preserving weights, UVs, materials, and equipment slots. Added/deleted vertices or faces, renamed shapes, and edits to the reference body are rejected. Saved finishing edits are reused when reconverting the same VRM and equipment.
-
-After restarting the wizard, open **Previously created followers** (`前に作ったフォロワー`) to access results and equipment editing. If importing an edit fails, the pre-edit meshes, saved edits, and ZIP are restored. You can also update the current ZIP from the CLI:
+You can also run conversions directly from the command line (or via `Convert-VRM.cmd`) without opening the browser wizard:
 
 ```powershell
-python outfit_edits.py --output <conversion-folder> --mesh-key <editing-kit-source_key> --edited <edited-NIF> --blender <Blender.exe>
+# Launch the web wizard
+.venv\Scripts\python.exe wizard.py
+
+# Convert a VRM directly into a follower mod directory
+.venv\Scripts\python.exe converter.py ^
+  --input "path\to\avatar.vrm" ^
+  --output "build\my-follower" ^
+  --npc-name "Follower Name" ^
+  --plugin-name "MyFollower.esp"
 ```
 
-Installed-data mode reads the body, equipment, and skeleton from the game's Data folder. With MO2, run the tool in an environment that can see MO2's virtual Data folder. The official-equipment catalog does not list equipment records added by third-party MODs.
+---
 
-Without `--blender`, the CLI imports and saves a finishing edit for the next conversion:
+## Guides & Documentation
 
-```powershell
-python outfit_edits.py --output <conversion-folder> --mesh-key <manifest-source_key> --edited <edited-NIF>
-```
+- **[Toon Shading Guide (docs/TOON.md)](docs/TOON.md)** — Setting up and tuning the Community Shaders toon addon
+- **[Cloth & Hair Physics Guide (docs/FSMP.md)](docs/FSMP.md)** — Converting and tuning VRM Spring Bones for Faster HDT-SMP
+- **[Sitting Height Guide (docs/SEATING.md)](docs/SEATING.md)** — How automatic and manual chair height compensation works
+- **[Headwear & Hair Visibility Guide (docs/HEADWEAR.md)](docs/HEADWEAR.md)** — Preventing hair/ear clipping with helmets, hoods, and custom headwear
+- **[Output Format Specification (docs/FORMAT.md)](docs/FORMAT.md)** — Technical reference for generated NIF, ESP, and texture records
+- **[Development & Testing (docs/development.md)](docs/development.md)** — Running unit tests, linters, and browser checks
 
-Fitted equipment requires [SkyPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/106659) and matching SKSE64. Each follower ZIP includes its own uniquely named armor and head-visibility registration. Install the follower MOD normally; enable armor and form-list patching in SkyPatcher.ini, and restart Skyrim. Adding, disabling or removing one follower does not require rebuilding other followers or a combined patch. The generated configuration preserves original armor models and stats and applies only while that follower ESP is loaded.
+---
 
-**Migration from 0.11.x:** re-export and replace ALL followers that use fitted equipment, then disable/remove the old `VRM2SkyrimArmorPatch.esp`. Do not disable the old patch while still relying on it for followers you have not migrated. New exports do not produce that shared ESP or a separate patch ZIP. The wizard detects an old patch and explains the migration.
+## License & Third-Party Notices
 
-Lip sync and blinking are not supported. Toon shading and optional hair/clothing physics are available as described above. Fingers without finger bones are fixed to the hands. Ragdoll dimensions and constraints for falls/death are derived from the standard skeleton; avatar-specific adjustment and validation remain necessary.
-
-The temple CELL record is included as a copy preserving the base-game contents so the follower can be placed there. MODs changing lighting or other properties of the same CELL may require normal load-order or compatibility-patch adjustments.
-
-Follower ZIPs do not contain the input VRM, working reference meshes, or dependency tools. They do contain converted skeletons, appearance/equipment meshes, and private textures. Equipment images at native game paths are read from the game. With installed replacers selected, these images follow the current game setup. Images at mod-only paths remain bundled. Follow the model author's terms when using a model or distributing a generated MOD; see [License](#license) and [third-party notices](THIRD_PARTY_NOTICES.md).
-
-## CLI and reconversion
-
-```powershell
-python converter.py --doctor
-python converter.py avatar.vrm --settings my-follower.json
-python converter.py avatar.vrm --settings my-follower.json --game 'E:\SteamLibrary\steamapps\common\Skyrim Special Edition' --blender 'C:\path\blender.exe' --output build/my-new-build
-python wizard.py --no-browser --port 8768
-```
-
-Settings with `"weapon_mode": "original"` also need the weapon GLB whose SHA256 is saved in `original_weapon`: add `--weapon-glb staff.glb`. The GLB is not included in the ZIP. In the wizard, choose **Original weapon** (`オリジナル武器`) for the starting weapon in STEP 03, then the GLB, weapon type, base weapon, grip and length; **Preview with the weapon** draws the follower holding it, the sheathed weapon, and a same-scale comparison with the base weapon. Imported settings ask for the same GLB again and refuse a different file.
-
-If you used `.venv` during setup, run `.venv\Scripts\python.exe`. You can also drag a VRM onto `Convert-VRM.cmd`. Outputs are written under `build/`, and previous conversions are not overwritten. An explicitly specified `--output` must be an empty folder.
-
-Load `vrm2skyrim/<lowercase MOD ID>/settings.json` from a generated ZIP into the wizard to reconvert with the same settings. Its instructions are in `README.txt` in that same folder. Change the name and MOD ID when switching to a different avatar. The root-level `VRM2Skyrim-settings.json` from versions 0.3/0.4 can still be loaded. Since 0.4.1, all files, including instructions and settings, use MOD-specific paths to avoid conflicts between different MOD IDs.
-
-## Development and validation
-
-```powershell
-python -m unittest test_converter tests.test_follower tests.test_wardrobe tests.test_package tests.test_armor tests.test_textures
-python -m ruff check --exclude dependencies,build,reference .
-```
-
-Follower integration tests require a local `Skyrim.esm`; only those tests are skipped when the game is unavailable.
-
-Browser E2E tests use a dedicated headless browser rather than your existing browser profile.
-
-```powershell
-npm install
-npx playwright install chromium
-# In another terminal, start: python wizard.py --no-browser
-$env:VRM2SKYRIM_TEST_VRM='C:\path\test-avatar.vrm'
-npm run test:ui
-# For a test VRM with separate body, underwear, and several garments:
-npm run test:wardrobe
-# To include equipment selection and independent SkyPatcher registration:
-$env:VRM2SKYRIM_TEST_FIT='true'
-npm run test:fitting
-```
-
-To use an existing Chrome installation in a separate headless process, set `VRM2SKYRIM_TEST_BROWSER=chrome`. Set `VRM2SKYRIM_TEST_URL` to specify the server URL.
-
-See [FORMAT.md](docs/FORMAT.md) for file structures and implementation references, [follower-wizard.md](docs/intent/follower-wizard.md) for the wizard design, [armor support](docs/intent/armor-support.md) for wardrobe design, and [armor fitting](docs/intent/armor-fitting.md) for fitting. The tool uses external PyNifly V29.1.0 and DirectXTex may2026 dependencies, checking pinned SHA256 values when downloading them. Their licenses are GPL-3.0 and MIT respectively. Input VRMs and game assets are not included in this repository.
-
-## License
-
-Original VRM2Skyrim code and documentation are licensed under the [MIT License](LICENSE). Modification, redistribution, and commercial use are permitted with the copyright and permission notice retained.
-
-Dependencies keep their own licenses. In particular, PyNifly is GPL-3.0 and is imported directly by this tool. The original code can remain under MIT, but distributing the assembled converter with PyNifly requires GPL compliance for the combined work, including license notices and corresponding source. The combined distribution cannot be provided under MIT-only terms.
-
-Input VRMs, Skyrim-derived assets, and resources from other equipment MODs are not covered by this MIT grant. Follow their respective authors' and rights holders' terms when distributing generated follower MODs or Outfit Studio editing kits. Include the MIT notice when redistributing original VRM2Skyrim runtime scripts. [Third-party notices and generated-asset terms](THIRD_PARTY_NOTICES.md) document dependency versions, primary sources, and redistribution requirements.
+- Project source code is licensed under the [MIT License](LICENSE).
+- See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for license details of bundled tools and shader adaptations.

@@ -1,364 +1,108 @@
-# Skyrim record and skeleton sources
+# 出力フォーマット・内部レコード仕様 (Output Format & Record Specification)
 
-## 0.12.0 independent equipment registration
+このドキュメントでは、**VRM Skyrim Converter** が生成するプラグイン（`.esp`）、メッシュ（`.nif`）、テクスチャ（`.dds`）、および設定メタデータの内部仕様をまとめています。
 
-New exports bundle per-follower SkyPatcher armor and formList rules named exactly
-`<follower>.esp.ini` in their own namespace. Readers skip that file if its ESP is
-not loaded; armor rules also use hasPlugins and exclude already-added addons.
-No aggregate ESP or separate armor-patch ZIP is generated. Original ARMO records,
-models, stats and other followers are not overwritten by an exported follower.
+---
 
-Visibility lists receive plugin-relative original item references at startup.
-Private fitted ARMA records retain original SNDD footstep references directly;
-only their required official masters are added to the follower. Local FormIDs
-are unchanged. Conversion/validation use canonical own-file index 1 while the
-serializer maps the real MAST order, including VMAD, race, outfit, head, combat
-style, relationship, placed-reference links and the NPC spell list (SPLO, which
-holds both spells and shouts). See follower_plugin.py.
+## 1. ローカル FormID の割り当て規則
 
-Selected shouts (settings `shouts`, OfficialCatalog keys) are SPLO references to
-the official SHOU records, after the spells; SPCT counts both. A DLC shout adds
-its plugin and that plugin's masters to the follower, like footstep sounds. The
-extra masters are one combined, deduplicated list in OfficialCatalog plugin order
-(footsteps and shouts together), computed also without fitting; footstep SNDD and
-shout SPLO references are both numbered against it (shouts.official_references).
-The output gate reads the written ESP back and resolves each shout in its master
-file (shouts.validate_generated).
+フォロワーのプラグイン（`.esp`）内では、各レコードに固定または予約されたローカル FormID（内部ファイルインデックス `1`）を割り当てます。セーブデータとの互換性を保つため、一度割り当てた ID を別のレコード種別に転用することはありません。`TES4` ヘッダ（`HEDR`）の次オブジェクト ID は常に `0x900` 以上に設定されます。
 
-Legacy 0.11.x and earlier shared patches must be removed only after every fitted
-follower depending on them has been re-exported/replaced. The wizard shows the
-migration notice independently of whether the current follower uses fitting.
+| ローカル ID | レコード種別 | 役割 / 実装箇所 |
+| :--- | :--- | :--- |
+| `0x800` | `NPC_` | フォロワー本体の Actor レコード (`build_npc.NPC_ID`) |
+| `0x801` | `ARMO` | 固定外観、または全身の Skin アーマー (`build_npc.ARMOR_ID`, `gear_head_runtime` FullSkin) |
+| `0x802` | `ARMA` | 固定外観、または素体（Body）の Skin アドオン (`build_npc.ADDON_ID`) |
+| `0x803` | `OTFT` | デフォルト衣装 (`build_npc.OUTFIT_ID`) |
+| `0x804` | `RACE` | フォロワー専用種族 (`build_npc.RACE_ID`) |
+| `0x805` | `RELA` | プレイヤーとの関係レコード (`build_npc.RELATIONSHIP_ID`) |
+| `0x806` | `ACHR` | ワールド（ホワイトラン・キナレス聖堂）に配置される参照 (`build_npc.REFERENCE_ID`) |
+| `0x807`–`0x80A` | `ARMA` | 下着・固定顔/髪・手・足の Skin アドオン (`build_npc.appearance_records`) |
+| `0x80B` | `ARMO` | 旧仕様の頭部カバー用予約枠（現在はマスク 0 の非活性レコードとして保持, `head_visibility.HEAD_COVER_ID`） |
+| `0x80C` / `0x80D` | `HDPT` / `FLST` | 空の HeadPart と頭部用種族リスト (`head_visibility`) |
+| `0x810`–`0x82F` | `ARMA` / `ARMO` | 着脱可能な元の衣服（最大 16 品：ARMA `0x810 + 2n`, ARMO `0x811 + 2n`, `wardrobe.MAX_GARMENTS`） |
+| `0x830`–`0x83F` | （予約領域） | `wardrobe.py` 用予約枠 |
+| `0x840`–`0x846` | `FLST` | 衣装ランタイム管理リスト (`equipment_runtime.LIST_IDS`) |
+| `0x850` / `0x851` | `ARMA` | 分離された顔・髪の Skin アドオン (`build_npc.appearance_records`) |
+| `0x852`–`0x854` | `ARMO` | 顔非表示・髪非表示・両方非表示の切り替え用 Skin (`gear_head_runtime.IDS`) |
+| `0x855` / `0x856` | `FLST` | 顔を隠す装備リスト / 髪を隠す装備リスト (`gear_head_runtime.IDS`) |
+| `0x860`–`0x862` | `ARMA` | 頭部表示切り替え用バリアントアドオン (`gear_head_runtime.head_variants`) |
+| `0x870` | `FLST` | 着席高さ補正の対象となる椅子・ベンチのリスト (`seating.SEATS_ID`) |
+| `0x880` | `CSTY` | フォロワー専用の戦闘スタイル (`combat_style.CUSTOM_STYLE_ID`) |
+| `0x880`–`0x8BF` | `ARMA` | 旧仕様の体型合わせアドオン領域（過去のプロファイル読み込み時のみ認識, `armor_patch.py`） |
+| `0x8D0` | `WEAP` | オリジナル武器レコード (`weapon.WEAPON_ID`) |
+| `0x8D1` | `STAT` | オリジナル武器の 1 人称モデルレコード (`weapon.FIRST_PERSON_ID`) |
+| `0x1000` 以降 | `ARMA` | 体型合わせ済みの公式装備アドオン（元アドオンごとに 1 件, `armor_fitting.py`） |
 
-## Private local FormID allocation
+---
 
-Local IDs of records in the follower ESP (own-file index 1 internally). Saved games
-keep these identities, so an ID is never reused for a different record kind.
-The TES4 HEDR next-object ID is at least `0x900`.
+## 2. プラグイン・NPC レコード仕様
 
-| Local ID | Record | Owner / note |
-|---|---|---|
-| `0x800` | NPC_ follower | `build_npc.NPC_ID` |
-| `0x801` | ARMO appearance / full Skin | `build_npc.ARMOR_ID`, `gear_head_runtime` FullSkin |
-| `0x802` | ARMA fixed appearance or body Skin | `build_npc.ADDON_ID` |
-| `0x803` | OTFT default outfit | `build_npc.OUTFIT_ID` |
-| `0x804` | RACE private race | `build_npc.RACE_ID` |
-| `0x805` | RELA player relationship | `build_npc.RELATIONSHIP_ID` |
-| `0x806` | ACHR placed follower | `build_npc.REFERENCE_ID` |
-| `0x807`–`0x80A` | ARMA underwear, fixed face/hair, hands, feet Skin | `build_npc.appearance_records` |
-| `0x80B` | ARMO retired 0.5.1 head cover (inert) | `head_visibility.HEAD_COVER_ID` |
-| `0x80C` / `0x80D` | HDPT empty head / FLST head races | `head_visibility` |
-| `0x810`–`0x82F` | garment ARMA `0x810+2n`, ARMO `0x811+2n` | `wardrobe.MAX_GARMENTS` (16) |
-| `0x830`–`0x83F` | reserved | `wardrobe.py` |
-| `0x840`–`0x846` | FLST wardrobe runtime lists | `equipment_runtime.LIST_IDS` |
-| `0x850` / `0x851` | ARMA separate face / hair Skin | `build_npc.appearance_records` |
-| `0x852`–`0x854` | ARMO face/hair/both hidden Skin | `gear_head_runtime.IDS` |
-| `0x855` / `0x856` | FLST face/hair hiding equipment | `gear_head_runtime.IDS` |
-| `0x860`–`0x862` | ARMA head-visibility variants | `gear_head_runtime.head_variants` |
-| `0x870` | FLST recognized seats | `seating.SEATS_ID` |
-| `0x880` | CSTY private combat style | `combat_style.CUSTOM_STYLE_ID` |
-| `0x880`–`0x8BF` | legacy fitted ARMA, accepted only from old fitting profiles | `armor_patch.py` |
-| `0x8D0` | WEAP original weapon | `weapon.WEAPON_ID` |
-| `0x8D1` | STAT original weapon first-person model | `weapon.FIRST_PERSON_ID` |
-| `0x1000`+ | ARMA fitted official equipment, one per source addon | `armor_fitting.py` |
+バイナリフィールドの構造は [xEdit の TES5 定義 (`wbDefinitionsTES5.pas`)](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.5/Core/wbDefinitionsTES5.pas) に準拠しています。
 
-## Original GLB weapon
+- **マスターファイル (`TES4` / `MAST`)**
+  - 基本マスターは `Skyrim.esm`（および必要に応じて `Update.esm`）です。
+  - 体型合わせした防具の足音（`SNDD`）や、DLC のシャウト（`SHOU`）を使用する場合のみ、該当する公式 DLC / Creation がマスター一覧へ重複なく追加され、内部の FormID インデックスが実際の `MAST` 順に再マッピングされます（`follower_plugin.py`, `shouts.py`）。
+- **NPC 基本設定 (`ACBS` / `AIDT` / `DNAM` / `PRKR` / `SPLO`)**
+  - `ACBS`: フラグ（`Unique=0x20`, `Female=0x1`, `Essential=0x2`, `Protected=0x800`, `AutoCalc=0x10`, `PCLevelMult=0x80`）、マジカ・スタミナ・体力の初期オフセット、レベル範囲を保持します。
+  - `AIDT`: 攻撃性、自信、道徳観（犯罪への態度）、仲間への援助フラグ（`Assistance=2`: 友人と仲間を助ける）を設定します。
+  - `DNAM`: 18 種のスキル値とオフセット、および基礎ステータスを保持します。手動でスキルを指定した場合は `AutoCalc=false` になります。
+  - `PRKR`: 選択された Perk の FormID とランクを記録します。
+  - `SPLO`: 選択された呪文（`SPEL`）とシャウト（`SHOU`）の両方を格納し、`SPCT` に合計件数を書き込みます。
+- **フォロワー雇用システムと配置 (`FACT` / `RELA` / `ACHR`)**
+  - `CurrentFollowerFaction`（ランク `-1`）、`PotentialFollowerFaction`（ランク `0`）、およびプレイヤーとの `Ally` 関係（`RELA`）を設定することで、バニラ標準の勧誘・待機・解雇・持ち物交換ダイアログをそのまま使用します。
+  - 配置参照（`ACHR` `0x806`）はホワイトランのキナレス聖堂（`WhiterunTempleofKynareth`）の永続参照として配置されます。
 
-`weapon_mode=original` replaces the `settings.weapon` inventory entry with one private
-WEAP `0x8D0` copied from a Skyrim.esm base weapon. Base candidates are named,
-playable WEAPs (record flag `0x4` and DNAM Flags `0x80` clear, xEdit TES5) whose
-DNAM animation type and single `WeapType*` keyword form one of eight pairs:
-sword 1/WeapTypeSword, dagger 2/WeapTypeDagger, war axe 3/WeapTypeWarAxe, mace
-4/WeapTypeMace, greatsword 5/WeapTypeGreatsword, battleaxe 6/WeapTypeBattleaxe,
-warhammer 6/WeapTypeWarhammer, staff 8/WeapTypeStaff. Defaults are SteelSword,
-SteelDagger, SteelWarAxe, SteelMace, SteelGreatsword, SteelBattleaxe,
-SteelWarhammer and StaffFlames; a kind whose default is missing uses its first
-candidate (logged).
+---
 
-Base WEAP and first-person STAT records are read with Update.esm's overrides of
-Skyrim.esm records applied (20 candidates, 19 with different values, in the
-installed Update.esm, e.g. SteelDagger NAM8/NAM9/DNAM). An override is refused as a base when any FormID in it
-has an Update.esm master index other than 0 (Skyrim.esm), when it has a field
-outside the known WEAP/STAT FormID table (`game_catalog.references`), or when it
-changes FULL/DESC (Update.esm string IDs). The follower plugin's masters are unchanged.
+## 3. 骨格・メッシュ・マテリアル変換仕様
 
-The copy replaces EDID (`<prefix>OriginalWeapon`), FULL (inline string), MODL,
-WNAM and OBND, resolves a localized DESC to an inline string, and removes MODT and
-the CNAM template. All other fields stay in order. The base's first-person STAT
-becomes `0x8D1` (`<prefix>OriginalWeapon1stPerson`) with the same NIF in MODL,
-the new OBND, no MODT and its DNAM retained. WEAP WNAM is a FormID and is remapped
-with the follower's own-file index; WEAP/STAT MODL are path strings and are not.
+- **カスタムスケルトンとリターゲティング**
+  - アニメーション制御される Skyrim 標準ボーンのローカル変換を維持したまま、VRM のプロポーションを合わせる非アニメーション親ヘルパーノードを挿入します。
+  - バニラ骨格に存在しない杖の納刀ノード `WeaponStaff` を `NPC Spine2` の子として追加し、背中に杖を背負えるようにしています（`custom_skeleton.HELPER_NODES`）。
+- **FaceGen ヘッドの無効化**
+  - 専用種族（`RACE` `0x804`）の `DATA` フラグから `FaceGen Head` ビット（`0x2`）を落とし、空の `HDPT`（`0x80C`）とメッシュなしの `FaceGeom` を配置することで、装備を着脱してもバニラの人間頭部が VRM の顔の上に重なって描画される現象を防いでいます。
+- **マテリアルと両面描画フラグ (`doubleSided`)**
+  - glTF / VRM の ` OPAQUE`、`MASK`、`BLEND` に応じて `NiAlphaProperty` を設定し、テクスチャを BC7 / BC1 DDS に変換します。
+  - 元のマテリアルの `doubleSided` 設定（初期値 `false`）をそのまま `BSLightingShaderProperty` の `SLSF2_Double_Sided` に反映します。片面マテリアルに強制的に両面描画フラグを立てないことで、まつ毛や目の裏面ポリゴンが白目を覆ってしまう現象を防いでいます。
 
-`meshes/<asset_dir>/weapon.nif` has a BSFadeNode root, BSTriShape children placed
-by their vertices, the base NIF's BSXFlags and BSInvMarker, a `Prn` naming the
-sheath node of the kind (`weapon_nif.SHEATH_NODES`: the bases' own Prn for every
-kind except the staff, which uses `WeaponStaff`), and `bhkCollisionObject` (base
-flags, 129 on official weapons) → plain `bhkRigidBody` with zero translation and
-identity rotation (base numeric values only: collision filter, mass, damping,
-friction, restitution, motion/quality/deactivator/solver, maximum velocities,
-penetration depth; centre of mass = volume centroid of the new hull; inertia =
-mass × box inertia of the hull's bounding box) → `bhkConvexVerticesShape`. Its havok
-material and convex radius come from the base shape when it is a convex vertices,
-box or convex transform shape, or from the first such child of a `bhkListShape`
-(about half the candidates); otherwise the list's material (or SOLID_METAL) and
-Havok's default radius 0.05. The hull is the exact hull of at most 48 GLB
-vertices: extremes in 26 directions, then the farthest outside vertex until every
-vertex is within 0.5% of the model size. The longest GLB bounding-box axis becomes
-+Y with its low end at -Y; flip turns 180° about Z, roll turns about Y; the
-length is scaled to `length` and the origin is at `grip` from the bottom, at the
-X/Z bounding-box centre of vertices within ±2% of the length around the grip.
+---
 
-Textures: `weapon[_<material>].dds` (baseColorFactor RGB baked linearly),
-`_n.dds` (glTF normal RGB, alpha = 1 − roughness; the green decision is
-`weapon.FLIP_NORMAL_GREEN`), and `_m.dds` (metallic mask, converted without sRGB)
-when at least 1% of pixels have metallic ≥ 0.5. Masked materials reference the
-game's `textures\cubemaps\ShinyDull_e.dds`; `weapon.json` records its archive and
-SHA256 and the package gate re-reads that archive entry. An installed replacement
-at that path is used in game and only logged. The GLB is bound by
-`original_weapon.sha256` and is not packaged.
+## 4. 衣装の分離と Biped スロット仕様
 
-## Historical 0.7.0 equipment identities and private models
+STEP 01 で「衣服・防具の分離（`armor_support=True`）」を有効にした場合、メッシュの役割に応じて以下のスロットとレコードが生成されます。
 
-The official catalog reads installed base/DLC/Creation masters, resolving every
-disk FormID through that file's MAST array, including ESL files. Saved equipment
-identities use `owner-plugin:local-24-bit-id`; catalog indices and runtime load
-order are not persistent identities. Female actors can use the shared male model
-when the addon has no female model. Human addons are selected separately from
-beast-specific addons. An item may have several humanoid addons, and enchanted
-variants share the same fitted addon geometry.
+- **素体・下着・頭部（Skin レコード）**
+  - 素体（Body：Slot 32）、常時表示する下着（Underwear：Slot 52）、顔と髪（Face/Hair：Slot 60 等）を個別の Skin `ARMA` として出力します。
+  - 素体メッシュは胴体（`32/34/38`）・手（`33`）・足（`37`）のパーティションに分割され、小手やブーツを着けた部位だけ素体が隠れるように構成されます。
+- **着脱可能な衣服アイテム（Garment レコード）**
+  - `wardrobe_policy=native_slots` では、胴体衣装は Slot `32`（パーティション `32/34/38`）、手は `33`、足は `37`、頭装備は `30/31`、サークレットは `42`、マントやバッグ等の追加装飾は拡張スロット（`44–49`, `53–59`）を使用します。
+  - 上下一体型の全身衣装（`item_kind=full`）を Slot 32 に割り当てた場合は、Slot `32/33/37` を占有します。
+  - 初期装備の衣服は NPC の所持品（`CNTO`）に入り、初回ロード時（`OnInit`）に装着されます。以降の着せ替えは Skyrim 標準の Biped スロット排他制御によって自然に切り替わります。
 
-The follower keeps its Skyrim-only master layout and existing saved local IDs.
-Exceptions: DLC/Creation masters needed by fitted footstep sounds (0.12.0) and by
-selected DLC shouts; see the independent registration section above.
-Fitted private ARMA records begin at `0x1000`, one per unique source addon. The
-combined armor patch adds them to the original ARMO, remapping all references,
-VMAD object properties and alternate texture sets into its master order. Original
-statistics, enchantments, keywords, names and original-race addons are retained.
-Footstep references and all five equipment/visibility lists are overridden in the
-combined patch, which owns the required DLC/Creation dependencies.
+---
 
-Permanent VRM face/hair/accessory geometry shares one slot-60 addon. Full,
-face-hidden, hair-hidden and both-hidden Skin ARMO records use local IDs
-`0x801/0x852/0x853/0x854`, with visibility FLSTs `0x855/0x856` and optional variant
-addons `0x860..0x862`. Empty visibility variants omit that addon. SKSE's
-ActorBase.SetSkin and Actor.QueueNiNodeUpdate switch geometry without equipping a
-head-cover item or restoring native FaceGen. Equip/load/NiNode events reconcile
-the selected private skin; unchanged skin never queues another refresh.
+## 5. 既存防具の体型合わせと登録方式
 
-Original equipment uses its native biped mask. Helmet partitions 130/131/142 map
-to biped layers 30/31/42. Unskinned shields use the custom skeleton's SHIELD
-attachment. Alternate texture sets are applied per shape; missing optional
-native texture maps are explicitly omitted and recorded in the fitting plan.
+- **体型合わせメッシュの生成 (`armor_fitting.py`)**
+  - 選択されたバニラ・DLC・Creation 防具の元 NIF を BSA から展開し、ボーンセグメントの位置合わせと表面補正によって VRM の体型へ変形します。
+  - 防具内のバニラ素体メッシュは除去し、露出部分には元の VRM の素体メッシュ（頂点・UV・法線・ウェイトを維持）を組み込みます。
+- **フォロワー別の独立登録（SkyPatcher 併用時 / 0.12.0 以降）**
+  - フォロワーごとに独立した `ARMA`（`0x1000` 以降）と、`<フォロワー名>.esp.ini`（SkyPatcher ルール）および頭部表示切り替えリスト（`FLST` `0x855` / `0x856`）を同梱します。
+  - 元の `ARMO` レコードを直接上書きしないため、他の防具 MOD や他の VRM フォロワーと競合せず、統合防具パッチの作り直しも不要です。
+- **Outfit Studio 編集の上書き保存 (`outfit_edits.py`)**
+  - 完了画面から書き出した `OutfitStudio-EditKit.zip` のメッシュを編集して再インポートすると、アバターの SHA256 と装備アドオン識別子をキーとして頂点座標と法線の差分が保存され、同じアバターを再変換した際にも手直し結果が自動で引き継がれます。
 
-Finishing overrides store vertex positions and normals by avatar SHA256 plus a
-source key derived from the addon identity, sex, reference body/skeleton and
-source NIF. Import rejects topology/UV/name changes and changes to original
-skin. NIF and Blender UV origins are reconciled when reusing the edit. Explicit
-partition names avoid the exporter's Blender duplicate-suffix truncation.
-Failed imports restore the prior meshes, saved override and archives.
+---
 
-The converter reads the user's installed Skyrim.esm and BSAs. No game assets or
-VRM inputs are part of this repository. Editor IDs are resolved against that
-master rather than guessed FormIDs.
+## 6. オリジナル武器（GLB）の変換仕様
 
-Since 0.4.1, generated documentation and reproducible settings use
-`vrm2skyrim/<lowercase mod_id>/README.txt` and `settings.json`. The former root
-`README.txt` and `VRM2Skyrim-settings.json` are removed when repackaging an older
-output. These metadata files are not read during gameplay. Coexistence checks
-compare all installed ZIP paths case-insensitively, not just game assets.
+`weapon_mode="original"` を選んだ場合、アップロードされた `.glb` から専用武器レコード（`WEAP` `0x8D0`）と 1 人称モデル（`STAT` `0x8D1`）を生成し、初期所持品に登録します。
 
-The binary field layouts follow [xEdit's TES5 definitions](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.5/Core/wbDefinitionsTES5.pas).
-
-- NPC ACBS: uint32 flags; signed int16 magicka/stamina offsets; level, min/max,
-  speed; disposition; template flags; signed int16 health offset; bleedout.
-  Unique=0x20, Female=1, Essential=2, Protected=0x800, AutoCalc=0x10, PCLevelMult=0x80.
-  Health/magicka/stamina settings represent pre-growth base values; their offsets
-  subtract the copied race's starting values. With PCLevelMult or AutoCalc enabled,
-  class/level growth is still applied by the game. DNAM is not a guarantee of the
-  final displayed actor health. See the patcher author's
-  [health calculation documentation](https://www.nexusmods.com/skyrimspecialedition/articles/6618).
-- NPC AIDT: aggression, confidence, energy, responsibility, mood, assistance.
-  Assistance=2 is Helps Friends and Allies.
-- NPC DNAM: 18 uint8 skill values, 18 uint8 offsets, uint16 health/magicka/stamina,
-  then the preserved remainder. Manual skill values require AutoCalc=false.
-- NPC PRKR: perk FormID, uint8 zero-based rank, three padding bytes.
-- RELA DATA: parent/child FormIDs, uint16 rank enum, uint8 unknown/flags, association.
-  Ally=1 in this enum. This differs from Papyrus relationship rank numbering.
-- CurrentFollowerFaction rank=-1 and PotentialFollowerFaction rank=0, with an Ally
-  player relationship, use Skyrim's standard follower system. Supported voice
-  choices come directly from VoicesFollowerAll in the installed master.
-- ACHR is persistent and grouped under CELL→interior block→sub-block→cell children
-  (6)→persistent references (8). Interior block labels are copied from the actual
-  master cell's ancestry. The temple's existing center marker supplies position.
-- The parent CELL record is a copy of the master record; its original fields are
-  retained. It can conflict with other plugins that edit the same cell's lighting
-  or metadata; resolve such overrides through ordinary mod load-order/patching.
-
-The skeleton keeps animation-controlled local transforms and adds unanimated
-rigid parent nodes, plus `WeaponStaff` (absent from the vanilla skeletons): a
-child of WeaponBack's parent (NPC Spine2) at (0, −9, 4) in that bone's frame,
-with the staff's +Y tilted 35° from the spine's up axis toward the right
-shoulder and its +Z forward (`custom_skeleton.HELPER_NODES`). This follows the proxy-node mechanism described in the
-[Beyond Skyrim animation skeleton tutorial](https://wiki.beyondskyrim.org/wiki/Arcane_University:Editing_Animation_Skeletons).
-The mesh is posed using rotations, with no per-limb fitting scale, and rebound
-to the custom skeleton. The static result is checked against an independent
-evaluation of the original VRM in the same pose.
-
-Input node names are normalized on a temporary GLB, preventing Blender's duplicate
-name/truncation behavior from changing semantic bone mapping. VRM 0 thumb joints
-are mapped to the VRM 1 naming convention. Facing is derived from left/right
-humanoid joints. Large shapes are split by faces without decimation; each part
-keeps UV/deform data and the original computed corner normals.
-
-OPAQUE, MASK and BLEND materials are exported with the appropriate NiAlphaProperty.
-DDS files retain alpha. MToon lighting, physics and expression animation are not
-reproduced. Existing expression defaults are baked into the fixed appearance.
-
-Native tool dependencies: [PyNifly](https://github.com/BadDogSkyrim/PyNifly) V29.1.0
-(GPL-3.0) and [DirectXTex](https://github.com/microsoft/DirectXTex) may2026 (MIT).
-The bootstrap checks the pinned download hashes and installs them locally.
-
-## Wardrobe mode (0.4)
-
-`appearance.json` lists each NIF's source node indices, role, slot and output
-shapes. Body, permanent underwear and fixed face/hair use separate Skin ARMA
-records at slots 32, 52 and 60. Wearable original garments use distinct layer
-slots 44–49/53–59. Each garment gets ARMO/ARMA records, a name, clothing/light/heavy
-type, integer hundredths of armor rating, weight and value. Initial garments go
-into OTFT; other garments go into NPC CNTO. All records use the same private race
-and all geometry uses the same delivered skeleton. Inventory/dropped models
-reference the master game's generic farm-clothing model; its assets are not copied.
-
-Primary humanoid joints and secondary rig candidates are compared in model
-space, after all original parent transforms. Candidate names alone are not
-enough: rest distances, limb directions, distinct rig ownership and uniqueness
-are checked. The primary world-space pose delta is applied to secondary joints,
-retaining their original rest offset. Descendants inherit their matched anchor.
-This is static retargeting into a shared game skeleton, not cloth/hair simulation.
-
-Source comparison materials are independent copies of the imported glTF graph.
-NIF shader normalization must not make transparent source detail planes opaque.
-OPAQUE ignores the glTF base-color alpha factor; BLEND/MASK retain the applicable
-alpha behavior. Component validation compares against the corresponding source
-node vertex cloud and requires each shape's NIF partition to equal its assigned
-slot. The source hash binds saved classification to the actual input VRM.
-
-## Selected equipment fitting (0.5)
-
-### Native head hiding correction (0.5.1)
-
-Wardrobe Skin slot 60 does not hide the head generated from NPC/RACE head data.
-The engine combines **worn ARMO** body masks to hide native head/hair; Skin alone
-is not a worn outfit item. See the author's reverse-engineered
-[equipment pipeline](https://github.com/DavidJCobb/skyrim-outfit-system/blob/master/skse-plugin/SkyrimOutfitSystem/Patches/OverridePlayerSkinning.cpp#L49-L57).
-Unlike the fixed mode's equipped Appearance armor, 0.4/0.5.0 only equipped the
-garments. Inherited vanilla head parts could therefore render over the VRM face.
-
-Local ARMO 0x80B is a non-playable, zero-value/weight/rating, meshless head cover
-in the default OTFT. It occupies native head/hair/circlet/ears slots 30/31/41/42/43
-only, with no Armature or world model. It leaves body/clothing and VRM Skin slot
-60 alone. Existing Skin records and all exported geometry remain unchanged.
-Native head data is retained for engine compatibility, but hidden by worn flags.
-Normal garment removal leaves the head cover equipped. `unequipall`, changing
-the entire default outfit, and external equipment-management mods can remove it;
-equipping the cover again restores its flags. Headgear fitting is not supported.
-
-`validate_head_visibility` reads actual OTFT/ARMO masks separately from NIF checks.
-It rejects the old outputs, checks the hidden cover and its zero stats, prevents
-hiding VRM slot 60, and checks fixed mode too. This is binary-configuration
-validation, not evidence of the game engine's rendered result.
-
-`fit_armors` is a list of up to 64 distinct Skyrim.esm ARMO Editor IDs. It requires
-wardrobe mode and a complete independent body. The source is the game's original
-BSA mesh/texture, with a humanoid ARMA at body, hands or feet. Reference-skeleton
-hierarchy takes precedence over flattened skin-bone lists in mesh NIFs. A weighted
-bone-segment field aligns equipment to target lengths and widths, followed by a
-local body-surface correction. Target skin is not deformed by this field.
-
-Original skin triangles are partitioned by the conformed reference body's regions:
-torso=32/34/38, hands=33, feet=37. Original triangle coverage is read back exactly;
-split vertices retain positions, UVs, normals and weights. Embedded vanilla skin
-is removed from equipment. Original target skin is included at exposed regions.
-Native equipment priorities preserve calf/forearm hiding when combining pieces.
-Auxiliary armor bones without a humanoid ancestor use the source skin's nearest
-weights; exported equipment receives the target body's weights. Both weight
-variants retain the same target geometry. Output skin and fitted NIFs share the
-original custom skeleton and their textures use private per-MOD paths.
-
-Legacy private fitted ARMA records started at local 0x880 (current exports start at 0x1000). The follower ESP does not override
-the original ARMO. `vrm2skyrim/<mod_id>/armor-fitting.json` publishes the local
-manifest to the user's installed Data folder. Before 0.12.0, a separate combined armor patch
-had Skyrim.esm and the chosen follower ESPs as masters, appends their ARMA FormIDs
-to original ARMO Armature lists, and retains stats and original addons. Localized
-names/descriptions are resolved into inline strings for the unlocalized patch.
-For those legacy exports, only one combined patch should be active. Installed metadata and completed wizard
-outputs provide trusted candidates; the API accepts handles, not file paths.
-
-The preview renderer uses the complete original skin as its common import rig:
-unweighted helper-bone orientation can vary between independently imported parts.
-Weighted bone rest poses are checked before all components animate on that rig.
-Game equip/remove behavior and compatibility with other armor overrides remain
-separate from offline geometry/binary/render verification.
-
-
-## 0.6.0 head and equipment ownership
-
-The 0.5.1 cover is retired: AFT can unequip/remove it. DATA flags at byte 32 of
-RACE disable bit 1 (0x2) FaceGen Head, as defined in xEdit and
-[CommonLibSSE](https://ryan.commonlib.dev/TESRace_8h_source.html).
-VRM head geometry remains in Skin. Private HDPT 0x80C / FLST 0x80D replace all
-human head references; generated meshless BSFadeNode head and FaceGeom assets
-provide an empty fallback. Old cover 0x80B remains an inert FormID with mask 0
-for saved inventory references, never initial equipment. Head parts and shapes
-cannot be restored by changing the default outfit or stripping equipment.
-
-Wardrobe OTFT is empty and all garments are ordinary CNTO items. OnInit
-only equips configured inventory items once unless already a player teammate.
-All later equipment replacement is native ARMO slot exclusion. There is no
-OnObjectEquipped/OnLoad unequip policy. The seven legacy FLST/property names
-remain for compatibility, but only InitialItems is populated. Old replacement
-functions/events are inert, including delayed calls from saved stacks. Private
-PEX string-table renaming preserves instruction indices and sanitizes metadata.
-The Skyrim 3.2 PEX is compiled with Orvid/Caprica v0.3.0 against the user's native
-source declarations; compile-only stubs are not distributed.
-
-`wardrobe_policy=native_slots` distinguishes new configurations. Legacy
-body/hands/feet replacement groups migrate to equip slots 32/33/37. Simultaneous
-initial garments in a region merge into one item with the union of their nodes,
-summed weight/value and maximum defense; differing armor types require an
-explicit user choice. `record_index` retains the original first item/shoe/glove
-FormIDs rather than renumbering survivors. Removed component items are not
-recreated in saved inventories. Use a save before installing the old follower
-for a clean comparison when the wardrobe grouping changes.
-
-ARMO torso occupancy is 32; its ARMA geometry coverage is 32/34/38. Gloves and
-shoes use 33/37. `item_kind=full` at slot 32 occupies 32/33/37 and retains original
-body, hand and foot skin. Other extended equip slots mean intentional
-coexistence. Neither the follower nor the combined fitting patch adds global
-extra-slot conflicts to existing game armor. Automatic allocation never moves
-an extra torso item to a coexistence slot to avoid reporting a conflict.
-
-`item_kind` is body/legs/full/hands/feet/cloak/backpack/accessory and supplies
-native semantic keywords. Legwear uses the body keyword because Skyrim has no
-standard pants slot. SkyUI subtype follows slot masks rather than usage keywords.
-The wizard defaults and split control create native regional sets; manual
-layers remain available. The strict test VM executes the shipped PEX; a mocked
-native equip model uses the generated ARMO masks to check exclusion before any
-queued event executes, and confirms later events cannot change equipment.
-
-## 0.6.2 material face culling
-
-Original glTF materials retain `doubleSided` (default false). Do not force the
-Skyrim DOUBLE_SIDED shader flag on opaque, masked or blended materials. Their
-alpha modes and MToon depth-write choices remain independent. See the
-[glTF double-sided specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#double-sided).
-`nif_materials.apply_alpha` also enforces culling and reads the saved NIF back.
-Appearance shape metadata records source sidedness; final validation rejects
-a mismatching native flag where that metadata is present.
-
-This corrects eye strips caused by back-facing eyelash geometry covering the
-front-facing sclera. Default morphs and texture transparency are unchanged.
-Cycles previews use an explicit Geometry.Backfacing transparent branch for
-single-sided materials because viewport culling alone does not govern Cycles.
-The branch wraps the current surface shader, preserving its alpha handling;
-explicit double-sided materials are left intact. Source previews use stable
-material IDs, and exported-NIF previews follow native material flags.
+- **ベース武器の継承**
+  - 8 種類の武器カテゴリ（片手剣 `SteelSword`、ダガー `SteelDagger`、片手斧 `SteelWarAxe`、メイス `SteelMace`、両手剣 `SteelGreatsword`、両手斧 `SteelBattleaxe`、戦槌 `SteelWarhammer`、杖 `StaffFlames` 等）から選ばれた `Skyrim.esm`（および `Update.esm`）の武器レコードを複製し、攻撃力・重量・モーション種別・サウンドを引き継ぎます。
+- **座標系・グリップ位置・コリジョン生成 (`weapon.py`, `weapon_nif.py`)**
+  - GLB の最長バウンディングボックス軸を `+Y`（刃先・先端方向）に揃え、`length`（全長）と `grip`（下端からの把持位置の割合）、`flip`（前後反転）、`roll`（軸回転）を適用します。
+  - 最大 48 頂点の凸包（`bhkConvexVerticesShape`）から重心・慣性テンソル・`bhkRigidBody` を計算し、`meshes/<asset_dir>/weapon.nif` として出力します。
+- **PBR テクスチャの変換**
+  - ベースカラー（`weapon.dds`）、法線＋グロスマップ（`_n.dds`、アルファに `1 - roughness`）、および金属度マスク（`_m.dds`、金属領域が 1% 以上ある場合）を生成し、金属マテリアルには環境マップ `textures\cubemaps\ShinyDull_e.dds` を設定します。
