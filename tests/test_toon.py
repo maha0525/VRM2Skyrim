@@ -316,3 +316,53 @@ class ToonTests(unittest.TestCase):
             control.write_bytes(control.read_bytes()[:-1])
             with self.assertRaisesRegex(ValueError, 'DDS parameters changed'):
                 validate_toon(output)
+
+    def test_preview_outline_and_split_skin_policies_follow_manifest(self):
+        from types import SimpleNamespace
+        from toon_outlines import outline_name as build_outline_name
+        from toon_preview import assign_toon_shape_policies, effects_for, outline_name
+
+        self.assertEqual(outline_name('Body_Mesh.001'), build_outline_name('Body_Mesh.001'))
+        policy = {'extensions': {'VRMC_materials_mtoon': {
+            'shadeColorFactor': [0.6, 0.7, 0.8], 'outlineColorFactor': [0.1, 0.2, 0.3], 'outlineLightingMixFactor': 0.5}}}
+        effects = effects_for(policy, outline=True)
+        self.assertTrue(effects['outline'])
+        self.assertEqual((effects['outline_r'], effects['outline_g'], effects['outline_b']), (0.1, 0.2, 0.3))
+
+        class FakeMat(dict):
+            def __init__(self, name):
+                super().__init__()
+                self.name = name
+
+            def copy(self):
+                cloned = FakeMat(self.name)
+                cloned.update(self)
+                return cloned
+
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp)
+            (output / 'appearance.json').write_text(json.dumps({
+                'components': [{'id': 'body', 'shapes': [{'name': 'Body', 'material_policy': policy}]}]}), encoding='utf8')
+            out_shape = outline_name('Body')
+            shared = FakeMat('SharedMat')
+            body_obj = SimpleNamespace(name='OriginalSkin_Body_32', type='MESH', visible_shadow=True,
+                                       data=SimpleNamespace(materials=[shared]))
+            outline_obj = SimpleNamespace(name=out_shape, type='MESH', visible_shadow=True,
+                                          data=SimpleNamespace(materials=[shared]))
+            armor_obj = SimpleNamespace(name='Fitted_IronCuirass', type='MESH', visible_shadow=True,
+                                        data=SimpleNamespace(materials=[FakeMat('ArmorMat')]))
+            mat_a = FakeMat('MultiA')
+            mat_a['V2S_Preview_Policy'] = json.dumps({'name': 'MatA'})
+            mat_b = FakeMat('MultiB')
+            mat_b['V2S_Preview_Policy'] = json.dumps({'name': 'MatB'})
+            multi_obj = SimpleNamespace(name='Original_VRMNode_00290', type='MESH', visible_shadow=True,
+                                        data=SimpleNamespace(materials=[mat_a, mat_b]))
+            assign_toon_shape_policies(output, [body_obj, outline_obj, armor_obj, multi_obj])
+            self.assertEqual(json.loads(body_obj.data.materials[0]['V2S_Preview_Policy']), policy)
+            self.assertFalse(outline_obj.visible_shadow)
+            self.assertIsNot(outline_obj.data.materials[0], body_obj.data.materials[0])
+            self.assertTrue(outline_obj.data.materials[0].get('V2S_Preview_Outline'))
+            self.assertEqual(json.loads(outline_obj.data.materials[0]['V2S_Preview_Policy']), policy)
+            self.assertNotIn('V2S_Preview_Policy', armor_obj.data.materials[0])
+            self.assertEqual(json.loads(multi_obj.data.materials[0]['V2S_Preview_Policy']), {'name': 'MatA'})
+            self.assertEqual(json.loads(multi_obj.data.materials[1]['V2S_Preview_Policy']), {'name': 'MatB'})
