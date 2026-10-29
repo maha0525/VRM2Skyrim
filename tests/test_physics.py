@@ -5,7 +5,7 @@ import tempfile
 
 import numpy as np
 
-from fsmp import (ARM_PROXY, SECONDARY_PROXY, GRAVITY, LINK, MASS, PROXY, add_arm_collision_proxy,
+from fsmp import (ARM_PROXY, SECONDARY_PROXY, GRAVITY, LINK, MASS, PROXY, add_arm_collision_proxy, add_rigid_collision_proxy, contact_patches,
                   add_collision_proxy, arm_cloth_bones, attach, joint_profile,
                   local_points, protect_attachments, skin_samples, system_xml, contact_surface_points)
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
@@ -393,6 +393,46 @@ class PhysicsTests(unittest.TestCase):
             with NifFile(str(mesh_path)) as nif:
                 self.assertEqual(len(nif.shapes), 1)
 
+    def test_many_contact_owners_split_into_shapes_the_skin_can_address(self):
+        # One shape addresses at most 256 bones; a hair rig with 582 movers once wrote
+        # bones 256+ onto earlier ones. Each patch must stay on its own bone and point.
+        from nif_limits import SHAPE_BONE_LIMIT
+        names = [f'Private Hair {i:03}' for i in range(SHAPE_BONE_LIMIT*2 + 30)]
+        positions = {name: [i, 2*i, 3*i] for i, name in enumerate(names)}
+        with tempfile.TemporaryDirectory() as directory:
+            skeleton_path, mesh_path = [Path(directory)/n for n in ('skeleton.nif', 'hair.nif')]
+            for file in (skeleton_path, mesh_path):
+                with NifFile() as nif:
+                    nif.initialize('SKYRIMSE', str(file))
+                    for name in names:
+                        nif.add_node(name, rigid_buffer(np.eye(4)), nif.rootNode)
+                    nif.save()
+            with NifFile(str(skeleton_path)) as skeleton, NifFile(str(mesh_path)) as nif:
+                add_rigid_collision_proxy(nif, skeleton, set(names), SECONDARY_PROXY, positions)
+                nif.save()
+            expected = contact_patches(SECONDARY_PROXY, names)
+            self.assertEqual([n for n, _ in expected], [SECONDARY_PROXY, SECONDARY_PROXY+'_001', SECONDARY_PROXY+'_002'])
+            with NifFile(str(mesh_path)) as nif:
+                shapes = {s.name: s for s in nif.shapes}
+                self.assertEqual(set(shapes), {n for n, _ in expected})
+                for patch, owners in expected:
+                    shape = shapes[patch]
+                    self.assertTrue(shape.properties.flags & 1)
+                    self.assertEqual(set(shape.bone_names), set(owners))
+                    for name in owners:
+                        pairs = shape.bone_weights[name]
+                        self.assertEqual(len(pairs), 3)
+                        self.assertLess(np.max(np.linalg.norm(np.array(shape.verts)[[i for i, _ in pairs]]-positions[name], axis=1)), .002)
+                with NifFile(str(skeleton_path)) as skeleton:
+                    add_rigid_collision_proxy(nif, skeleton, set(names), SECONDARY_PROXY, positions)
+                self.assertEqual(len(nif.shapes), len(expected))
+        bones = {n: {'parent': 'NPC Head', 'dynamic': True, 'matrix': np.eye(4).tolist()} for n in names}
+        root = system_xml(bones, {n: [[1, 0, 0]] for n in names[1:]}, {'NPC Head': []},
+                          secondary_contacts=set(names), noncontact_helpers={names[0], names[-1]})
+        declared = {s.attrib['name']: {e.attrib['bone'] for e in s.findall('weight-threshold')}
+                    for s in root.findall('per-vertex-shape')}
+        self.assertEqual(declared, {expected[0][0]: {names[0]}, expected[1][0]: set(), expected[2][0]: {names[-1]}})
+
     def test_native_proxy_and_link_survive_save_and_rebuild(self):
         with tempfile.TemporaryDirectory() as directory:
             source, target, mesh = [Path(directory)/n for n in ('stock.nif', 'skeleton.nif', 'cloth.nif')]
@@ -420,6 +460,27 @@ class PhysicsTests(unittest.TestCase):
             with NifFile(str(mesh)) as nif:
                 self.assertEqual(len([s for s in nif.shapes if s.name == PROXY]), 1)
                 self.assertEqual(len(list(nif.rootNode.extra_data(name=LINK))), 1)
+
+
+class BonePartitionTests(unittest.TestCase):
+    def test_blender_export_splits_shapes_by_bone_count_and_drops_unused_bones(self):
+        import json
+        from converter import run_blender
+        from environment import find_blender
+        from nif_limits import SHAPE_BONE_LIMIT
+        if not find_blender():
+            self.skipTest('Blender is not installed')
+        count = SHAPE_BONE_LIMIT*2 + 30
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory)/'parts.json'
+            run_blender(find_blender(), 'tests/blender-bone-partition.py', [report, count], Path(directory), 'Bone partition')
+            parts = json.loads(report.read_text(encoding='utf8'))
+        self.assertGreater(len(parts), 2)
+        self.assertEqual(sum(p['vertices'] for p in parts), 4*count)
+        for part in parts:
+            self.assertLessEqual(len(part['weighted']), SHAPE_BONE_LIMIT)
+            self.assertEqual(part['groups'], sorted(part['weighted'] + ['SBP_130_HEAD']))
+        self.assertEqual(set().union(*(p['weighted'] for p in parts)), {f'Hair {i:03}' for i in range(count)})
 
 
 if __name__ == '__main__':

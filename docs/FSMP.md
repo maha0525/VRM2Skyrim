@@ -235,6 +235,13 @@ the revised result was 1.54 game units/s. Static 30/60/120 Hz cases and Quon
 static/moving cases retain single-owner contacts without weak-weight feedback.
 These are offline diagnostic measurements, not in-game FPS guarantees.
 
+### Bones per shape (0.13.0)
+
+One skinned NIF shape addresses at most 256 bones. Exports split visible
+meshes and contact patches to at most 100 bones per shape; dense hair rigs
+produce numbered `V2SCollision_Secondary_001`-style patches, each declared in
+the XML. Validation refuses any shape over 256 bones.
+
 `skeleton.json` records the source-to-private bone identities and full rest
 transforms. `conversion.json` records each mesh's physics mapping.
 `physics.json` lists NIF/XML pairs. Readback checks resolve links, bones,

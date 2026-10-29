@@ -158,20 +158,35 @@ def preview_face_culling(material, double_sided=False):
     tree.links.new(mix.outputs[0], output.inputs['Surface'])
 
 
-def partition_shape(obj, limit=60000):
-    if len(obj.data.vertices) <= limit and len(obj.data.loops) <= limit:
+def skin_bones(obj):
+    """Bone vertex groups each vertex is weighted to; SBP_ groups mark body partitions, not bones."""
+    bones = {g.index for g in obj.vertex_groups if not g.name.startswith('SBP_')}
+    return [{g.group for g in vertex.groups if g.group in bones and g.weight > 0} for vertex in obj.data.vertices]
+
+
+def partition_shape(obj, limit=60000, bone_limit=None):
+    from nif_limits import SHAPE_BONE_LIMIT
+    bone_limit = bone_limit or SHAPE_BONE_LIMIT
+    weighted = skin_bones(obj)
+    if (len(obj.data.vertices) <= limit and len(obj.data.loops) <= limit and
+            len(set().union(*weighted)) <= bone_limit):
         return [obj]
-    chunks, faces, used, loops = [], [], set(), 0
+    chunks, faces, used, loops, bones = [], [], set(), 0, set()
     for polygon in obj.data.polygons:
         vertices = set(polygon.vertices)
-        if (len(used | vertices) > limit or loops + len(polygon.vertices) > limit) and faces:
+        face_bones = set().union(*(weighted[v] for v in vertices))
+        if (len(used | vertices) > limit or loops + len(polygon.vertices) > limit or
+                len(bones | face_bones) > bone_limit) and faces:
             chunks.append(faces)
-            faces, used, loops = [], set(), 0
+            faces, used, loops, bones = [], set(), 0, set()
         faces.append(polygon.index)
         used |= vertices
         loops += len(polygon.vertices)
+        bones |= face_bones
     if faces:
         chunks.append(faces)
+    logging.info('Partition %s: %s vertices, %s bones -> %s shapes', obj.name, len(obj.data.vertices),
+                 len(set().union(*weighted)), len(chunks))
     parts = []
     for index, indices in enumerate(chunks):
         copy = obj.copy()
@@ -193,6 +208,10 @@ def partition_shape(obj, limit=60000):
         copy.data.normals_split_custom_set([item.vector for item in copy.data.attributes["V2S_preserved_normal"].data])
         copy.data.attributes.remove(copy.data.attributes["V2S_preserved_normal"])
         copy.data.update()
+        # Every vertex group becomes a NIF bone; keep only the bones this part is weighted to.
+        weighted = set().union(*skin_bones(copy))
+        for name in [g.name for g in copy.vertex_groups if not g.name.startswith('SBP_') and g.index not in weighted]:
+            copy.vertex_groups.remove(copy.vertex_groups[name])
         parts.append(copy)
     bpy.data.objects.remove(obj, do_unlink=True)
     return parts

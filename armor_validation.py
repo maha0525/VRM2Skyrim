@@ -9,6 +9,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from custom_skeleton import NifFile
+from nif_limits import SHAPE_BONE_CAPACITY
 from follower_plugin import follower_records
 from settings import load_settings
 from armor_catalog import partition_slot, native_partition
@@ -108,7 +109,7 @@ def validate_fitting(output):
                         if not observed.issubset(expected):
                             raise ValueError(f'Fitted headwear changed its original partition: {item["editor_id"]}/{shape.name}: {observed} vs {expected}')
                         observed_partitions[prefix].update(observed)
-                if set(shape.bone_names) - bones or len(shape.verts) > 65535:
+                if set(shape.bone_names) - bones or len(shape.verts) > 65535 or len(shape.bone_names) > SHAPE_BONE_CAPACITY:
                     raise ValueError("Invalid fitted equipment bones or vertex count")
                 if not {partition_slot(p.id, item['slots'][0]) for p in shape.partitions}.issubset(item["slots"]):
                     raise ValueError("Fitted equipment partition mismatch")

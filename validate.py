@@ -19,6 +19,7 @@ from gear_head_runtime import validate_head_models
 from head_visibility import validate_head_visibility
 from equipment_runtime import runtime_records, vmad, script_name, pex_strings
 from nif_materials import DOUBLE_SIDED, validate_alpha_order
+from nif_limits import SHAPE_BONE_CAPACITY
 from dds import validate_dds
 from clothing_validation import validate_clothing_skin
 from plugin_validation import validate_private_records
@@ -40,7 +41,7 @@ def validate(output, skeleton=None, game_data=None):
         toon_report = json.loads((output/'toon.json').read_text(encoding='utf8'))
         outlines = {(e['file'], e['shape']) for e in toon_report['materials'] if e.get('role') == 'outline'}
     if settings.physics_enabled:
-        from fsmp import validate_physics, PROXY, ARM_PROXY, SECONDARY_PROXY
+        from fsmp import validate_physics, is_contact_patch, PROXY, ARM_PROXY, SECONDARY_PROXY
         validate_physics(output)
     skeleton = mod / "meshes" / settings.asset_dir / "skeleton.nif"
     with NifFile(str(skeleton)) as reference:
@@ -64,9 +65,13 @@ def validate(output, skeleton=None, game_data=None):
             if policies:
                 validate_alpha_order(nif, policies)
             for shape in nif.shapes:
+                if len(shape.bone_names) > SHAPE_BONE_CAPACITY:
+                    raise ValueError(f'{part["file"]}/{shape.name} has {len(shape.bone_names)} bones; '
+                                     f'a shape addresses at most {SHAPE_BONE_CAPACITY}')
                 if (part['file'], shape.name) in outlines:
                     continue  # Owner, topology, skin and marker were verified by validate_toon.
-                if settings.physics_enabled and shape.name in {PROXY, ARM_PROXY, SECONDARY_PROXY}:
+                if settings.physics_enabled and (shape.name == PROXY or is_contact_patch(shape.name, ARM_PROXY)
+                                                 or is_contact_patch(shape.name, SECONDARY_PROXY)):
                     continue  # Checked separately by validate_physics, never rendered.
                 if part.get('retained_skin') and shape.name.startswith('V2SClothingSkin_'):
                     continue  # Validated against the partitioned original skin below, not counted twice.
