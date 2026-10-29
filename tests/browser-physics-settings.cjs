@@ -64,6 +64,14 @@ const source={source_id:'physics',sha256:'a'.repeat(64),filename:'physics.vrm',m
   await start();await importJSON({...legacy,physics_nodes:[1]});await sourceFile();assert.equal(await mesh(1).isChecked(),true);
   await sourceFile('other.vrm');assert.equal(await mesh(1).isChecked(),false);assert.equal(await page.locator('#physics-warning').isVisible(),true);
   await page.locator('#language').selectOption('en');assert.match(await page.locator('#physics-warning').textContent(),/different VRM/);
+  // Settings saved on another VRM, in either file order: the warning shows on STEP 01 and
+  // a selection made again here is sent with this VRM's fingerprint.
+  for(const jsonFirst of [true,false]){
+   await start();if(jsonFirst)await importJSON(saved);await sourceFile('other.vrm');if(!jsonFirst)await importJSON(saved);
+   assert.equal(await page.locator('#physics-warning').isVisible(),true);assert.equal(await mesh(1).isChecked(),false);
+   await mesh(1).check();await review();
+   assert.deepEqual(submitted.at(-1).physics_nodes,[1]);assert.equal(submitted.at(-1).physics_source_sha256,'b'.repeat(64));
+  }
   await start();await importJSON({...saved,appearance_source_sha256:'b'.repeat(64)});await sourceFile();assert.equal(await mesh(1).isChecked(),true);
   await start();await importJSON({...saved,physics_nodes:[1,999]});await sourceFile();assert.equal(await mesh(1).isChecked(),true);assert.equal(await page.locator('#physics-warning').isVisible(),true);
   await page.screenshot({path:path.join(fixture,'physics-settings-warning.png'),fullPage:true});

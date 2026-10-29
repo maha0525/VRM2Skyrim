@@ -362,6 +362,36 @@ class WeaponServerTests(unittest.TestCase):
                     self.assertEqual(status, 400)
                     self.assertIn('DLC1SoulTearShout', result['error'])
 
+    def test_physics_selection_is_judged_by_its_own_vrm_before_conversion(self):
+        # Settings saved on another VRM keep that VRM's wardrobe fingerprint; a selection
+        # remade on this VRM (physics_source_sha256) still converts.
+        old, new = 'a' * 64, 'f' * 64
+        remade = asdict(FollowerSettings(mod_name='Probe', physics_enabled=True, physics_nodes=[1],
+                                         physics_source_sha256=new, appearance_source_sha256=old))
+        stale = {**remade, 'physics_source_sha256': old}
+        legacy = {**remade, 'physics_source_sha256': ''}
+        request = {'source_id': 'avatar', 'game': str(self.root), 'blender': str(self.root)}
+        error = '物理演算のメッシュ選択は別のVRM用です。対象を選び直してください。'
+        converted = []
+
+        def fake_convert(source, game, blender, output, settings, progress=None, weapon_glb=None):
+            converted.append(settings)
+            output.mkdir(parents=True)
+            (output / 'Probe.zip').write_bytes(b'zip')
+            return output / 'Probe.zip'
+
+        with patch.object(self.app, 'catalog', return_value=self.catalog), \
+                patch('wizard.doctor', return_value={'ready': True}), patch('wizard.convert', fake_convert):
+            self.assertEqual(self.post('/api/validate', {**request, 'settings': remade})[0], 200)
+            for settings in (stale, legacy):
+                with self.subTest(physics_source_sha256=settings['physics_source_sha256']):
+                    # STEP checks and the conversion request both stop before any job starts.
+                    self.assertEqual(self.post('/api/validate', {**request, 'settings': settings}), (400, {'error': error}))
+                    self.assertEqual(self.post('/api/jobs', {**request, 'settings': settings}), (400, {'error': error}))
+            self.assertEqual(self.post('/api/jobs', {**request, 'settings': remade})[0], 202)
+            self.app.executor.submit(lambda: None).result(timeout=10)
+        self.assertEqual([s.physics_nodes for s in converted], [[1]])
+
     def test_conversion_receives_the_glb_path_but_settings_do_not(self):
         _, uploaded = self.upload()
         captured = {}

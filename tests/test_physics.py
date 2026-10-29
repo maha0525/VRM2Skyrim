@@ -27,6 +27,22 @@ class PhysicsTests(unittest.TestCase):
                                            {'cloth': [1, 1]}, {'body': hull}, {'body': np.eye(4)}, {'cloth'})
         self.assertEqual(preserved, {'cloth': [3, 0, 0]})
 
+    def test_conversion_accepts_a_selection_remade_on_a_new_vrm(self):
+        # Settings imported from another VRM keep its wardrobe fingerprint even after
+        # the physics meshes are chosen again on this VRM.
+        from unittest.mock import patch
+        import converter
+        report = {'sha256': 'f' * 64, 'parts': [{'node': 1}]}
+        remade = FollowerSettings(physics_enabled=True, physics_nodes=[1], physics_source_sha256='f' * 64,
+                                  appearance_source_sha256='a' * 64)
+        with tempfile.TemporaryDirectory() as temp, patch.object(converter, 'inspect', return_value=report):
+            self.assertIs(converter.prepare_source('avatar.vrm', Path(temp), remade), report)
+            for stale in ({'physics_source_sha256': 'a' * 64}, {'physics_source_sha256': ''}):
+                with self.subTest(**stale), self.assertRaisesRegex(ValueError, '別のVRM用'):
+                    settings = FollowerSettings(physics_enabled=True, physics_nodes=[1],
+                                                appearance_source_sha256='a' * 64, **stale)
+                    converter.prepare_source('avatar.vrm', Path(temp), settings)
+
     def test_default_off_and_setting_validation(self):
         self.assertFalse(FollowerSettings().physics_enabled)
         for values in ({'physics_enabled': 1}, {'physics_nodes': [True]},

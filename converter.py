@@ -259,6 +259,17 @@ Settings are included as {settings.asset_dir}/settings.json for reproducible con
     return archive
 
 
+def validate_physics(settings, report):
+    """Refuse a physics mesh selection made on another VRM; node IDs never carry over between files."""
+    if not settings.physics_enabled or not settings.physics_nodes:
+        return
+    # The wizard records the VRM the selection was made on; settings saved before
+    # that field existed only carry the wardrobe's fingerprint.
+    owner = settings.physics_source_sha256 or settings.appearance_source_sha256
+    if owner not in ('', report['sha256']):
+        raise ValueError('物理演算のメッシュ選択は別のVRM用です。対象を選び直してください。')
+
+
 def prepare_source(source, output, settings):
     """Validate and persist source metadata shared by conversion and previews."""
     report = inspect(source)
@@ -273,8 +284,7 @@ def prepare_source(source, output, settings):
         if not face:
             raise ValueError('頭装備を合わせるため、顔のメッシュを分類してください')
     if settings.physics_enabled:
-        if settings.physics_nodes and settings.appearance_source_sha256 not in ('', report['sha256']):
-            raise ValueError('物理演算のメッシュ選択は別のVRM用です。対象を選び直してください。')
+        validate_physics(settings, report)
         settings.appearance_source_sha256 = report['sha256']
     settings.save(output / 'settings.json')
     from wardrobe import validate_source
