@@ -319,10 +319,11 @@ class ToonTests(unittest.TestCase):
 
     def test_preview_outline_and_split_skin_policies_follow_manifest(self):
         from types import SimpleNamespace
-        from toon_outlines import outline_name as build_outline_name
         from toon_preview import assign_toon_shape_policies, effects_for, outline_name
 
-        self.assertEqual(outline_name('Body_Mesh.001'), build_outline_name('Body_Mesh.001'))
+        # Must match toon_outlines.outline_name, which needs pynifly and cannot be imported in CI.
+        expected = 'V2SOutline_' + hashlib.sha256('Body_Mesh.001'.encode('utf8')).hexdigest()[:12]
+        self.assertEqual(outline_name('Body_Mesh.001'), expected)
         policy = {'extensions': {'VRMC_materials_mtoon': {
             'shadeColorFactor': [0.6, 0.7, 0.8], 'outlineColorFactor': [0.1, 0.2, 0.3], 'outlineLightingMixFactor': 0.5}}}
         effects = effects_for(policy, outline=True)
