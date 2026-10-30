@@ -66,9 +66,11 @@ def render_material_queues(scene):
                     # Masked holes and culled backfaces must not become depth blockers.
                     factors = []
                     if mode == 'MASK':
+                        base_nodes = [n for n in tree.nodes if n.type == 'TEX_IMAGE' and n.image
+                                      and (n.name == 'Diffuse_Texture' or n.get('V2S_BaseColor'))]
                         shader = next((n for n in tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
-                        images = linked_texture_nodes(shader.inputs['Base Color']) if shader else [
-                            n for n in tree.nodes if n.type == 'TEX_IMAGE' and n.image and 'flat_n' not in n.image.filepath]
+                        images = base_nodes or (linked_texture_nodes(shader.inputs['Base Color']) if shader else [
+                            n for n in tree.nodes if n.type == 'TEX_IMAGE' and n.image and 'flat_n' not in n.image.filepath])
                         multiply = tree.nodes.new('ShaderNodeMath')
                         multiply.operation = 'MULTIPLY'
                         multiply.inputs[0].default_value = 1

@@ -147,7 +147,7 @@ def preview(workspace, source, game, blender, settings, armor_id, policy, progre
         progress('頭装備を合わせています…')
         output = new_output(root/'equipment', gear_key)
         shutil.copytree(base, output, dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns('*.blend', '*.blend1', '*.log', '*.glb', '*.npz',
+                        ignore=shutil.ignore_patterns('*.blend', '*.blend1', '*.log', '*.npz',
                                                      'preview-ready.*', 'texture-sources', 'texture-bakes'))
         prepared.fit_mode = 'selected'
         prepared.fit_armors = [catalog.key(armor)]
@@ -155,7 +155,7 @@ def preview(workspace, source, game, blender, settings, armor_id, policy, progre
         fit(output, game/'Data', blender, reuse_body=True)
         publish(output, gear_key)
     LOG.info('Head preview equipment: %s (%s)', catalog.key(armor), 'reused' if equipment_reused else 'fitted')
-    render_key = digest(policy)
+    render_key = digest({**policy, 'toon': settings.toon_enabled})
     relative = f'previews/head-{render_key}.png'
     image = output/relative
     render_reused = image.is_file()
@@ -170,7 +170,8 @@ def preview(workspace, source, game, blender, settings, armor_id, policy, progre
         progress('プレビューを描画しています…')
         arguments = ['--output', output, '--wardrobe', 'armor:'+armor.editor_id, '--keep-clothes', '--head-closeup',
                      '--hide-face' if policy['hide_face'] else '--no-hide-face',
-                     '--hide-hair' if policy['hide_hair'] else '--no-hide-hair']
+                     '--hide-hair' if policy['hide_hair'] else '--no-hide-hair',
+                     '--toon' if settings.toon_enabled else '--no-toon']
         run_blender(blender, 'render_blender.py', arguments, output, 'Headgear preview')
         shutil.copyfile(output/f'previews/wardrobe-armor-{armor.editor_id}-rest-01.png', image)
     elapsed = time.perf_counter()-started

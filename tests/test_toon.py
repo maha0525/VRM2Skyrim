@@ -316,3 +316,80 @@ class ToonTests(unittest.TestCase):
             control.write_bytes(control.read_bytes()[:-1])
             with self.assertRaisesRegex(ValueError, 'DDS parameters changed'):
                 validate_toon(output)
+
+    def test_preview_outline_and_split_skin_policies_follow_manifest(self):
+        from types import SimpleNamespace
+        from toon_preview import assign_toon_shape_policies, effects_for, outline_name
+
+        # Must match toon_outlines.outline_name, which needs pynifly and cannot be imported in CI.
+        expected = 'V2SOutline_' + hashlib.sha256('Body_Mesh.001'.encode('utf8')).hexdigest()[:12]
+        self.assertEqual(outline_name('Body_Mesh.001'), expected)
+        policy = {'extensions': {'VRMC_materials_mtoon': {
+            'shadeColorFactor': [0.6, 0.7, 0.8], 'outlineColorFactor': [0.1, 0.2, 0.3], 'outlineLightingMixFactor': 0.5}}}
+        effects = effects_for(policy, outline=True)
+        self.assertTrue(effects['outline'])
+        self.assertEqual((effects['outline_r'], effects['outline_g'], effects['outline_b']), (0.1, 0.2, 0.3))
+
+        class FakeMat(dict):
+            def __init__(self, name):
+                super().__init__()
+                self.name = name
+
+            def copy(self):
+                cloned = FakeMat(self.name)
+                cloned.update(self)
+                return cloned
+
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp)
+            (output / 'appearance.json').write_text(json.dumps({
+                'components': [{'id': 'body', 'shapes': [{'name': 'Body', 'material_policy': policy}]}]}), encoding='utf8')
+            out_shape = outline_name('Body')
+            shared = FakeMat('SharedMat')
+            body_obj = SimpleNamespace(name='OriginalSkin_Body_32', type='MESH', visible_shadow=True,
+                                       data=SimpleNamespace(materials=[shared]))
+            outline_obj = SimpleNamespace(name=out_shape, type='MESH', visible_shadow=True,
+                                          data=SimpleNamespace(materials=[shared]))
+            armor_obj = SimpleNamespace(name='Fitted_IronCuirass', type='MESH', visible_shadow=True,
+                                        data=SimpleNamespace(materials=[FakeMat('ArmorMat')]))
+            mat_a = FakeMat('MultiA')
+            mat_a['V2S_Preview_Policy'] = json.dumps({'name': 'MatA'})
+            mat_b = FakeMat('MultiB')
+            mat_b['V2S_Preview_Policy'] = json.dumps({'name': 'MatB'})
+            multi_obj = SimpleNamespace(name='Original_VRMNode_00290', type='MESH', visible_shadow=True,
+                                        data=SimpleNamespace(materials=[mat_a, mat_b]))
+            assign_toon_shape_policies(output, [body_obj, outline_obj, armor_obj, multi_obj])
+            self.assertEqual(json.loads(body_obj.data.materials[0]['V2S_Preview_Policy']), policy)
+            self.assertFalse(outline_obj.visible_shadow)
+            self.assertIsNot(outline_obj.data.materials[0], body_obj.data.materials[0])
+            self.assertTrue(outline_obj.data.materials[0].get('V2S_Preview_Outline'))
+            self.assertEqual(json.loads(outline_obj.data.materials[0]['V2S_Preview_Policy']), policy)
+            self.assertNotIn('V2S_Preview_Policy', armor_obj.data.materials[0])
+            self.assertEqual(json.loads(multi_obj.data.materials[0]['V2S_Preview_Policy']), {'name': 'MatA'})
+            self.assertEqual(json.loads(multi_obj.data.materials[1]['V2S_Preview_Policy']), {'name': 'MatB'})
+
+    def test_base_texture_lookup_ignores_non_base_color_textures(self):
+        from types import SimpleNamespace
+        from toon_preview import _find_base_texture_node
+
+        normal_img = SimpleNamespace(filepath='textures/normal.png')
+        normal_node = SimpleNamespace(name='Normal_Texture', type='TEX_IMAGE', image=normal_img)
+        shader_node = SimpleNamespace(
+            name='Principled BSDF', type='BSDF_PRINCIPLED',
+            inputs={'Base Color': SimpleNamespace(is_linked=False, links=[])})
+
+        class FakeNodes(list):
+            def get(self, name):
+                return next((n for n in self if n.name == name), None)
+
+        tree = SimpleNamespace(nodes=FakeNodes([shader_node, normal_node]))
+        solid_with_normal = {'pbrMetallicRoughness': {'baseColorFactor': [0.8, 0.2, 0.2, 1.0]},
+                             'normalTexture': {'index': 0}}
+        self.assertEqual(_find_base_texture_node(tree, policy=solid_with_normal), (None, False))
+        # Even if a dummy Diffuse_Texture node exists on a solid NIF material, policy without baseColorTexture stays solid.
+        diffuse_node = SimpleNamespace(name='Diffuse_Texture', type='TEX_IMAGE',
+                                       image=SimpleNamespace(filepath='dds-preview/solid.png'))
+        tree_with_dummy = SimpleNamespace(nodes=FakeNodes([shader_node, diffuse_node, normal_node]))
+        self.assertEqual(_find_base_texture_node(tree_with_dummy, policy=solid_with_normal), (None, False))
+        textured_policy = {'pbrMetallicRoughness': {'baseColorFactor': [1, 1, 1, 1], 'baseColorTexture': {'index': 0}}}
+        self.assertEqual(_find_base_texture_node(tree_with_dummy, policy=textured_policy), (diffuse_node, True))
