@@ -28,6 +28,18 @@ MASS = .1
 INERTIA_MULTIPLIER = 5.  # Increase geometric inertia without increasing spring torque
 
 
+def contact_patches(base, names):
+    """Split rigid contact owners into shapes the NIF skin can address; the first keeps the base name."""
+    from nif_limits import SHAPE_BONE_LIMIT
+    names = sorted(names)
+    return [(base if index == 0 else f'{base}_{index:03}', names[start:start+SHAPE_BONE_LIMIT])
+            for index, start in enumerate(range(0, len(names), SHAPE_BONE_LIMIT))]
+
+
+def is_contact_patch(name, base):
+    return name == base or (name.startswith(base+'_') and name[len(base)+1:].isdigit())
+
+
 def bone_inertia(radius, mass=MASS):
     """FSMP 4.1.1 passes XML inertia directly to Bullet, in mass*units².
 
@@ -327,18 +339,13 @@ def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag
             # but never feed their blended sleeve vertices back into sleeve rigs.
             for bone in sorted(set(arm_contacts) | set(secondary_contacts)):
                 ET.SubElement(shape, 'weight-threshold', bone=bone).text = '1'
-        if arm_contacts:
-            shape = ET.SubElement(root, 'per-vertex-shape', name=ARM_PROXY)
-            scalar(shape, 'margin', .4)
-            scalar(shape, 'can-collide-with-tag', collision_tag)
-            for name in sorted(set(noncontact_helpers) & set(arm_contacts)):
-                ET.SubElement(shape, 'weight-threshold', bone=name).text = '1'
-        if secondary_contacts:
-            shape = ET.SubElement(root, 'per-vertex-shape', name=SECONDARY_PROXY)
-            scalar(shape, 'margin', .4)
-            scalar(shape, 'can-collide-with-tag', collision_tag)
-            for name in sorted(set(noncontact_helpers) & set(secondary_contacts)):
-                ET.SubElement(shape, 'weight-threshold', bone=name).text = '1'
+        for base, owners in ((ARM_PROXY, arm_contacts), (SECONDARY_PROXY, secondary_contacts)):
+            for patch, chunk in contact_patches(base, owners):
+                shape = ET.SubElement(root, 'per-vertex-shape', name=patch)
+                scalar(shape, 'margin', .4)
+                scalar(shape, 'can-collide-with-tag', collision_tag)
+                for name in sorted(set(noncontact_helpers) & set(chunk)):
+                    ET.SubElement(shape, 'weight-threshold', bone=name).text = '1'
     return root
 
 
@@ -384,16 +391,24 @@ def add_rigid_collision_proxy(nif, skeleton, names, proxy_name, positions=None):
     """
     if not names:
         return
-    existing = [s for s in nif.shapes if s.name == proxy_name]
+    patches = dict(contact_patches(proxy_name, names))
+    existing = [s for s in nif.shapes if is_contact_patch(s.name, proxy_name)]
     if existing:
-        if len(existing) != 1 or set(existing[0].bone_names) != set(names):
+        if ({s.name for s in existing} != set(patches) or
+                any(set(s.bone_names) != set(patches[s.name]) for s in existing)):
             raise ValueError('Secondary contact proxy ownership changed; regenerate appearance')
         if positions:
-            for name, pairs in existing[0].bone_weights.items():
-                centre = positions.get(name, matrix(skeleton.nodes[name].global_transform)[:3, 3])
-                if any(np.linalg.norm(np.asarray(existing[0].verts[v])-centre) > .003 for v, _ in pairs):
-                    raise ValueError('Contact surface changed; regenerate appearance: '+name)
+            for shape in existing:
+                for name, pairs in shape.bone_weights.items():
+                    centre = positions.get(name, matrix(skeleton.nodes[name].global_transform)[:3, 3])
+                    if any(np.linalg.norm(np.asarray(shape.verts[v])-centre) > .003 for v, _ in pairs):
+                        raise ValueError('Contact surface changed; regenerate appearance: '+name)
         return
+    for patch, owners in patches.items():
+        add_contact_patch_shape(nif, skeleton, owners, patch, proxy_name, positions)
+
+
+def add_contact_patch_shape(nif, skeleton, names, proxy_name, base, positions):
     vertices, triangles, weights = [], [], {}
     for name in sorted(names):
         start = len(vertices)
@@ -407,7 +422,7 @@ def add_rigid_collision_proxy(nif, skeleton, names, proxy_name, positions=None):
         weights[name] = [(start+i, 1.) for i in range(3)]
     shape = nif.createShapeFromData(proxy_name, vertices, triangles, [(0., 0.)]*len(vertices),
                                     [(0., 0., 1.)]*len(vertices))
-    texture = next((s.shader.textures.get('Normal') for s in nif.shapes if s.name != proxy_name
+    texture = next((s.shader.textures.get('Normal') for s in nif.shapes if not is_contact_patch(s.name, base)
                     and s.shader.textures.get('Normal')), None)
     if texture:
         shape.set_texture('Diffuse', texture)
@@ -679,15 +694,21 @@ def validate_physics(output):
             body = [s for s in proxies if s.name == PROXY]
             if system['body_hulls'] and (len(body) != 1 or not body[0].properties.flags & 1):
                 raise ValueError('FSMP body collision proxy must be present and hidden')
-            sleeves = [s for s in proxies if s.name == ARM_PROXY]
+            arm_patches = contact_patches(ARM_PROXY, system.get('arm_contact_bones', []))
+            secondary_patches = contact_patches(SECONDARY_PROXY, system.get('secondary_contact_bones', []))
+            patch_owners = dict(arm_patches + secondary_patches)
+
+            def patches_match(base, patches):
+                shapes = [s for s in proxies if is_contact_patch(s.name, base)]
+                return {s.name for s in shapes} == {n for n, _ in patches} and all(
+                    s.properties.flags & 1 and set(s.bone_names) == set(patch_owners[s.name]) for s in shapes)
             if system.get('arm_contact_bones'):
-                if (len(sleeves) != 1 or not sleeves[0].properties.flags & 1 or
-                        set(sleeves[0].bone_names) != set(system['arm_contact_bones'])):
+                if not patches_match(ARM_PROXY, arm_patches):
                     raise ValueError('Sleeve collision proxy must be hidden and match its private bone owners')
-                if root.find(f"per-vertex-shape[@name='{ARM_PROXY}']") is None:
+                if any(root.find(f"per-vertex-shape[@name='{n}']") is None for n, _ in arm_patches):
                     raise ValueError('Sleeve collision proxy has no XML contact declaration')
                 for surface in root.findall('per-vertex-shape'):
-                    if surface.attrib['name'] in (ARM_PROXY, SECONDARY_PROXY):
+                    if surface.attrib['name'] in patch_owners:
                         continue
                     for name in system['arm_contact_bones']:
                         if surface.findtext(f"weight-threshold[@bone='{name}']") != '1':
@@ -697,14 +718,9 @@ def validate_physics(output):
                 secondary = set(system['secondary_contact_bones'])
                 if arm & secondary or arm | secondary != set(system['dynamic_bones']):
                     raise ValueError('Secondary contact ownership must partition all movable bones')
-                expected = {ARM_PROXY} if arm else set()
-                if secondary:
-                    expected.add(SECONDARY_PROXY)
-                    patches = [s for s in proxies if s.name == SECONDARY_PROXY]
-                    if (len(patches) != 1 or not patches[0].properties.flags & 1 or
-                            set(patches[0].bone_names) != secondary):
-                        raise ValueError('Secondary contact proxy must be hidden and match its bone owners')
-                if {s.attrib['name'] for s in root.findall('per-vertex-shape')} != expected:
+                if secondary and not patches_match(SECONDARY_PROXY, secondary_patches):
+                    raise ValueError('Secondary contact proxy must be hidden and match its bone owners')
+                if {s.attrib['name'] for s in root.findall('per-vertex-shape')} != set(patch_owners):
                     raise ValueError('Visual surfaces must not generate blended secondary contact forces')
                 samples, _ = skin_samples(nif)
                 helpers = set(system.get('noncontact_helpers', []))
@@ -719,7 +735,7 @@ def validate_physics(output):
                     if np.min(np.linalg.norm(np.asarray(samples[name])-point, axis=1)) > .001:
                         raise ValueError('Secondary contact point is not on its original weighted surface')
                 for surface in root.findall('per-vertex-shape'):
-                    owners = arm if surface.attrib['name'] == ARM_PROXY else secondary
+                    owners = set(patch_owners[surface.attrib['name']])
                     actual = {e.attrib['bone'] for e in surface.findall('weight-threshold') if e.text == '1'}
                     if actual != helpers & owners:
                         raise ValueError('Unweighted helper contact exclusion does not match its proxy')
@@ -735,7 +751,7 @@ def validate_physics(output):
                         raise ValueError('Body collision bind pose mismatch: '+name)
                     for vertex, weight in pairs:
                         sums[vertex] += weight
-                    if shape.name in (ARM_PROXY, SECONDARY_PROXY):
+                    if shape.name in patch_owners:
                         if any(weight != 1. for _, weight in pairs):
                             raise ValueError('Sleeve contact vertices must have one rigid influence')
                         centre = np.asarray(system.get('contact_points', {}).get(name, globals_[name][:3, 3]))
