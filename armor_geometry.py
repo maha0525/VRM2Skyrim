@@ -50,6 +50,20 @@ def dense_weights(weights, count):
     return result
 
 
+def coincident_labels(tree, tolerance=.001):
+    """One label per group of source vertices that stored precision cannot tell apart."""
+    labels = np.arange(tree.n)
+    for first, second in tree.query_pairs(tolerance):
+        while labels[first] != first:
+            first = labels[first]
+        while labels[second] != second:
+            second = labels[second]
+        labels[max(first, second)] = min(first, second)
+    for index in range(tree.n):
+        labels[index] = labels[labels[index]]
+    return labels
+
+
 class BodyField:
     def __init__(self, source, source_weights, target, target_weights, source_joints, target_joints):
         self.source = np.asarray(source, dtype=float)

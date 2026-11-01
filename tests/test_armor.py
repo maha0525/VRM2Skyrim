@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 from scipy.spatial import cKDTree
 
-from armor_geometry import BodyField, canonical_bone
+from armor_geometry import BodyField, canonical_bone, coincident_labels
 from armor_catalog import native_partition, partition_slot
 from armor_patch import build_patch
 from environment import find_game
@@ -28,7 +28,6 @@ class ArmorFieldTests(unittest.TestCase):
         self.assertEqual({native_partition(p, 31) for p in (31, 131)}, {31, 131})
         self.assertEqual({partition_slot(p, 31) for p in (31, 131)}, {31})
     def test_near_duplicate_vertices_share_one_label(self):
-        from armor_validation import coincident_labels
         points = np.array([[0, 0, 0], [5, 0, 0], [0, 0, .0005], [0, 0, .001], [5, 0, .01]], float)
         self.assertEqual(coincident_labels(cKDTree(points)).tolist(), [0, 1, 0, 0, 4])
 

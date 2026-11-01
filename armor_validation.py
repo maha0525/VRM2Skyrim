@@ -8,25 +8,12 @@ import struct
 import numpy as np
 from scipy.spatial import cKDTree
 
+from armor_geometry import coincident_labels
 from custom_skeleton import NifFile
 from nif_limits import SHAPE_BONE_CAPACITY
 from follower_plugin import follower_records
 from settings import load_settings
 from armor_catalog import partition_slot, native_partition
-
-
-def coincident_labels(tree, tolerance=.001):
-    """One label per group of source vertices that stored precision cannot tell apart."""
-    labels = np.arange(tree.n)
-    for first, second in tree.query_pairs(tolerance):
-        while labels[first] != first:
-            first = labels[first]
-        while labels[second] != second:
-            second = labels[second]
-        labels[max(first, second)] = min(first, second)
-    for index in range(tree.n):
-        labels[index] = labels[labels[index]]
-    return labels
 
 
 def validate_fitting(output):
