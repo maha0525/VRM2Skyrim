@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 import uuid
 import webbrowser
 
-from converter import ROOT, convert, doctor, run_blender
+from converter import ROOT, convert, doctor, run_blender, validate_physics
 from environment import find_blender, find_game
 from game_catalog import GameCatalog
 from inspect_vrm import inspect
@@ -213,6 +213,7 @@ class WizardApplication:
             raise ValueError("先にVRMを選択してください")
         settings = FollowerSettings.from_dict(request["settings"])
         validate_source(settings, self.source_reports[request["source_id"]])
+        validate_physics(settings, self.source_reports[request["source_id"]])
         game, blender = Path(request["game"]), Path(request["blender"])
         self.catalog(game).validate_settings(settings)
         weapon_glb = self.weapon_source(request, settings)
@@ -555,11 +556,13 @@ def handler_for(app):
                     if not request.get('check_shouts', True):
                         values = {**values, 'shouts': []}
                     settings = FollowerSettings.from_dict(values)
-                    if settings.armor_support:
+                    if settings.armor_support or settings.physics_nodes:
                         source_id = request.get("source_id")
                         if source_id not in app.source_reports:
                             raise ValueError("先にVRMを選択してください")
-                        validate_source(settings, app.source_reports[source_id])
+                        if settings.armor_support:
+                            validate_source(settings, app.source_reports[source_id])
+                        validate_physics(settings, app.source_reports[source_id])
                     app.catalog(request["game"]).validate_settings(settings)
                     if request.get('check_weapon', True):  # the GLB is chosen in STEP 03
                         app.weapon_source(request, settings)

@@ -54,3 +54,24 @@ and with stationary/moving anchors. Check native proxy ownership, frames,
 single-owner weights, exclusion of visual contact feedback and idempotence.
 Inspect actual rendered output and supply a complete follower ZIP; do not
 deploy into the live game. In-game movement is the user's visual check.
+
+## Shapes within the NIF bone capacity (2026-10-29)
+
+A skinned NIF vertex stores its bone indices as bytes, so one shape addresses
+at most 256 bones. Erystelis' hair (`Spring_04_hair`) exported two visible
+shapes with 809 and 812 bones and one secondary contact shape with 582 bones.
+In the written files no vertex was weighted to bone 256 or later: those
+vertices followed earlier bones instead. The visible hair would have deformed
+with the wrong bones; only the contact patch check stopped the conversion.
+
+Split every exported shape to at most `SHAPE_BONE_LIMIT` (100) bones, within
+the largest shape already seen working in game (108). `partition_shape` cuts
+visible meshes by faces and keeps only the bones each part is weighted to.
+Contact patches split into `V2SCollision_ArmCloth` / `V2SCollision_Secondary`
+plus numbered shapes (`_001`, ...), each declared in the XML with its own
+helper exclusions. Validation refuses any shape over 256 bones, so a NIF with
+remapped weights is never packaged.
+
+Not yet verified in game: whether FSMP stays responsive with about 590
+movers in one system (Aifi's 251-bone systems were noticeably heavy when
+duplicated).
