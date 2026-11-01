@@ -9,6 +9,22 @@ from nif_materials import normalize_material_colors
 
 
 class MaterialTests(unittest.TestCase):
+    def test_factor_mixed_with_vertex_colors_gets_a_solid_texture(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from converter import run_blender
+        from environment import find_blender
+        if not find_blender() or not Path('dependencies/io_scene_nifly').exists():
+            self.skipTest('Blender and PyNifly are required')
+        with tempfile.TemporaryDirectory() as directory:
+            run_blender(find_blender(), 'tests/blender-vertex-color-material.py', [directory], Path(directory), 'Vertex color')
+            report = json.loads((Path(directory)/'report.json').read_text(encoding='utf8'))
+        self.assertEqual(report['diffuse'], 'textures/vrm2skyrim/vertexfixture/solid_vertextint.dds')
+        self.assertEqual(report['linked_to_image'], True)
+        for actual, expected in zip(report['pixel'], (.27, .037, .037, 1)):
+            self.assertAlmostEqual(actual, expected, places=2)
+
     def test_retained_skin_normals_ignore_only_vertices_without_a_direction(self):
         import numpy as np
         from clothing_validation import closest_normal_cosine
