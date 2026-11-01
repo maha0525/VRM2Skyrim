@@ -255,7 +255,7 @@ def main():
         mapping[bone.name] = direct[ancestor.name] if ancestor else CORE["hips"]
 
     from preserved_pose import preserved_transforms
-    from custom_skeleton import create_skeleton, save_report
+    from custom_skeleton import animation_translations, create_skeleton, save_report
 
     source_parents = {bone.name: bone.parent.name if bone.parent else None
                       for bone in source_bones.values()}
@@ -315,7 +315,8 @@ def main():
         LOG.info('FSMP: preserving %s secondary bones, %s dynamic', len(physics_bones),
                  sum(i['dynamic'] for i in physics_bones.values()))
     custom_path = output / "mod/meshes" / settings.asset_dir / "skeleton.nif"
-    skeleton_report = create_skeleton(args.skeleton, custom_path, custom_positions, physics_bones)
+    skeleton_report = create_skeleton(args.skeleton, custom_path, custom_positions, physics_bones,
+                                      animation_translations(args.skeleton.parents[1] / "character assets/skeleton.hkx"))
     save_report(skeleton_report, output)
     bpy.data.objects.remove(target_rig, do_unlink=True)
     bpy.context.view_layer.objects.active = None
