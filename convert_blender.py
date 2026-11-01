@@ -108,11 +108,14 @@ def save_images(meshes, output, settings, source_materials):
                 LOG.info('Diffuse %s: original RGB factor %s -> %s; alpha stays in shader',
                          material.name, tint, relative)
         material["BSShaderTextureSet_Normal"] = f"textures/{settings.asset_dir}/flat_n.dds"
-    # Constant-color eye materials still require a texture in Skyrim's shader.
+    # Constant-color materials still require a texture in Skyrim's shader, including a
+    # glTF color factor mixed with vertex colors: Base Color is linked but has no image.
     for material in materials:
         shader = next(node for node in material.node_tree.nodes if node.type == "BSDF_PRINCIPLED")
-        if not shader.inputs["Base Color"].is_linked:
-            rgba = tuple(shader.inputs["Base Color"].default_value)
+        if "V2S_Diffuse_Path" not in material:
+            base = shader.inputs["Base Color"]
+            pbr = source_materials[material.name].get("pbrMetallicRoughness", {})
+            rgba = tuple(pbr.get("baseColorFactor", [1, 1, 1, 1])) if base.is_linked else tuple(base.default_value)
             image = bpy.data.images.new("solid_" + material.name, width=4, height=4)
             image.generated_color = rgba
             stem = re.sub(r"[^a-z0-9_]", "_", image.name.lower())
