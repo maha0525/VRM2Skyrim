@@ -1,5 +1,5 @@
 """Insert rigid offsets without changing the animation-controlled local transforms."""
-from ctypes import c_int
+from ctypes import c_int, create_string_buffer
 import json
 import logging
 from pathlib import Path
@@ -9,9 +9,26 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "dependencies/io_scene_nifly"))
-from pyn.pynifly import NifFile  # noqa: E402
+from pyn.pynifly import NifFile, NiShape  # noqa: E402
 from pyn.niflydll import nifly  # noqa: E402
 from pyn.structs import TransformBuf  # noqa: E402
+
+
+def read_bone_names(shape):
+    """PyNifly's reader loses the last character when the joined names exactly fill its 300-byte buffer."""
+    if shape._bone_names is None:
+        size = 4096
+        while True:
+            buffer = create_string_buffer(size)
+            needed = nifly.getShapeBoneNames(shape.file._handle, shape._handle, buffer, size)
+            if needed < size:
+                break
+            size = needed+1
+        shape._bone_names = [name for name in buffer.value.decode('utf-8').split('\n') if name]
+    return shape._bone_names
+
+
+NiShape.bone_names = property(read_bone_names)
 
 
 def staff_local(tilt=35., translation=(0., -9., 4.)):

@@ -15,6 +15,20 @@ from settings import load_settings
 from armor_catalog import partition_slot, native_partition
 
 
+def coincident_labels(tree, tolerance=.001):
+    """One label per group of source vertices that stored precision cannot tell apart."""
+    labels = np.arange(tree.n)
+    for first, second in tree.query_pairs(tolerance):
+        while labels[first] != first:
+            first = labels[first]
+        while labels[second] != second:
+            second = labels[second]
+        labels[max(first, second)] = min(first, second)
+    for index in range(tree.n):
+        labels[index] = labels[labels[index]]
+    return labels
+
+
 def validate_fitting(output):
     output = Path(output).resolve()
     settings = load_settings(output)
@@ -56,7 +70,7 @@ def validate_fitting(output):
         return minimum
     points = np.asarray(points)
     tree = cKDTree(points)
-    canonical = tree.query(points)[1]
+    canonical = coincident_labels(tree)
     def triangle_key(indices):
         values = tuple(indices)
         return min(values, values[1:] + values[:1], values[2:] + values[:2])
@@ -71,7 +85,7 @@ def validate_fitting(output):
                 distance, indices = tree.query(shape.verts)
                 if distance.max() > .001:
                     raise ValueError("Body fitting changed the original VRM skin vertices")
-                delivered_faces.update(triangle_key(indices[list(face)]) for face in shape.tris)
+                delivered_faces.update(triangle_key(canonical[indices[list(face)]]) for face in shape.tris)
     if delivered_faces != original_faces:
         raise ValueError("Body partitioning changed, lost or duplicated original skin faces")
     with NifFile(str(root / "skeleton.nif")) as skeleton:

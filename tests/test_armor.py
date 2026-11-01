@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 import numpy as np
+from scipy.spatial import cKDTree
 
 from armor_geometry import BodyField, canonical_bone
 from armor_catalog import native_partition, partition_slot
@@ -26,6 +27,11 @@ class ArmorFieldTests(unittest.TestCase):
         # equip layer; both native values must survive splitting.
         self.assertEqual({native_partition(p, 31) for p in (31, 131)}, {31, 131})
         self.assertEqual({partition_slot(p, 31) for p in (31, 131)}, {31})
+    def test_near_duplicate_vertices_share_one_label(self):
+        from armor_validation import coincident_labels
+        points = np.array([[0, 0, 0], [5, 0, 0], [0, 0, .0005], [0, 0, .001], [5, 0, .01]], float)
+        self.assertEqual(coincident_labels(cKDTree(points)).tolist(), [0, 1, 0, 0, 4])
+
     def test_reference_mapping_changes_equipment_not_target_skin(self):
         points = np.array([(x, y, z) for x in (-2., 0., 2.) for y in (-1., 1.) for z in (1., 3., 4.)])
         target = points * (.6, .8, 1.5)
