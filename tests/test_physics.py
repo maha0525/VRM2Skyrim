@@ -9,7 +9,8 @@ from fsmp import (ARM_PROXY, SECONDARY_PROXY, GRAVITY, LINK, MASS, PROXY, add_ar
                   add_collision_proxy, arm_cloth_bones, attach, joint_profile,
                   local_points, protect_attachments, skin_samples, system_xml, contact_surface_points)
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
-from physics_rig import inertia_sphere_radius, plan_bones, selected_meshes, spring_nodes, rotation_step_angles
+from physics_rig import (inertia_sphere_radius, plan_bones, selected_meshes, spring_nodes, rotation_step_angles,
+                         unswayable_nodes)
 from settings import FollowerSettings
 from physics_frames import shift_frames, translation
 
@@ -42,6 +43,17 @@ class PhysicsTests(unittest.TestCase):
                     settings = FollowerSettings(physics_enabled=True, physics_nodes=[1],
                                                 appearance_source_sha256='a' * 64, **stale)
                     converter.prepare_source('avatar.vrm', Path(temp), settings)
+
+    def test_body_meshes_cannot_sway_only_while_the_body_is_cut(self):
+        garment = {'id': 'robe', 'name': 'Robe', 'nodes': [3], 'slot': 32, 'armor_type': 'clothing',
+                   'armor_rating': 0, 'weight': .5, 'value': 7, 'equipped': True}
+        parts = {'body': [1, 2], 'underwear': [], 'fixed': [], 'garments': [garment]}
+        values = dict(armor_support=True, appearance_source_sha256='a'*64, appearance_parts=parts)
+        self.assertEqual(unswayable_nodes(FollowerSettings(**values)), {1, 2})
+        head = {**garment, 'slot': 44}
+        kept = FollowerSettings(**{**values, 'appearance_parts': {**parts, 'garments': [head]}})
+        self.assertEqual(unswayable_nodes(kept), set())
+        self.assertEqual(unswayable_nodes(FollowerSettings()), set())
 
     def test_default_off_and_setting_validation(self):
         self.assertFalse(FollowerSettings().physics_enabled)
@@ -432,6 +444,25 @@ class PhysicsTests(unittest.TestCase):
         declared = {s.attrib['name']: {e.attrib['bone'] for e in s.findall('weight-threshold')}
                     for s in root.findall('per-vertex-shape')}
         self.assertEqual(declared, {expected[0][0]: {names[0]}, expected[1][0]: set(), expected[2][0]: {names[-1]}})
+
+    def test_bone_names_survive_every_joined_length_around_the_reader_buffer(self):
+        # PyNifly's 300-byte buffer cut the last character off a list of exactly that length.
+        for extra in range(0, 12):
+            names = [f'Private Bone {i:02} ' + 'x'*(20 + (extra if i == 0 else 0)) for i in range(8)]
+            names[-1] += ']'
+            with tempfile.TemporaryDirectory() as directory:
+                skeleton_path, mesh_path = [Path(directory)/n for n in ('skeleton.nif', 'mesh.nif')]
+                for file in (skeleton_path, mesh_path):
+                    with NifFile() as nif:
+                        nif.initialize('SKYRIMSE', str(file))
+                        for name in names:
+                            nif.add_node(name, rigid_buffer(np.eye(4)), nif.rootNode)
+                        nif.save()
+                with NifFile(str(skeleton_path)) as skeleton, NifFile(str(mesh_path)) as nif:
+                    add_rigid_collision_proxy(nif, skeleton, set(names), SECONDARY_PROXY)
+                    nif.save()
+                with NifFile(str(mesh_path)) as nif:
+                    self.assertEqual(sorted(nif.shapes[0].bone_names), sorted(names))
 
     def test_native_proxy_and_link_survive_save_and_rebuild(self):
         with tempfile.TemporaryDirectory() as directory:

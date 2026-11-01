@@ -263,13 +263,14 @@ def main():
     physics_bones = {}
     physics_mesh_maps = {}
     if settings.physics_enabled:
-        from physics_rig import plan_bones, selected_meshes, spring_nodes
+        from physics_rig import plan_bones, selected_meshes, spring_nodes, unswayable_nodes
         selected_nodes = selected_meshes(settings, original_names, [o['v2s_source_node'] for o in meshes])
         hints = spring_nodes(document)
         if not settings.physics_nodes:
             selected_nodes.update(o['v2s_source_node'] for o in meshes if any(
                 o.vertex_groups[g.group].name in hints and g.weight > .001
                 for v in o.data.vertices for g in v.groups))
+            selected_nodes -= unswayable_nodes(settings)
         influences = {}
         mesh_components = {}
         fixed_bones = set()

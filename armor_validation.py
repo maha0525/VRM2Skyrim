@@ -8,6 +8,7 @@ import struct
 import numpy as np
 from scipy.spatial import cKDTree
 
+from armor_geometry import coincident_labels
 from custom_skeleton import NifFile
 from nif_limits import SHAPE_BONE_CAPACITY
 from follower_plugin import follower_records
@@ -56,7 +57,7 @@ def validate_fitting(output):
         return minimum
     points = np.asarray(points)
     tree = cKDTree(points)
-    canonical = tree.query(points)[1]
+    canonical = coincident_labels(tree)
     def triangle_key(indices):
         values = tuple(indices)
         return min(values, values[1:] + values[:1], values[2:] + values[:2])
@@ -71,7 +72,7 @@ def validate_fitting(output):
                 distance, indices = tree.query(shape.verts)
                 if distance.max() > .001:
                     raise ValueError("Body fitting changed the original VRM skin vertices")
-                delivered_faces.update(triangle_key(indices[list(face)]) for face in shape.tris)
+                delivered_faces.update(triangle_key(canonical[indices[list(face)]]) for face in shape.tris)
     if delivered_faces != original_faces:
         raise ValueError("Body partitioning changed, lost or duplicated original skin faces")
     with NifFile(str(root / "skeleton.nif")) as skeleton:

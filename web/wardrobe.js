@@ -59,11 +59,12 @@ function wardrobeLoad(source,settings=null){
     if(!settings.wardrobe_policy){migrateLegacyWardrobe();$('wardrobe-migration').hidden=false;}
   }else{
     wardrobeState.garments.set('outfit',garmentDefaults('outfit',tr("元の衣装")));
-    for(const p of source.parts){const role=p.suggested_role==='fixed'?/hair/i.test(p.name)?'hair':/face|head|eye|mouth/i.test(p.name)||p.materials.some(m=>/face|eyelash|eyebrow/i.test(m))?'face':'fixed':p.suggested_role;wardrobeState.nodes.set(p.node,{role,group:role==='garment'?'outfit':''});}
+    for(const p of source.parts){const role=p.suggested_role==='fixed'?/hair/i.test(p.name)?'hair':/face|head|eye|mouth/i.test(p.name)||p.materials.some(m=>/face|eyelash|eyebrow/i.test(m))?'face':p.materials.some(m=>/hair/i.test(m))?'hair':'fixed':p.suggested_role;wardrobeState.nodes.set(p.node,{role,group:role==='garment'?'outfit':''});}
     wardrobeNativeGroups();
   }
   $('wardrobe-preview-images').replaceChildren();$('wardrobe-preview-status').textContent='';renderWardrobe();
 }
+function wardrobeHasHair(){return [...wardrobeState.nodes.values()].some(p=>p.role==='hair');}
 function wardrobeCollect(){
   const usedIds=new Set([...wardrobeState.garments.values()].filter(g=>g.record_index!==undefined).map(g=>g.record_index));
   for(const g of wardrobeState.garments.values())if(g.record_index===undefined){g.record_index=Array.from({length:16},(_,i)=>i).find(i=>!usedIds.has(i));usedIds.add(g.record_index);}

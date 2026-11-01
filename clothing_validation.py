@@ -31,6 +31,20 @@ def validate_skin_triangles(expected, actual, tolerance=.001):
         raise ValueError(f'Standard clothing lost or duplicated original skin faces: unmatched={np.sum(matching < 0)}')
 
 
+def closest_normal_cosine(observed, references, distances):
+    """Best cosine per vertex against its coincident references.
+
+    A zero-area triangle has no direction, so its vertices carry an empty normal
+    in the body NIF. Nothing renders there and there is nothing to preserve.
+    """
+    observed = observed[:, None, :]
+    lengths = np.linalg.norm(references, axis=2)
+    cosine = (observed*references).sum(axis=2)/np.maximum(np.linalg.norm(observed, axis=2)*lengths, 1e-12)
+    cosine[lengths < .1] = 1
+    cosine[distances > .001] = -2
+    return cosine.max(axis=1)
+
+
 def validate_clothing_skin(output, settings):
     from custom_skeleton import NifFile
     output = Path(output)
@@ -73,11 +87,7 @@ def validate_clothing_skin(output, settings):
                     if distances[:, 0].max() > .001:
                         raise ValueError('Standard clothing moved original skin/UVs')
                     maximum_distance = max(maximum_distance, float(distances[:, 0].max()))
-                    observed = np.asarray(shape.normals)[:, None, :]
-                    denominator = np.linalg.norm(observed, axis=2)*np.linalg.norm(normals[indices], axis=2)
-                    cosine = (observed*normals[indices]).sum(axis=2)/np.maximum(denominator, 1e-12)
-                    cosine[distances > .001] = -2
-                    if cosine.max(axis=1).min() < .997:
+                    if closest_normal_cosine(np.asarray(shape.normals), normals[indices], distances).min() < .997:
                         raise ValueError('Standard clothing changed original skin normals')
                     sums = np.zeros(len(points))
                     counts = np.zeros(len(points), dtype=int)

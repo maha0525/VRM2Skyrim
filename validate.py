@@ -26,7 +26,7 @@ from plugin_validation import validate_private_records
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "dependencies/io_scene_nifly"))
-from pyn.pynifly import NifFile  # noqa: E402 - isolated native-library import
+from custom_skeleton import NifFile  # noqa: E402 - isolated native-library import
 
 
 def validate(output, skeleton=None, game_data=None):

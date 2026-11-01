@@ -353,6 +353,7 @@ async function next() {
   try {
     if(state.step===0){if(!state.source)throw new Error(tr("VRMファイルを選択してください"));const result=await loadCatalog();$('checks').replaceChildren();for(const [key,value]of Object.entries(result.checks)){const badge=document.createElement('span');badge.textContent=key+(value?' ✓':tr(" 未準備"));badge.className=value?'':'missing';$('checks').append(badge);}if(Object.values(result.checks).some(value=>!value))throw new Error(tr("環境が未準備です。パスを確認し、初回はSetup.cmdを実行してください。"));}
     const result=await api('/api/validate',{source_id:state.source.source_id,game:$('game').value,settings:collect(),weapon_id:state.weaponGlb?.weapon_id,check_weapon:state.step>=2,check_shouts:state.step>=3});if(state.step===3)summarize(result.settings);
+    if(state.step===0&&$('armor_support').value==='true'&&!wardrobeHasHair()&&!window.confirm(tr("「髪」に分類したメッシュがありません。身体や衣服に髪が含まれていると、鎧で髪が消えたり、兜を髪が突き抜けたりします。このまま進みますか？")))return;
     showStep(state.step+1);
   }catch(e){error(e.message);}finally{state.navigationLoading=false;renderCatalogStatus();}
 }

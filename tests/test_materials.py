@@ -9,6 +9,17 @@ from nif_materials import normalize_material_colors
 
 
 class MaterialTests(unittest.TestCase):
+    def test_retained_skin_normals_ignore_only_vertices_without_a_direction(self):
+        import numpy as np
+        from clothing_validation import closest_normal_cosine
+        up, down, empty = [0, 0, 1.], [0, 0, -1.], [.004, .004, .004]
+        near, far = [[0.]], [[1.]]
+        cosine = closest_normal_cosine
+        self.assertEqual(cosine(np.array([up]), np.array([[up]]), np.array(near)).tolist(), [1.])
+        self.assertEqual(cosine(np.array([up]), np.array([[down]]), np.array(near)).tolist(), [-1.])
+        self.assertEqual(cosine(np.array([up]), np.array([[empty]]), np.array(near)).tolist(), [1.])
+        self.assertEqual(cosine(np.array([up]), np.array([[empty]]), np.array(far)).tolist(), [-2.])
+
     def test_split_and_retained_skin_keep_exact_source_policy(self):
         from appearance_materials import derived_shape
         original = {'name': 'VRMNode_00494', 'source_node': 494, 'diffuse': 'textures/shared.dds',
