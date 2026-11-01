@@ -264,3 +264,11 @@ root. FSMP's default triangle penetration of 1 unit still applies, so a patch
 pushed deeper than that into a capsule in one step gets no contact. Blender has
 no per-body gravity, so `physics_preview_blender.py` does not simulate
 gravity-factor.
+
+These surfaces are wider than the body, so they are `shared` internal: only the
+same skeleton's shapes can touch them. Other actors' cloth sees only the body proxy.
+
+Converted through the whole pipeline: DeepSeek-chan (VRM 1, fixed appearance),
+Lucia (VRM 1, removable wardrobe) and AnimalKawaii_01_Kuro (VRM 0). The VRM 0
+offset rule matches UniGLTF's z reversal and the limb axes; its front/back
+placement on the torso was not checked in game.
