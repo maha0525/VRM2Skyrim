@@ -15,6 +15,7 @@ from build_npc import build_npc
 from environment import find_blender, find_game
 from game_catalog import GameCatalog
 from inspect_vrm import inspect
+from physics_rig import unswayable_nodes
 from runtime_dependencies import dependency_checks
 from settings import FollowerSettings, VERSION, load_settings
 from textures import convert_textures
@@ -268,6 +269,10 @@ def validate_physics(settings, report):
     owner = settings.physics_source_sha256 or settings.appearance_source_sha256
     if owner not in ('', report['sha256']):
         raise ValueError('物理演算のメッシュ選択は別のVRM用です。対象を選び直してください。')
+    stuck = unswayable_nodes(settings) & set(settings.physics_nodes)
+    if stuck:
+        names = ', '.join(p['name'] for p in report['parts'] if p['node'] in stuck)
+        raise ValueError(f'{names} は「身体」に分類したままでは揺らせません。分類を変えるか、揺らすメッシュから外してください。')
 
 
 def prepare_source(source, output, settings):
@@ -279,7 +284,8 @@ def prepare_source(source, output, settings):
                 (any(word in p['name'].lower() for word in ('face', 'head', 'eye', 'mouth')) or
                  any(any(word in m.lower() for word in ('face', 'eyelash', 'eyebrow')) for m in p['materials']))
                 and 'hair' not in p['name'].lower()]
-        hair = [p['node'] for p in report['parts'] if p['node'] in fixed and 'hair' in p['name'].lower()]
+        hair = [p['node'] for p in report['parts'] if p['node'] in fixed and p['node'] not in face and
+                ('hair' in p['name'].lower() or any('hair' in m.lower() for m in p['materials']))]
         settings.appearance_heads = {'face': face, 'hair': hair}
         if not face:
             raise ValueError('頭装備を合わせるため、顔のメッシュを分類してください')

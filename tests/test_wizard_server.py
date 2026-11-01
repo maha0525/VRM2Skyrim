@@ -392,6 +392,27 @@ class WeaponServerTests(unittest.TestCase):
             self.app.executor.submit(lambda: None).result(timeout=10)
         self.assertEqual([s.physics_nodes for s in converted], [[1]])
 
+    def test_swaying_a_body_mesh_stops_before_conversion_when_the_body_is_cut(self):
+        # A body mesh is cut into body/hands NIFs and copied under slot-32 clothing, so its
+        # movers would span several files. Stop at the STEP check, naming the mesh.
+        garment = {'id': 'robe', 'name': 'Robe', 'nodes': [3], 'slot': 32, 'armor_type': 'clothing',
+                   'armor_rating': 0, 'weight': .5, 'value': 7, 'equipped': True}
+        parts = {'body': [1, 2], 'underwear': [], 'fixed': [], 'garments': [garment]}
+        self.app.source_reports['avatar'] = {'sha256': 'f' * 64, 'parts': [
+            {'node': 1, 'name': 'Body'}, {'node': 2, 'name': 'Spring_04_sleeves'}, {'node': 3, 'name': 'Robe'}]}
+        values = asdict(FollowerSettings(mod_name='Probe', armor_support=True, wardrobe_policy='native_slots',
+                                         appearance_parts=parts, appearance_source_sha256='f' * 64,
+                                         physics_enabled=True, physics_nodes=[2, 3], physics_source_sha256='f' * 64))
+        request = {'source_id': 'avatar', 'game': str(self.root), 'blender': str(self.root)}
+        error = 'Spring_04_sleeves は「身体」に分類したままでは揺らせません。分類を変えるか、揺らすメッシュから外してください。'
+        with patch.object(self.app, 'catalog', return_value=self.catalog), \
+                patch('wizard.doctor', return_value={'ready': True}), patch('wizard.convert') as convert:
+            self.assertEqual(self.post('/api/validate', {**request, 'settings': values}), (400, {'error': error}))
+            self.assertEqual(self.post('/api/jobs', {**request, 'settings': values}), (400, {'error': error}))
+            allowed = {**values, 'physics_nodes': [3]}
+            self.assertEqual(self.post('/api/validate', {**request, 'settings': allowed})[0], 200)
+        convert.assert_not_called()
+
     def test_conversion_receives_the_glb_path_but_settings_do_not(self):
         _, uploaded = self.upload()
         captured = {}

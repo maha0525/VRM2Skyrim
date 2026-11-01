@@ -184,3 +184,24 @@ same-source re-upload, disabled/enabled physics, missing/different sources,
 legacy fingerprints and starting another follower. The downloaded JSON passes
 actual FollowerSettings load/save; 43 related Python tests, existing combat-style
 and localization browser checks, and repository Ruff checks pass.
+
+## Body meshes and physics (2026-11-01)
+
+When clothing or fitting cuts the body (`skin_partition_enabled`), a mesh
+classified as body is written to body/hands/feet NIFs and copied under
+body-slot clothing. Its movers would then belong to several files: Lucia's
+sleeves crossed `body.nif` and `hands.nif`, and her bob reached the robe's skin
+copy. FSMP needs one owner per mover, so those meshes cannot sway.
+
+The wizard refuses that selection at STEP 01 and names the mesh, so the user
+reclassifies it before any conversion work. Automatic physics selection skips
+those meshes instead of failing. Hair is also found from material names,
+because `Spring_01_bob` has no `hair` in its name, and leaving STEP 01 with no
+hair mesh asks first: hair left in the body is hidden by armor and is not
+switched by headwear. The question does not block, since some VRMs merge hair
+into the head mesh.
+
+Three readback checks also stopped Lucia on correct output and were corrected
+in the same change: a zero-area triangle's empty normal, near-duplicate source
+vertices swapping identity, and PyNifly losing the last bone-name character when
+the joined names exactly fill its 300-byte buffer.

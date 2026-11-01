@@ -61,6 +61,13 @@ def spring_nodes(document):
     return {f'VRMNode_{i:05}' for i in result}
 
 
+def unswayable_nodes(settings):
+    """Body meshes cut into slot NIFs and clothing skin copies; their bones would span several files."""
+    if not settings.armor_support or not settings.skin_partition_enabled:
+        return set()
+    return set(settings.appearance_parts['body'])
+
+
 def selected_meshes(settings, original_names, available):
     if settings.physics_nodes:
         missing = set(settings.physics_nodes) - set(available)

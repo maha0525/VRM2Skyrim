@@ -25,6 +25,26 @@ def wardrobe_settings(**overrides):
     return FollowerSettings(**values)
 
 
+class HairFallbackTests(unittest.TestCase):
+    def test_conversion_finds_hair_by_material_without_the_word_in_the_mesh_name(self):
+        from unittest.mock import patch
+        import converter
+        garment = {'id': 'coat', 'name': 'Coat', 'nodes': [5], 'slot': 44, 'armor_type': 'clothing',
+                   'armor_rating': 0, 'weight': .5, 'value': 7, 'equipped': True}
+        parts = {'body': [1], 'underwear': [], 'fixed': [2, 3, 4], 'garments': [garment]}
+        settings = FollowerSettings(armor_support=True, appearance_source_sha256='a'*64, appearance_parts=parts,
+                                    fit_mode='all_official')
+        report = {'sha256': 'a'*64, 'parts': [
+            {'node': 1, 'name': 'Body', 'materials': ['body']},
+            {'node': 2, 'name': 'Head', 'materials': ['Material_head', 'Material_inner_hair']},
+            {'node': 3, 'name': 'Spring_01_bob', 'materials': ['Material_hair']},
+            {'node': 4, 'name': 'Ornament', 'materials': ['Material_accessories']},
+            {'node': 5, 'name': 'Coat', 'materials': ['coat']}]}
+        with tempfile.TemporaryDirectory() as temp, patch.object(converter, 'inspect', return_value=report):
+            converter.prepare_source('avatar.vrm', Path(temp), settings)
+        self.assertEqual(settings.appearance_heads, {'face': [2], 'hair': [3]})
+
+
 class FakeCatalog:
     def require(self, name, kind):
         return Record(kind, 0x1234, 0, [])

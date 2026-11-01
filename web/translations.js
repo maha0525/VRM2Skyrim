@@ -360,6 +360,8 @@ const englishUI = {
   "専用種族用の防具互換パッチ": "Creating custom-race armor compatibility patch",
   "頭装備を合わせるため、顔のメッシュを分類してください": "Assign face meshes before fitting headgear",
   "物理演算のメッシュ選択は別のVRM用です。対象を選び直してください。": "The physics mesh selection belongs to another VRM. Select the meshes again.",
+  "{0} は「身体」に分類したままでは揺らせません。分類を変えるか、揺らすメッシュから外してください。": "{0} cannot sway while classified as Body. Change the classification or remove it from the physics meshes.",
+  "「髪」に分類したメッシュがありません。身体や衣服に髪が含まれていると、鎧で髪が消えたり、兜を髪が突き抜けたりします。このまま進みますか？": "No mesh is classified as Hair. If hair is part of the body or clothing, armor can hide it and helmets can poke through it. Continue anyway?",
   "標準装備枠用の身体部位の分離": "Separating body parts for standard equipment slots",
   "プレビュー: ": "Preview: ", "下着状態のプレビュー: ": "Underwear preview: ",
   "装備した姿のプレビュー: ": "Equipped preview: ", "衣服の分離プレビュー: ": "Separated clothing preview: ",

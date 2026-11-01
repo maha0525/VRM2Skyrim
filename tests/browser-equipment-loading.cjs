@@ -12,6 +12,7 @@ const source={source_id:'fixture',sha256:'a'.repeat(64),filename:'fixture.vrm',m
  const browser=await chromium.launch({headless:true,channel:'chrome'});
  try{
   const page=await browser.newPage({locale:'en-US',acceptDownloads:true,viewport:{width:1440,height:1000}});
+  page.on('dialog',d=>d.accept()); // This fixture has no hair mesh; STEP 01 asks before continuing.
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   let release,calls=0,fail=false,headDone=false;
   let gate=new Promise(resolve=>release=resolve);
