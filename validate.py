@@ -41,7 +41,7 @@ def validate(output, skeleton=None, game_data=None):
         toon_report = json.loads((output/'toon.json').read_text(encoding='utf8'))
         outlines = {(e['file'], e['shape']) for e in toon_report['materials'] if e.get('role') == 'outline'}
     if settings.physics_enabled:
-        from fsmp import validate_physics, is_contact_patch, PROXY, ARM_PROXY, SECONDARY_PROXY
+        from fsmp import validate_physics
         validate_physics(output)
     skeleton = mod / "meshes" / settings.asset_dir / "skeleton.nif"
     with NifFile(str(skeleton)) as reference:
@@ -70,8 +70,7 @@ def validate(output, skeleton=None, game_data=None):
                                      f'a shape addresses at most {SHAPE_BONE_CAPACITY}')
                 if (part['file'], shape.name) in outlines:
                     continue  # Owner, topology, skin and marker were verified by validate_toon.
-                if settings.physics_enabled and (shape.name == PROXY or is_contact_patch(shape.name, ARM_PROXY)
-                                                 or is_contact_patch(shape.name, SECONDARY_PROXY)):
+                if settings.physics_enabled and shape.name.startswith('V2SCollision_'):
                     continue  # Checked separately by validate_physics, never rendered.
                 if part.get('retained_skin') and shape.name.startswith('V2SClothingSkin_'):
                     continue  # Validated against the partitioned original skin below, not counted twice.

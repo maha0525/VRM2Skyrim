@@ -266,9 +266,11 @@ def main():
     physics_bones = {}
     physics_mesh_maps = {}
     if settings.physics_enabled:
-        from physics_rig import plan_bones, selected_meshes, spring_nodes, unswayable_nodes
+        from physics_rig import (blender_point, inherited_spring, node_world_matrices, plan_bones, posed_colliders,
+                                 selected_meshes, spring_colliders, spring_nodes, spring_settings, unswayable_nodes)
         selected_nodes = selected_meshes(settings, original_names, [o['v2s_source_node'] for o in meshes])
         hints = spring_nodes(document)
+        springs = spring_settings(document)
         if not settings.physics_nodes:
             selected_nodes.update(o['v2s_source_node'] for o in meshes if any(
                 o.vertex_groups[g.group].name in hints and g.weight > .001
@@ -294,6 +296,10 @@ def main():
             physics_plan = plan_bones(source_parents, direct, {component: weighted},
                                       settings.mod_id+'|'+component, hints, fixed_bones,
                                       {p['id'] for p in output_parts if p['role'] == 'garment'} | {'appearance_cloth'})
+            for name, info in physics_plan.items():
+                spring = inherited_spring(name, source_parents, springs)
+                if spring:
+                    info['spring'] = spring
             for node in selected_nodes:
                 if mesh_components[node] == component:
                     physics_mesh_maps[node] = {n: i['name'] for n, i in physics_plan.items()}
@@ -314,6 +320,15 @@ def main():
             raise ValueError('選んだメッシュに揺らせる独立した骨がありません。髪・布のメッシュを選び直してください。')
         LOG.info('FSMP: preserving %s secondary bones, %s dynamic', len(physics_bones),
                  sum(i['dynamic'] for i in physics_bones.values()))
+        collider_groups = spring_colliders(document)
+        worlds = node_world_matrices(document)
+        if collider_groups:
+            hips_point = np.asarray(orient) @ np.r_[blender_point(worlds[humanoid['hips']][:3, 3]), 1]
+            if not np.allclose(hips_point[:3], source_positions[hips_name], atol=.001):
+                raise ValueError('VRM collider coordinates disagree with the imported skeleton')
+        colliders = posed_colliders(collider_groups, worlds, node_parents, source_bones, transforms, orient,
+                                    mapping, hips_name)
+        (output / 'spring-colliders.json').write_text(json.dumps(colliders, indent=2), encoding='utf8')
     custom_path = output / "mod/meshes" / settings.asset_dir / "skeleton.nif"
     skeleton_report = create_skeleton(args.skeleton, custom_path, custom_positions, physics_bones)
     save_report(skeleton_report, output)

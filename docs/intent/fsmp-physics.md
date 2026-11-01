@@ -205,3 +205,62 @@ Three readback checks also stopped Lucia on correct output and were corrected
 in the same change: a zero-area triangle's empty normal, near-duplicate source
 vertices swapping identity, and PyNifly losing the last bone-name character when
 the joined names exactly fill its 300-byte buffer.
+
+## VRM spring settings and colliders (2026-11-02)
+
+Measured on DeepSeek-chan.vrm (VRM 1.0, 40 springs, 11 colliders in 4 groups):
+only the list of spring joints was read. Skirt joints have stiffness 8,
+gravityPower 0.12, hitRadius 0.025 and the LegGuard group, but every mover got
+gravity-factor 1 and a spring about 1/10 of the gravity torque, so a flared hem
+fell nearly vertical. Contact used only the leg's real hull, smaller than the
+VRM's 0.12 m thigh capsule, so legs passed through it.
+
+The outcome: a mover covered by a VRM spring keeps the VRM's rest shape and is
+kept off the VRM's colliders. A VRM without springs or colliders keeps the same
+gravity, stiffness, margins, tags and shapes as before; only `physics.json`
+gains two empty fields per system. The number of contact points per bone does
+not change.
+
+Joint rule. VRM's steady direction is proportional to
+`stiffness*rest_dir + gravityPower*gravity_dir`, so its droop satisfies
+`tan(a) ~= (gravity/stiffness)*sin(tilt)`. The joint spring is `joint_profile`
+called with `physics_stiffness * stiffness / SPRING_REFERENCE_STIFFNESS`.
+gravity-factor is `k*(gravity/stiffness)/(mass*GRAVITY*length)` clamped to 0..1,
+with k that spring and length the norm of the com; stiffness 0 gives 1. Since k
+scales the factor, the droop does not depend on the stiffness preset, which now
+changes only how far a mover swings. Damping uses the scaled gravity. Bones
+without their own settings inherit from the nearest ancestor that has them.
+
+Contact rule. FSMP collides only mesh shapes, so each collider group used by a
+mover in a system becomes a hidden closed per-triangle mesh
+`V2SCollision_Spring{group}`, rigid on the NPC bones, at radius minus the
+triangle margin. A mover's patch has margin `max(.4, hit_radius*70)`, so contact
+distance is VRM radius + hitRadius, and it can collide with the body tag plus
+each of its group tags. Patches are therefore partitioned by (margin, groups)
+before the `SHAPE_BONE_LIMIT` chunks; the default class keeps today's names, the
+others are `<base>_S{n}`. The contact point's required clearance from the body
+hulls is per bone: its margin + .35 + .05, which is .8 by default.
+A bone whose rest contact point is inside a collider of a group drops that
+group, because a sphere starting inside a closed mesh gets an inward contact. It
+keeps the body tag. `rest_inside_colliders` in `physics.json` records this, and
+`validate_physics` re-derives it from `spring-colliders.json`.
+
+VRM 0 offsets are not glTF node-local. On AnimalKawaii_01_Kuro.vrm x keeps its
+sign: left arm offsets run towards -x and right arm offsets towards +x, the
+child directions of those arm nodes. z must be negated: forearm offsets have
+z/x -0.00175 against a limb direction of +0.00176, and thigh offsets mirror the
+limb the same way, so they lie on the limb only after negation. The chest and
+head spheres also protrude less from the skin once negated. VRM 1.0 colliders
+were checked against DeepSeek's finished skeleton: thigh, calf and foot capsules
+start at their bones.
+
+Not used: dragForce, gravityDir and center. `SPRING_REFERENCE_STIFFNESS` (2.0) is
+a tuning value and has not been validated in game; neither has the skirt's
+behaviour against the capsules.
+
+Known limits. The droop rule is per joint: an upstream joint also carries its
+children's scaled weight, so a chain can droop somewhat more than VRM at its
+root. FSMP's default triangle penetration of 1 unit still applies, so a patch
+pushed deeper than that into a capsule in one step gets no contact. Blender has
+no per-body gravity, so `physics_preview_blender.py` does not simulate
+gravity-factor.

@@ -1,16 +1,25 @@
 """Secondary-rig ownership and FSMP joint-frame contracts."""
+from collections import Counter
+import hashlib
+import json
+import math
 import unittest
 from pathlib import Path
 import tempfile
+import xml.etree.ElementTree as ET
 
 import numpy as np
 
-from fsmp import (ARM_PROXY, SECONDARY_PROXY, GRAVITY, LINK, MASS, PROXY, add_arm_collision_proxy, add_rigid_collision_proxy, contact_patches,
-                  add_collision_proxy, arm_cloth_bones, attach, joint_profile,
-                  local_points, protect_attachments, skin_samples, system_xml, contact_surface_points)
+from fsmp import (ARM_PROXY, SECONDARY_PROXY, SPRING_PROXY, TRIANGLE_MARGIN, GRAVITY, LINK, MASS, PROXY,
+                  add_arm_collision_proxy, add_rigid_collision_proxy, contact_patches,
+                  add_collision_proxy, arm_cloth_bones, attach, build_physics, capsule_mesh, contact_classes,
+                  contact_collider_groups, collider_groups, is_contact_patch, joint_profile, read_system,
+                  local_points, protect_attachments, skin_samples, spring_gravity_factor, spring_mesh, system_xml,
+                  contact_surface_points, validate_physics)
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
-from physics_rig import (inertia_sphere_radius, plan_bones, selected_meshes, spring_nodes, rotation_step_angles,
-                         unswayable_nodes)
+from physics_rig import (blender_point, inertia_sphere_radius, inherited_spring, node_local_matrix,
+                         node_world_matrices, plan_bones, posed_colliders, selected_meshes, spring_colliders,
+                         spring_nodes, spring_settings, rotation_step_angles, unswayable_nodes)
 from settings import FollowerSettings
 from physics_frames import shift_frames, translation
 
@@ -491,6 +500,434 @@ class PhysicsTests(unittest.TestCase):
             with NifFile(str(mesh)) as nif:
                 self.assertEqual(len([s for s in nif.shapes if s.name == PROXY]), 1)
                 self.assertEqual(len(list(nif.rootNode.extra_data(name=LINK))), 1)
+
+
+class SpringReaderTests(unittest.TestCase):
+    def test_vrm1_joints_defaults_and_collider_shapes(self):
+        document = {'extensions': {'VRMC_springBone': {
+            'colliders': [{'node': 7, 'shape': {'sphere': {'offset': [0, .1, 0], 'radius': .09}}},
+                          {'node': 8, 'shape': {'capsule': {'offset': [1, 2, 3], 'tail': [4, 5, 6], 'radius': .12}}},
+                          {'node': 9, 'shape': {'sphere': {}}}],
+            'colliderGroups': [{'colliders': [0]}, {'colliders': [1, 2]}],
+            'springs': [{'colliderGroups': [1, 0], 'joints': [
+                {'node': 2, 'stiffness': 8, 'gravityPower': .12, 'hitRadius': .025}, {'node': 3}]}]}}}
+        self.assertEqual(spring_settings(document), {
+            'VRMNode_00002': {'stiffness': 8., 'gravity': .12, 'hit_radius': .025, 'groups': [0, 1]},
+            'VRMNode_00003': {'stiffness': 1., 'gravity': 0., 'hit_radius': 0., 'groups': [0, 1]}})
+        self.assertEqual(spring_colliders(document), {
+            0: [{'node': 7, 'head': [0., .1, 0.], 'tail': None, 'radius': .09}],
+            1: [{'node': 8, 'head': [1., 2., 3.], 'tail': [4., 5., 6.], 'radius': .12},
+                {'node': 9, 'head': [0., 0., 0.], 'tail': None, 'radius': 0.}]})
+
+    def test_vrm0_groups_reach_descendants_and_keep_the_spec_spelling(self):
+        document = {'nodes': [{}, {'children': [2]}, {'children': [3]}, {}, {}], 'extensions': {'VRM': {
+            'secondaryAnimation': {
+                'boneGroups': [{'bones': [1], 'stiffiness': .5, 'gravityPower': .2, 'hitRadius': .01,
+                                'colliderGroups': [1]}, {'bones': [2, 4]}],
+                'colliderGroups': [{'node': 5, 'colliders': []}, {'node': 6, 'colliders': [
+                    {'offset': {'x': -.1, 'y': .2, 'z': .3}, 'radius': .4}, {}]}]}}}}
+        settings = spring_settings(document)
+        self.assertEqual(set(settings), spring_nodes(document))
+        cloth = {'stiffness': .5, 'gravity': .2, 'hit_radius': .01, 'groups': [1]}
+        for name in ('VRMNode_00001', 'VRMNode_00002', 'VRMNode_00003'):
+            self.assertEqual(settings[name], cloth)
+        self.assertEqual(settings['VRMNode_00004'], {'stiffness': 1., 'gravity': 0., 'hit_radius': 0., 'groups': []})
+        # Measured on AnimalKawaii_01_Kuro.vrm: x unchanged, z negated; see spring_colliders.
+        self.assertEqual(spring_colliders(document), {1: [
+            {'node': 6, 'head': [-.1, .2, -.3], 'tail': None, 'radius': .4},
+            {'node': 6, 'head': [0., 0., 0.], 'tail': None, 'radius': 0.}]})
+
+    def test_model_without_springs_reads_empty(self):
+        self.assertEqual(spring_settings({'nodes': [{}]}), {})
+        self.assertEqual(spring_colliders({'nodes': [{}]}), {})
+
+    def test_spring_settings_inherit_from_the_nearest_ancestor(self):
+        parents = {'tip': 'middle', 'middle': 'root', 'root': 'hips', 'hips': None, 'other': 'hips'}
+        near, far = {'stiffness': 1}, {'stiffness': 2}
+        settings = {'middle': near, 'root': far}
+        self.assertIs(inherited_spring('tip', parents, settings), near)
+        self.assertIs(inherited_spring('root', parents, settings), far)
+        self.assertIsNone(inherited_spring('other', parents, settings))
+
+    def test_node_matrices_follow_gltf_conventions(self):
+        from scipy.spatial.transform import Rotation
+        rotation = Rotation.from_euler('xyz', [10, 20, 30], degrees=True)
+        node = {'translation': [1, 2, 3], 'rotation': rotation.as_quat().tolist(), 'scale': [2, 2, 2]}
+        value = node_local_matrix(node)
+        np.testing.assert_allclose(value[:3, :3], rotation.as_matrix()*2)
+        np.testing.assert_allclose(node_local_matrix({'matrix': value.T.reshape(-1).tolist()}), value)
+        worlds = node_world_matrices({'nodes': [{'translation': [0, 1, 0], 'children': [1]}, node]})
+        np.testing.assert_allclose(worlds[1], worlds[0] @ value)
+        np.testing.assert_allclose(worlds[0][:3, 3], [0, 1, 0])
+
+    def test_colliders_reach_the_custom_pose_through_the_mesh_transform(self):
+        # glTF Y-up: hips one metre up, so Blender (x, -z, y) puts them on +Z.
+        np.testing.assert_allclose(blender_point([0, 1, 0]), [0, 0, 1])
+        orient = np.diag([-70., -70., 70., 1.])
+        document = {'nodes': [{'translation': [0, 1, 0], 'children': [1]},
+                              {'translation': [.1, -.5, 0], 'children': [2]}, {'translation': [0, -.1, 0]}]}
+        worlds = node_world_matrices(document)
+        arm = np.eye(4)
+        arm[:3, 3] = [1, 2, 3]
+        transforms = {'VRMNode_00000': np.eye(4), 'VRMNode_00001': arm}
+        placed = posed_colliders({2: [{'node': 2, 'head': [0, 0, .01], 'tail': None, 'radius': .1}],
+                                  4: [{'node': 0, 'head': [0, 0, 0], 'tail': [0, .1, 0], 'radius': .2},
+                                      {'node': 9, 'head': [0, 0, 0], 'tail': None, 'radius': .3}]},
+                                 {**worlds, 9: worlds[0]}, {1: 0, 2: 1}, set(transforms), transforms, orient,
+                                 {'VRMNode_00000': 'NPC Pelvis', 'VRMNode_00001': 'NPC Thigh'}, 'VRMNode_00000')
+        # Node 2 is no skin bone: its nearest ancestor owns the pose and the NPC anchor.
+        self.assertEqual([c['bone'] for c in placed], ['NPC Thigh', 'NPC Pelvis', 'NPC Pelvis'])
+        np.testing.assert_allclose(placed[0]['head'], [-7+1, .7+2, 28+3])
+        self.assertIsNone(placed[0]['tail'])
+        self.assertAlmostEqual(placed[0]['radius'], 7.)
+        np.testing.assert_allclose(placed[1]['head'], [0, 0, 70])
+        np.testing.assert_allclose(placed[1]['tail'], [0, 0, 77])
+        json.dumps(placed)
+
+
+class SpringJointTests(unittest.TestCase):
+    @staticmethod
+    def joint(tilt, spring, stiffness=1., length=10.):
+        """A mover whose com sits tilt radians from straight down."""
+        com = [length*math.sin(tilt), 0, -length*math.cos(tilt)]
+        bones = {'cloth': {'parent': 'NPC Pelvis', 'dynamic': True, 'matrix': np.eye(4).tolist(), 'spring': spring}}
+        root = system_xml(bones, {'cloth': [com]}, {}, stiffness)
+        k = float(root.find('generic-constraint/angularStiffness').attrib['x'])
+        return root, k, float(root.findtext("bone[@name='cloth']/gravity-factor"))
+
+    def test_static_droop_equals_vrm_for_every_tilt_and_preset(self):
+        for stiffness, gravity in ((8, .12), (2.5, .08), (1, .1)):
+            spring = {'stiffness': stiffness, 'gravity': gravity, 'hit_radius': 0, 'groups': []}
+            for degrees in (20, 45, 90, 135):
+                tilt = math.radians(degrees)
+                vrm = math.atan2(gravity*math.sin(tilt), stiffness+gravity*math.cos(tilt))
+                for preset in (.3, 1., 3.):
+                    _, k, factor = self.joint(tilt, spring, preset)
+                    self.assertLess(factor, 1)
+                    low, high = 0., tilt  # k*a = factor*m*G*L*sin(tilt-a)
+                    for _ in range(60):
+                        droop = (low+high)/2
+                        if k*droop < factor*MASS*GRAVITY*10*math.sin(tilt-droop):
+                            low = droop
+                        else:
+                            high = droop
+                    self.assertAlmostEqual(droop, vrm, delta=max(.002, vrm*.01))
+
+    def test_preset_changes_the_spring_but_not_the_droop(self):
+        spring = {'stiffness': 8, 'gravity': .12, 'hit_radius': 0, 'groups': []}
+        (_, soft, soft_factor), (_, firm, firm_factor) = [self.joint(1., spring, s) for s in (.3, 3.)]
+        self.assertAlmostEqual(firm/soft, 10.)
+        self.assertAlmostEqual(firm_factor/soft_factor, 10., places=3)
+
+    def test_reference_stiffness_keeps_the_preset_spring(self):
+        spring = {'stiffness': 2, 'gravity': 0, 'hit_radius': 0, 'groups': []}
+        root, k, factor = self.joint(1., spring)
+        bare = root.find("bone[@name='cloth']")
+        radius = float(bare.findtext('shape/radius'))
+        np.testing.assert_allclose(k, joint_profile([10, 0, 0], radius, np.eye(4), 1.)[1][0])
+        self.assertEqual(factor, 0)
+
+    def test_damping_uses_the_scaled_gravity(self):
+        spring = {'stiffness': 8, 'gravity': .12, 'hit_radius': 0, 'groups': []}
+        root, _, factor = self.joint(1., spring)
+        com = [10*math.sin(1.), 0, -10*math.cos(1.)]
+        radius = float(root.findtext("bone[@name='cloth']/shape/radius"))
+        joint = root.find('generic-constraint/angularDamping').attrib
+        expected = joint_profile(com, radius, np.eye(4), 4., MASS, factor)[2]
+        np.testing.assert_allclose([float(joint[a]) for a in 'xyz'], expected, atol=1e-6)
+        self.assertLess(expected[0], joint_profile(com, radius, np.eye(4), 4., MASS)[2][0])
+
+    def test_factor_limits(self):
+        def factor(stiffness, gravity, length=10.):
+            return spring_gravity_factor({'stiffness': stiffness, 'gravity': gravity}, 1., 10., MASS, length)
+        self.assertEqual(factor(0, .5), 1)  # no restoring term: VRM hangs straight down
+        self.assertEqual(factor(8, 0), 0)
+        self.assertEqual(factor(.001, 100), 1)
+        self.assertEqual(factor(8, .1, 0.), 1)  # no lever, no gravity torque to scale
+
+    def test_movers_without_spring_keep_the_exact_xml(self):
+        # Hash of this input's XML from system_xml before VRM spring settings existed.
+        value = np.eye(4)
+        value[:3, 3] = [1, 2, 3]
+        bones = {'root': {'parent': 'NPC Head', 'dynamic': False, 'matrix': value.tolist()},
+                 'sleeve': {'parent': 'root', 'dynamic': True, 'matrix': value.tolist()},
+                 'hair': {'parent': 'sleeve', 'dynamic': True, 'matrix': value.tolist()},
+                 'helper': {'parent': 'hair', 'dynamic': True, 'matrix': value.tolist()}}
+        root = system_xml(bones, {'sleeve': [[3, 2, 9], [4, 3, 8]], 'hair': [[1, 7, 3]]},
+                          {'NPC Head': [[0, 0, 0]]}, 1.5, (), 'V2SBody_x', {'sleeve': [1, .5], 'hair': [1]},
+                          {'sleeve'}, {'hair', 'helper'}, {'helper'})
+        self.assertEqual(hashlib.sha256(ET.tostring(root)).hexdigest(),
+                         '181892a93b1ae3a5b55f9af8ae4b9b5a8745183327e1c46f4ca8cb2de2b01b30')
+
+
+class SpringContactTests(unittest.TestCase):
+    def assert_closed_outward(self, vertices, triangles):
+        vertices = np.asarray(vertices)
+        directed = Counter((t[i], t[(i+1) % 3]) for t in triangles for i in range(3))
+        self.assertEqual(set(directed.values()), {1})
+        self.assertTrue(all((b, a) in directed for a, b in directed))  # closed, consistently wound
+        self.assertEqual(len(vertices)-len(directed)//2+len(triangles), 2)
+        centre = vertices.mean(axis=0)
+        cells = vertices[np.asarray(triangles)]-centre
+        return float(np.einsum('ij,ij->i', cells[:, 0], np.cross(cells[:, 1], cells[:, 2])).sum())/6
+
+    def test_capsule_and_sphere_are_closed_and_outward(self):
+        head, tail = np.array([1., 2., 3.]), np.array([4., 2., 9.])
+        for start, end in ((head, tail), (tail, head), ([0, 0, 0], [0, 0, 5]), ([0, 0, 5], [5, 0, 0])):
+            vertices, triangles = capsule_mesh(start, end, 2.)
+            volume = self.assert_closed_outward(vertices, triangles)
+            length = np.linalg.norm(np.subtract(end, start))
+            self.assertAlmostEqual(volume, math.pi*4*length + 4/3*math.pi*8, delta=volume*.15)
+        vertices, triangles = capsule_mesh(head, None, 2.)
+        volume = self.assert_closed_outward(vertices, triangles)
+        self.assertAlmostEqual(volume, 4/3*math.pi*8, delta=volume*.2)
+        np.testing.assert_allclose(np.linalg.norm(vertices-head, axis=1), 2.)
+        self.assert_closed_outward(*capsule_mesh(head, head, 2.))
+
+    def test_collider_mesh_skin_is_rigid_and_keeps_the_triangle_margin(self):
+        colliders = [{'bone': 'NPC L', 'head': [0, 0, 0], 'tail': [0, 0, 9], 'radius': 8.4},
+                     {'bone': 'NPC R', 'head': [20, 0, 0], 'tail': None, 'radius': .2},
+                     {'bone': 'NPC L', 'head': [0, 20, 0], 'tail': None, 'radius': 1.}]
+        vertices, triangles, weights = spring_mesh(colliders)
+        self.assertEqual(set(weights), {'NPC L', 'NPC R'})
+        pairs = [pair for values in weights.values() for pair in values]
+        self.assertEqual(sorted(index for index, _ in pairs), list(range(len(vertices))))
+        self.assertTrue(all(weight == 1. for _, weight in pairs))
+        self.assertEqual({v for t in triangles for v in t}, set(range(len(vertices))))
+        points = np.asarray(vertices)
+        rights = points[[i for i, _ in weights['NPC R']]]
+        np.testing.assert_allclose(np.linalg.norm(rights-[20, 0, 0], axis=1), .1)  # floor
+        self.assertAlmostEqual(float(points[:, 2].max()), 9+8.4-TRIANGLE_MARGIN)
+
+    def test_patches_partition_by_margin_and_groups_then_by_bone_limit(self):
+        from nif_limits import SHAPE_BONE_LIMIT
+        def spring(hit, *groups):
+            return {'stiffness': 1, 'gravity': 0, 'hit_radius': hit, 'groups': list(groups)}
+        bones = {'plain': {}, 'thin': {'spring': spring(.001)}, 'helper': {'spring': spring(.1, 3)}}
+        bones.update({f'skirt{i:03}': {'spring': spring(.025, 3)} for i in range(SHAPE_BONE_LIMIT+1)})
+        bones['hair'] = {'spring': spring(.025, 0, 1)}
+        bones['dropped'] = {'spring': spring(.025, 3)}
+        groups = {'hair': (0, 1), 'dropped': (), 'helper': (3,), **{n: (3,) for n in bones if n.startswith('skirt')}}
+        classes = contact_classes(SECONDARY_PROXY, bones, bones, groups, {'helper'})
+        base = SECONDARY_PROXY
+        self.assertEqual([c[:3] for c in classes], [(base, .4, ()), (base+'_S1', 1.75, ()), (base+'_S2', 1.75, (0, 1)),
+                                                    (base+'_S3', 1.75, (3,))])
+        self.assertEqual(classes[0][3], ['helper', 'plain', 'thin'])
+        self.assertEqual(classes[1][3], ['dropped'])
+        self.assertEqual(sorted(n for c in classes for n in c[3]), sorted(bones))
+        skirt = contact_patches(classes[3][0], classes[3][3])
+        self.assertEqual([n for n, _ in skirt], [base+'_S3', base+'_S3_001'])
+        self.assertTrue(is_contact_patch(base+'_001', base))
+        self.assertFalse(is_contact_patch(base+'_S3', base))  # each class owns its own chunks
+
+    def test_rest_point_inside_a_collider_drops_only_that_group(self):
+        bones = {'hem': {'spring': {'hit_radius': .025, 'groups': [1, 2, 9]}}, 'plain': {}}
+        groups = collider_groups([
+            {'group': 1, 'bone': 'NPC', 'head': [0, 0, 0], 'tail': [0, 0, 10], 'radius': 8.4},
+            {'group': 2, 'bone': 'NPC', 'head': [0, 0, 0], 'tail': None, 'radius': 2.}])
+        def result(point):
+            return contact_collider_groups(bones, {'hem': point, 'plain': point}, groups)
+        self.assertEqual(result([10.1, 0, 5]), ({'hem': [2]}, {'hem': [1]}))  # 8.4+1.75 reaches past the point
+        self.assertEqual(result([10.2, 0, 5]), ({'hem': [1, 2]}, {}))
+        self.assertEqual(result([0, 0, -10.2]), ({'hem': [1, 2]}, {}))  # beyond the capsule end
+        self.assertEqual(result([0, 0, 0]), ({}, {'hem': [1, 2]}))
+
+    def test_contact_clearance_covers_each_bones_margin(self):
+        hull = [[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)]
+        def bone(hit):
+            spring = {'hit_radius': hit, 'groups': []} if hit else None
+            return {'dynamic': True, 'matrix': np.eye(4).tolist(), 'node_centre': [0, 0, 0],
+                    **({'spring': spring} if spring else {})}
+        samples = {'cloth': [[1.9, 0, 0], [3.4, 0, 0]]}
+        weights = {'cloth': [1, 1]}
+        plain = contact_surface_points({'cloth': bone(0)}, samples, weights, {'body': hull}, {'body': np.eye(4)})
+        wide = contact_surface_points({'cloth': bone(.025)}, samples, weights, {'body': hull}, {'body': np.eye(4)})
+        self.assertEqual(plain, {'cloth': [1.9, 0, 0]})  # .9 clears .4+.35+.05
+        self.assertEqual(wide, {'cloth': [3.4, 0, 0]})  # .9 does not clear 1.75+.35+.05
+
+    def test_xml_tags_and_margins_for_collider_groups(self):
+        spring = {'stiffness': 8, 'gravity': .1, 'hit_radius': .025, 'groups': [1, 3]}
+        bones = {'plain': {'parent': 'NPC Pelvis', 'dynamic': True, 'matrix': np.eye(4).tolist()},
+                 'hem': {'parent': 'NPC Pelvis', 'dynamic': True, 'matrix': np.eye(4).tolist(), 'spring': spring}}
+        root = system_xml(bones, {n: [[5, 0, 0]] for n in bones}, {'NPC Pelvis': [[0, 0, 0]]},
+                          collision_tag='T', secondary_contacts=set(bones), contact_groups={'hem': [1, 3]},
+                          collider_bones={'NPC L Thigh'})
+        self.assertEqual(root.findtext("bone[@name='NPC L Thigh']/mass"), '0')
+        tags = {s.attrib['name']: (s.findtext('margin'), s.findtext('tag'),
+                                   [e.text for e in s.findall('no-collide-with-tag')])
+                for s in root.findall('per-triangle-shape')}
+        generated = ['T', 'T_g1', 'T_g3']
+        self.assertEqual(tags, {PROXY: ('0.35', 'T', generated), SPRING_PROXY+'1': ('0.35', 'T_g1', generated),
+                                SPRING_PROXY+'3': ('0.35', 'T_g3', generated)})
+        patches = {s.attrib['name']: (s.findtext('margin'), [e.text for e in s.findall('can-collide-with-tag')])
+                   for s in root.findall('per-vertex-shape')}
+        self.assertEqual(patches, {SECONDARY_PROXY: ('0.4', ['T']),
+                                   SECONDARY_PROXY+'_S1': ('1.75', ['T', 'T_g1', 'T_g3'])})
+
+
+class SpringBuildTests(unittest.TestCase):
+    """build_physics and validate_physics on real NIF files, one cloth chain at x=20."""
+    PELVIS, THIGH = 'NPC Pelvis [Pelv]', 'NPC L Thigh [LThg]'
+    TEXTURE = 'textures/spring/flat_n.dds'
+
+    def fixture(self, output, springs, colliders):
+        settings = FollowerSettings(physics_enabled=True, mod_id='SpringTest')
+        settings.save(output/'settings.json')
+        mesh_dir = output/'mod/meshes'/settings.asset_dir
+        mesh_dir.mkdir(parents=True)
+        (output/'mod'/self.TEXTURE).parent.mkdir(parents=True)
+        (output/'mod'/self.TEXTURE).write_bytes(b'')
+        chain = {'V2SP_root': (self.PELVIS, 60), 'V2SP_a': ('V2SP_root', 50), 'V2SP_b': ('V2SP_a', 40),
+                 'V2SP_c': ('V2SP_b', 30)}
+        poses = {self.PELVIS: np.eye(4), self.THIGH: translation([5, 0, 40]),
+                 **{n: translation([20, 0, z]) for n, (_, z) in chain.items()}}
+        parents = {self.THIGH: self.PELVIS, **{n: p for n, (p, _) in chain.items()}}
+        for path in (mesh_dir/'skeleton.nif', mesh_dir/'avatar.nif'):
+            with NifFile() as nif:
+                nif.initialize('SKYRIMSE', str(path))
+                nodes = {}
+                for name, pose in poses.items():
+                    parent = parents.get(name)
+                    local = np.linalg.inv(poses[parent]) @ pose if parent else pose
+                    nodes[name] = nif.add_node(name, rigid_buffer(local), nodes[parent] if parent else nif.rootNode)
+                if path.name == 'avatar.nif':
+                    body = [(float(x), float(y), float(z)) for x in (-6, 6) for y in (-6, 6) for z in (30, 60)]
+                    self.skinned(nif, 'VRMNode_00001', body, [(0, 1, 2), (1, 3, 2), (4, 6, 5), (5, 6, 7),
+                                                              (0, 4, 1), (1, 4, 5), (2, 3, 6), (3, 7, 6),
+                                                              (0, 2, 4), (2, 6, 4), (1, 5, 3), (3, 5, 7)],
+                                 {self.PELVIS: range(8)}, poses, parents)
+                    cloth, weights = [], {}
+                    for name, (_, z) in chain.items():
+                        weights[name] = range(len(cloth), len(cloth)+3)
+                        cloth += [(20., -1., z-5.), (20., 1., z-5.), (20., 0., z-4.)]
+                    self.skinned(nif, 'VRMNode_00002', cloth, [(i, i+1, i+2) for i in range(0, len(cloth), 3)],
+                                 weights, poses, parents)
+                nif.save()
+        report = {n: {'name': n, 'parent': p, 'dynamic': True, 'components': ['appearance_cloth'],
+                      'matrix': poses[n].tolist(), **({'spring': springs[n]} if n in springs else {})}
+                  for n, (p, _) in chain.items()}
+        for name, value in (('skeleton.json', {'physics_bones': report}),
+                            ('appearance.json', {'components': [{'id': 'appearance', 'role': 'body', 'file': 'avatar.nif'}]}),
+                            ('source.json', {'parts': [{'node': 1, 'name': 'Body', 'suggested_role': 'body'}]}),
+                            ('spring-colliders.json', colliders)):
+            (output/name).write_text(json.dumps(value), encoding='utf8')
+        return mesh_dir, settings
+
+    def skinned(self, nif, name, vertices, triangles, weights, poses, parents):
+        shape = nif.createShapeFromData(name, vertices, triangles, [(0., 0.)]*len(vertices),
+                                        [(0., 0., 1.)]*len(vertices))
+        shape.set_texture('Diffuse', self.TEXTURE)
+        shape.set_texture('Normal', self.TEXTURE)
+        shape.skin()
+        for bone in weights:
+            shape.add_bone(bone, rigid_buffer(poses[bone]), parents.get(bone))
+        shape.set_global_to_skin(rigid_buffer(np.eye(4)))
+        for bone, indices in weights.items():
+            shape.set_skin_to_bone_xform(bone, rigid_buffer(np.linalg.inv(poses[bone])))
+            shape.setShapeWeights(bone, [(int(i), 1.) for i in indices])
+
+    def springs(self):
+        spring = {'stiffness': 8., 'gravity': .12, 'hit_radius': .025, 'groups': [3, 5]}
+        return {n: spring for n in ('V2SP_root', 'V2SP_a', 'V2SP_b')}
+
+    def colliders(self):
+        return [{'group': 3, 'bone': self.THIGH, 'head': [20, 0, 28], 'tail': None, 'radius': 6.5},
+                {'group': 5, 'bone': self.THIGH, 'head': [30, 0, 30], 'tail': [30, 0, 50], 'radius': 2.},
+                {'group': 5, 'bone': self.PELVIS, 'head': [10, 0, 60], 'tail': None, 'radius': 1.}]
+
+    def test_collider_shapes_build_validate_and_rebuild(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            mesh_dir, settings = self.fixture(output, self.springs(), self.colliders())
+            build_physics(output)
+            system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
+            # b's cloth lies at z=35..36, within 6.5+1.75 of the sphere at z=28; a's lies far above it.
+            self.assertEqual(system['contact_groups'], {'V2SP_a': [3, 5], 'V2SP_b': [5]})
+            self.assertEqual(system['rest_inside_colliders'], {'V2SP_b': [3]})
+            root = read_system(output/'mod'/system['xml'])
+            self.assertEqual({s.attrib['name'] for s in root.findall('per-triangle-shape')},
+                             {PROXY, SPRING_PROXY+'3', SPRING_PROXY+'5'})
+            self.assertEqual({s.attrib['name'] for s in root.findall('per-vertex-shape')},
+                             {SECONDARY_PROXY, SECONDARY_PROXY+'_S1', SECONDARY_PROXY+'_S2'})
+            self.assertEqual(root.findtext("bone[@name='V2SP_c']/gravity-factor"), '1')
+            self.assertLess(float(root.findtext("bone[@name='V2SP_a']/gravity-factor")), .1)
+            self.assertEqual(root.findtext(f"bone[@name='{self.THIGH}']/mass"), '0')
+            with NifFile(str(mesh_dir/'avatar.nif')) as nif:
+                shapes = {s.name: s for s in nif.shapes}
+                self.assertEqual(set(shapes[SPRING_PROXY+'5'].bone_names), {self.THIGH, self.PELVIS})
+                self.assertTrue(shapes[SPRING_PROXY+'3'].properties.flags & 1)
+                self.assertEqual(sum(n.startswith('V2SCollision_') for n in shapes), 6)
+                self.assertEqual(set(skin_samples(nif)[0]), {self.PELVIS, 'V2SP_root', 'V2SP_a', 'V2SP_b', 'V2SP_c'})
+            build_physics(output)  # idempotent on rebuild, and validated by build_physics itself
+            with NifFile(str(mesh_dir/'avatar.nif')) as nif:
+                self.assertEqual(sum(s.name.startswith('V2SCollision_') for s in nif.shapes), 6)
+
+    def test_validation_refuses_changed_collider_contacts(self):
+        def tampered(edit, message):
+            with tempfile.TemporaryDirectory() as directory:
+                output = Path(directory)
+                self.fixture(output, self.springs(), self.colliders())
+                build_physics(output)
+                edit(output)
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_physics(output)
+
+        def change_json(name, change):
+            def edit(output):
+                value = json.loads((output/name).read_text(encoding='utf8'))
+                change(value)
+                (output/name).write_text(json.dumps(value), encoding='utf8')
+            return edit
+
+        def change_xml(old, new):
+            def edit(output):
+                system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
+                path = output/'mod'/system['xml']
+                text = path.read_text(encoding='utf8')
+                self.assertIn(old, text)
+                path.write_text(text.replace(old, new, 1), encoding='utf8')
+            return edit
+
+        tampered(change_json('physics.json', lambda r: r['systems'][0]['rest_inside_colliders'].clear()),
+                 'do not match the rest contact points')
+        tampered(change_json('physics.json', lambda r: r['systems'][0]['contact_groups'].pop('V2SP_b')),
+                 'Secondary contact proxy must be hidden and match')
+        tampered(change_json('spring-colliders.json', lambda c: c[0].update(radius=1.)),
+                 'do not match the rest contact points')
+        tampered(change_json('spring-colliders.json', lambda c: c[1].update(radius=3.)),
+                 'differs from its colliders')
+        tampered(change_xml('<margin>1.75</margin>', '<margin>.4</margin>'), 'margin or tags differ')
+        tampered(change_xml('_g5</can-collide-with-tag>', '_g9</can-collide-with-tag>'), 'margin or tags differ')
+        tampered(change_xml('_g5</no-collide-with-tag>', '_g9</no-collide-with-tag>'), 'must not collide with each other')
+        tampered(change_xml('<gravity-factor>1</gravity-factor>', '<gravity-factor>2</gravity-factor>'),
+                 'gravity-factor outside')
+
+    def test_spring_without_colliders_scales_the_joint_and_adds_no_shape(self):
+        spring = {'stiffness': 8., 'gravity': .12, 'hit_radius': 0., 'groups': []}
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            self.fixture(output, {n: spring for n in ('V2SP_root', 'V2SP_a', 'V2SP_b')}, [])
+            build_physics(output)
+            system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
+            root = read_system(output/'mod'/system['xml'])
+            self.assertEqual({s.attrib['name'] for s in root.findall('per-triangle-shape')}, {PROXY})
+            self.assertEqual({s.attrib['name'] for s in root.findall('per-vertex-shape')}, {SECONDARY_PROXY})
+            self.assertLess(float(root.findtext("bone[@name='V2SP_a']/gravity-factor")), .1)
+            self.assertEqual((system['contact_groups'], system['rest_inside_colliders']), ({}, {}))
+
+    def test_model_without_springs_matches_the_old_shapes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            mesh_dir, _ = self.fixture(output, {}, [])
+            (output/'spring-colliders.json').unlink()  # also an output older than this file
+            build_physics(output)
+            system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
+            root = read_system(output/'mod'/system['xml'])
+            self.assertEqual({s.attrib['name'] for s in root.findall('per-vertex-shape')}, {SECONDARY_PROXY})
+            self.assertEqual({b.findtext('gravity-factor') for b in root.findall('bone') if b.find('inertia') is not None},
+                             {'1'})
+            with NifFile(str(mesh_dir/'avatar.nif')) as nif:
+                self.assertEqual(sum(s.name.startswith('V2SCollision_') for s in nif.shapes), 2)
 
 
 class BonePartitionTests(unittest.TestCase):

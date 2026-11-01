@@ -3,6 +3,8 @@
 Blender's Bullet solver verifies joint frames, settling and anchor following.
 FSMP's custom skinned-mesh contact solver is separate; this preview disables
 bone-body collisions, just as FSMP does, rather than inventing rigid contacts.
+Blender has no per-body gravity, so gravity-factor is not simulated: movers with
+VRM spring settings droop more here than in FSMP.
 """
 import argparse
 import json
