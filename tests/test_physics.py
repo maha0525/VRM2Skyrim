@@ -11,13 +11,14 @@ import xml.etree.ElementTree as ET
 import numpy as np
 
 from fsmp import (ARM_PROXY, SECONDARY_PROXY, SPRING_PROXY, TRIANGLE_MARGIN, GRAVITY, LINK, MASS, PROXY,
-                  add_arm_collision_proxy, add_rigid_collision_proxy, contact_patches,
-                  add_collision_proxy, arm_cloth_bones, attach, build_physics, capsule_mesh, contact_classes,
-                  contact_collider_groups, collider_groups, is_contact_patch, joint_profile, read_system,
+                  add_arm_collision_proxy, add_rigid_collision_proxy, borrowed_colliders, contact_patches,
+                  add_collision_proxy, arm_cloth_bones, attach, build_physics, capsule_mesh, collider_depth,
+                  contact_classes, contact_collider_groups, collider_groups, is_contact_patch, joint_profile, read_system,
                   local_points, protect_attachments, skin_samples, spring_gravity_factor, spring_mesh, system_xml,
                   contact_surface_points, validate_physics)
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
-from physics_rig import (blender_point, inertia_sphere_radius, inherited_spring, node_local_matrix,
+from physics_rig import (blender_point, inertia_sphere_radius, inherited_spring, node_local_matrix, posed_point,
+                         spring_tails,
                          node_world_matrices, plan_bones, posed_colliders, selected_meshes, spring_colliders,
                          spring_nodes, spring_settings, rotation_step_angles, unswayable_nodes)
 from settings import FollowerSettings
@@ -325,6 +326,32 @@ class PhysicsTests(unittest.TestCase):
         self.assertFalse(result['root']['dynamic'])
         self.assertTrue(result['tip']['dynamic'])
 
+    def test_vrm_collider_spring_keeps_its_root_moving_like_vrm(self):
+        cloth = {'parent': 'NPC Pelvis [Pelv]', 'dynamic': True, 'components': ['cloth'], 'matrix': np.eye(4).tolist()}
+        spring = {'stiffness': 8, 'gravity': .1, 'hit_radius': .025, 'groups': [3]}
+        bones = {'skirt': {**cloth, 'spring': spring},
+                 'loop': {**cloth, 'spring': {**spring, 'groups': []}},
+                 'apron': cloth,
+                 'sleeve': {**cloth, 'parent': 'NPC L UpperArm [LUar]', 'spring': spring}}
+        result, protected = protect_attachments(bones, {}, {}, {}, {'cloth'})
+        self.assertTrue(result['skirt']['dynamic'])
+        self.assertEqual(set(protected), {'loop', 'apron', 'sleeve'})
+
+    def test_cloth_outside_every_spring_borrows_the_nearest_chains_colliders(self):
+        def bone(x, component='cloth', spring=None):
+            value = np.eye(4)
+            value[0, 3] = x
+            return {'components': [component], 'matrix': value.tolist(), **({'spring': spring} if spring else {})}
+        def spring(*groups):
+            return {'stiffness': 8, 'gravity': .1, 'hit_radius': .025, 'groups': list(groups)}
+        bones = {'skirt': bone(0, spring=spring(3)), 'ribbon': bone(10, spring=spring(2)),
+                 'loop': bone(11, spring=spring()), 'apron': bone(2), 'hip': bone(9),
+                 'hair': bone(0, 'hair'), 'strand': bone(1, 'hair', spring(0))}
+        movers = list(bones)
+        self.assertEqual(borrowed_colliders(bones, movers, {'cloth'}),
+                         {'apron': {'hit_radius': .025, 'groups': [3]}, 'hip': {'hit_radius': .025, 'groups': [2]}})
+        self.assertEqual(borrowed_colliders(bones, ['apron', 'loop'], {'cloth'}), {})
+
     def test_sleeve_contact_selection_uses_ancestry_and_excludes_hair_waist_shared_body(self):
         def bone(parent, component='cloth', dynamic=True):
             return {'parent': parent, 'components': [component], 'dynamic': dynamic}
@@ -540,6 +567,35 @@ class SpringReaderTests(unittest.TestCase):
     def test_model_without_springs_reads_empty(self):
         self.assertEqual(spring_settings({'nodes': [{}]}), {})
         self.assertEqual(spring_colliders({'nodes': [{}]}), {})
+        self.assertEqual(spring_tails({'nodes': [{}]}, {0: np.eye(4)}), {})
+
+    def test_vrm1_tail_is_the_next_listed_joint(self):
+        document = {'nodes': [{'translation': [0, 1, 0], 'children': [1]}, {'translation': [0, -.2, 0], 'children': [2]},
+                              {'translation': [0, -.3, 0], 'children': [3]}, {'translation': [0, -.1, 0]}],
+                    'extensions': {'VRMC_springBone': {'springs': [{'joints': [{'node': 1}, {'node': 2}]},
+                                                                  {'joints': [{'node': 2}, {'node': 3}]}]}}}
+        worlds = node_world_matrices(document)
+        tails = spring_tails(document, worlds)
+        self.assertEqual(set(tails), {'VRMNode_00001', 'VRMNode_00002'})
+        np.testing.assert_allclose(tails['VRMNode_00001'], worlds[2][:3, 3])
+        np.testing.assert_allclose(tails['VRMNode_00002'], worlds[3][:3, 3])
+
+    def test_vrm0_tail_is_the_first_child_or_seven_centimetres_past_a_leaf(self):
+        document = {'nodes': [{'translation': [0, 1, 0], 'children': [1, 3]}, {'translation': [0, -.2, 0], 'children': [2]},
+                              {'translation': [0, -.3, 0]}, {'translation': [.1, 0, 0]}],
+                    'extensions': {'VRM': {'secondaryAnimation': {'boneGroups': [{'bones': [0]}]}}}}
+        worlds = node_world_matrices(document)
+        tails = spring_tails(document, worlds)
+        np.testing.assert_allclose(tails['VRMNode_00000'], worlds[1][:3, 3])
+        np.testing.assert_allclose(tails['VRMNode_00001'], worlds[2][:3, 3])
+        np.testing.assert_allclose(tails['VRMNode_00002'], worlds[2][:3, 3]+[0, -.07, 0])
+        np.testing.assert_allclose(tails['VRMNode_00003'], worlds[3][:3, 3]+[.07, 0, 0])
+
+    def test_tail_is_posed_by_the_bone_that_carries_it(self):
+        orient = np.diag([-70., -70., 70., 1.])
+        moved = np.eye(4)
+        moved[:3, 3] = [1, 2, 3]
+        np.testing.assert_allclose(posed_point(moved, orient, [.1, .5, 0]), [-7+1, 0+2, 35+3])
 
     def test_spring_settings_inherit_from_the_nearest_ancestor(self):
         parents = {'tip': 'middle', 'middle': 'root', 'root': 'hips', 'hips': None, 'other': 'hips'}
@@ -745,6 +801,28 @@ class SpringContactTests(unittest.TestCase):
         self.assertEqual(plain, {'cloth': [1.9, 0, 0]})  # .9 clears .4+.35+.05
         self.assertEqual(wide, {'cloth': [3.4, 0, 0]})  # .9 does not clear 1.75+.35+.05
 
+    def test_contact_sits_at_the_vrm_tail_unless_it_starts_inside_the_body(self):
+        hull = [[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)]
+        samples = {'cloth': [[3.4, 0, 0]]}
+        weights = {'cloth': [1]}
+        def point(tail, *groups):
+            spring = {'hit_radius': .025, 'groups': list(groups)}
+            bone = {'dynamic': True, 'matrix': np.eye(4).tolist(), 'node_centre': [0, 0, 0],
+                    'spring': spring, 'spring_tail': tail}
+            return contact_surface_points({'cloth': bone}, samples, weights, {'body': hull},
+                                          {'body': np.eye(4)})['cloth']
+        self.assertEqual(point([9., 0., 0.], 3), [9., 0., 0.])
+        self.assertEqual(point([1.5, 0., 0.], 3), [3.4, 0, 0])  # inside the body's clearance
+        self.assertEqual(point([9., 0., 0.]), [3.4, 0, 0])  # VRM tests nothing for this spring
+
+    def test_collider_depth_reaches_the_axis_and_stops_before_the_far_side(self):
+        def group(*radii):
+            return [{'radius': r} for r in radii]
+        self.assertEqual(collider_depth(group(6.3)), 6.3)
+        self.assertEqual(collider_depth(group(8.4, 5.6)), 8.4)
+        self.assertEqual(collider_depth(group(8.4, 6.65, 4.55)), 8.1)  # 2*4.55-1 keeps the foot's far side out
+        self.assertEqual(collider_depth(group(.2)), 1.)  # never thinner than FSMP's default
+
     def test_xml_tags_and_margins_for_collider_groups(self):
         spring = {'stiffness': 8, 'gravity': .1, 'hit_radius': .025, 'groups': [1, 3]}
         bones = {'plain': {'parent': 'NPC Pelvis', 'dynamic': True, 'matrix': np.eye(4).tolist()},
@@ -770,7 +848,7 @@ class SpringBuildTests(unittest.TestCase):
     PELVIS, THIGH = 'NPC Pelvis [Pelv]', 'NPC L Thigh [LThg]'
     TEXTURE = 'textures/spring/flat_n.dds'
 
-    def fixture(self, output, springs, colliders, body_role='body'):
+    def fixture(self, output, springs, colliders, body_role='body', tails=None):
         settings = FollowerSettings(physics_enabled=True, mod_id='SpringTest')
         settings.save(output/'settings.json')
         mesh_dir = output/'mod/meshes'/settings.asset_dir
@@ -804,7 +882,8 @@ class SpringBuildTests(unittest.TestCase):
                                  weights, poses, parents)
                 nif.save()
         report = {n: {'name': n, 'parent': p, 'dynamic': True, 'components': ['appearance_cloth'],
-                      'matrix': poses[n].tolist(), **({'spring': springs[n]} if n in springs else {})}
+                      'matrix': poses[n].tolist(), **({'spring': springs[n]} if n in springs else {}),
+                      **({'spring_tail': tails[n]} if tails and n in tails else {})}
                   for n, (p, _) in chain.items()}
         for name, value in (('skeleton.json', {'physics_bones': report}),
                             ('appearance.json', {'components': [{'id': 'appearance', 'role': 'body', 'file': 'avatar.nif'}]}),
@@ -842,13 +921,18 @@ class SpringBuildTests(unittest.TestCase):
             build_physics(output)
             system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
             # b's cloth lies at z=35..36, within 6.5+1.75 of the sphere at z=28; a's lies far above it.
-            self.assertEqual(system['contact_groups'], {'V2SP_a': [3, 5], 'V2SP_b': [5]})
-            self.assertEqual(system['rest_inside_colliders'], {'V2SP_b': [3]})
+            self.assertEqual(system['contact_groups'], {'V2SP_root': [3, 5], 'V2SP_a': [3, 5], 'V2SP_b': [5],
+                                                       'V2SP_c': [5]})  # c has no spring and borrows
+            self.assertEqual(system['protected_bones'], {})
+            self.assertEqual(system['rest_inside_colliders'], {'V2SP_b': [3], 'V2SP_c': [3]})
             root = read_system(output/'mod'/system['xml'])
             self.assertEqual({s.attrib['name'] for s in root.findall('per-triangle-shape')},
                              {PROXY, SPRING_PROXY+'3', SPRING_PROXY+'5'})
             self.assertEqual({s.attrib['name'] for s in root.findall('per-vertex-shape')},
-                             {SECONDARY_PROXY, SECONDARY_PROXY+'_S1', SECONDARY_PROXY+'_S2'})
+                             {SECONDARY_PROXY+'_S1', SECONDARY_PROXY+'_S2'})
+            self.assertEqual(root.findtext(f"per-triangle-shape[@name='{SPRING_PROXY}3']/penetration"), '6.5')
+            self.assertEqual(root.findtext(f"per-triangle-shape[@name='{SPRING_PROXY}5']/penetration"), '1.0')
+            self.assertIsNone(root.find(f"per-triangle-shape[@name='{PROXY}']/penetration"))
             self.assertEqual(root.findtext("bone[@name='V2SP_c']/gravity-factor"), '1')
             self.assertLess(float(root.findtext("bone[@name='V2SP_a']/gravity-factor")), .1)
             self.assertEqual(root.findtext(f"bone[@name='{self.THIGH}']/mass"), '0')
@@ -856,11 +940,11 @@ class SpringBuildTests(unittest.TestCase):
                 shapes = {s.name: s for s in nif.shapes}
                 self.assertEqual(set(shapes[SPRING_PROXY+'5'].bone_names), {self.THIGH, self.PELVIS})
                 self.assertTrue(shapes[SPRING_PROXY+'3'].properties.flags & 1)
-                self.assertEqual(sum(n.startswith('V2SCollision_') for n in shapes), 6)
+                self.assertEqual(sum(n.startswith('V2SCollision_') for n in shapes), 5)
                 self.assertEqual(set(skin_samples(nif)[0]), {self.PELVIS, 'V2SP_root', 'V2SP_a', 'V2SP_b', 'V2SP_c'})
             build_physics(output)  # idempotent on rebuild, and validated by build_physics itself
             with NifFile(str(mesh_dir/'avatar.nif')) as nif:
-                self.assertEqual(sum(s.name.startswith('V2SCollision_') for s in nif.shapes), 6)
+                self.assertEqual(sum(s.name.startswith('V2SCollision_') for s in nif.shapes), 5)
 
     def test_validation_refuses_changed_collider_contacts(self):
         def tampered(edit, message):
@@ -901,6 +985,42 @@ class SpringBuildTests(unittest.TestCase):
         tampered(change_xml('_g5</no-collide-with-tag>', '_g9</no-collide-with-tag>'), 'must not collide with each other')
         tampered(change_xml('<gravity-factor>1</gravity-factor>', '<gravity-factor>2</gravity-factor>'),
                  'gravity-factor outside')
+        tampered(change_xml('<penetration>6.5</penetration>', '<penetration>1</penetration>'), 'depth differs')
+
+    def test_contacts_at_vrm_tails_and_borrowed_colliders_build_and_validate(self):
+        spring = self.springs()['V2SP_root']
+        springs = {'V2SP_root': spring, 'V2SP_a': spring}  # V2SP_b and V2SP_c are outside every spring
+        tails = {'V2SP_root': [20., 0., 50.], 'V2SP_a': [20., 0., 40.]}
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            mesh_dir, _ = self.fixture(output, springs, self.colliders(), tails=tails)
+            build_physics(output)
+            system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
+            self.assertEqual(system['tail_contacts'], ['V2SP_a', 'V2SP_root'])
+            self.assertEqual({n: system['contact_points'][n] for n in tails}, tails)
+            self.assertEqual(system['borrowed_colliders'], {n: {'hit_radius': .025, 'groups': [3, 5]}
+                                                            for n in ('V2SP_b', 'V2SP_c')})
+            root = read_system(output/'mod'/system['xml'])
+            self.assertEqual(root.findtext("bone[@name='V2SP_b']/gravity-factor"), '1')  # joints stay on the preset
+            with NifFile(str(mesh_dir/'avatar.nif')) as nif:
+                shapes = [s for s in nif.shapes if s.name.startswith(SECONDARY_PROXY)]
+                owners = {b: s for s in shapes for b in s.bone_names}
+                for name, tail in tails.items():
+                    np.testing.assert_allclose(owners[name].verts[owners[name].bone_weights[name][0][0]], tail, atol=.01)
+            build_physics(output)  # idempotent on rebuild, and validated by build_physics itself
+
+            def refused(edit, message):
+                path = output/'physics.json'
+                original = path.read_text(encoding='utf8')
+                report = json.loads(original)
+                edit(report['systems'][0])
+                path.write_text(json.dumps(report), encoding='utf8')
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_physics(output)
+                path.write_text(original, encoding='utf8')
+
+            refused(lambda s: s['contact_points'].update(V2SP_a=[20., 0., 41.]), 'displaced from its VRM spring tail')
+            refused(lambda s: s['borrowed_colliders'].pop('V2SP_b'), 'Borrowed colliders do not match')
 
     def test_colliders_work_without_body_hulls(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -909,8 +1029,9 @@ class SpringBuildTests(unittest.TestCase):
             build_physics(output)
             system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
             self.assertEqual(system['body_hulls'], 0)
-            self.assertEqual(system['contact_groups'], {'V2SP_a': [3, 5], 'V2SP_b': [5]})
-            self.assertEqual(system['secondary_contact_bones'], ['V2SP_a', 'V2SP_b'])
+            self.assertEqual(system['contact_groups'], {'V2SP_root': [3, 5], 'V2SP_a': [3, 5], 'V2SP_b': [5],
+                                                       'V2SP_c': [5]})  # c has no spring and borrows
+            self.assertEqual(system['secondary_contact_bones'], ['V2SP_a', 'V2SP_b', 'V2SP_c', 'V2SP_root'])
             root = read_system(output/'mod'/system['xml'])
             self.assertEqual({s.attrib['name'] for s in root.findall('per-triangle-shape')},
                              {SPRING_PROXY+'3', SPRING_PROXY+'5'})
@@ -936,7 +1057,7 @@ class SpringBuildTests(unittest.TestCase):
             build_physics(output)
             system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
             self.assertEqual((system['contact_groups'], system['secondary_contact_bones']), ({}, []))
-            self.assertEqual(set(system['rest_inside_colliders']), {'V2SP_a', 'V2SP_b'})
+            self.assertEqual(set(system['rest_inside_colliders']), {'V2SP_root', 'V2SP_a', 'V2SP_b', 'V2SP_c'})
             root = read_system(output/'mod'/system['xml'])
             self.assertEqual(root.findall('per-triangle-shape')+root.findall('per-vertex-shape'), [])
             with NifFile(str(mesh_dir/'avatar.nif')) as nif:

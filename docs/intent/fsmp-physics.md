@@ -218,8 +218,7 @@ VRM's 0.12 m thigh capsule, so legs passed through it.
 The outcome: a mover covered by a VRM spring keeps the VRM's rest shape and is
 kept off the VRM's colliders. A VRM without springs or colliders keeps the same
 gravity, stiffness, margins, tags and shapes as before; only `physics.json`
-gains two empty fields per system. The number of contact points per bone does
-not change.
+gains empty fields per system. Each bone keeps one contact point.
 
 Joint rule. VRM's steady direction is proportional to
 `stiffness*rest_dir + gravityPower*gravity_dir`, so its droop satisfies
@@ -245,6 +244,37 @@ group, because a sphere starting inside a closed mesh gets an inward contact. It
 keeps the body tag. `rest_inside_colliders` in `physics.json` records this, and
 `validate_physics` re-derives it from `spring-colliders.json`.
 
+The first game check of this ZIP still showed a leg through DeepSeek-chan's skirt,
+and the capsules had the VRM's size. The converter differed from VRM in four ways,
+measured on that model. VRM tests four points per strand at the bone ends, 32 in
+all; the converter tested 24 surface samples near each segment's centre of mass,
+which widened the front hem gap from 24 cm to 34-37 cm against a 19 cm calf capsule.
+VRM pushes a joint out from any depth; FSMP's default penetration left a shell
+1 unit thick. VRM rotates the first joint of a spring; the converter pinned every
+garment root. The apron's bones are rigged but in no spring, so they never met the
+leg capsules. The VRM stays the reference, so each difference closes as follows.
+
+Point rule. `spring_tails` gives each joint the point VRM tests with its hitRadius:
+the next joint of a VRM 1 spring, or for VRM 0 the first child, or 7 cm past a leaf.
+The tail is posed by the joint's own bone, and a mover with collider groups takes
+it as its contact point unless it starts inside the body's clearance, in which case
+the surface sample stays. `tail_contacts` in `physics.json` lists those on their tail.
+
+Depth rule. Each spring surface sets `penetration` to `collider_depth`: the largest
+radius of the group, at most twice the smallest minus 1, at least FSMP's default 1.
+Below the largest radius part of a thick capsule stays hollow; from twice the smallest
+radius, the far triangles of a thin capsule would catch points beyond it.
+
+Root rule. A garment root off the arm stays free when its spring has collider
+groups, so hem chains, ribbon tails and the like swing from the first joint as in
+VRM. A root with no such spring and a root on the arm stay pinned: those are the
+sleeve and hanging-cloth cases the attachment fixes above were written for.
+
+Borrow rule. A cloth mover in no spring takes `hit_radius` and groups from the
+nearest mover of its component whose spring has groups, recorded in
+`borrowed_colliders`. It borrows contact only: its joints stay on the preset.
+A spring that the VRM gave no groups is a statement of the VRM and borrows nothing.
+
 Colliders do not depend on the body proxy. `collision_hulls` returns nothing when
 no mesh of a combined appearance is classified as body or face, but the VRM still
 states its colliders. Such a system has spring surfaces without `V2SCollision_Body`,
@@ -266,10 +296,10 @@ behaviour against the capsules.
 
 Known limits. The droop rule is per joint: an upstream joint also carries its
 children's scaled weight, so a chain can droop somewhat more than VRM at its
-root. FSMP's default triangle penetration of 1 unit still applies, so a patch
-pushed deeper than that into a capsule in one step gets no contact. Blender has
-no per-body gravity, so `physics_preview_blender.py` does not simulate
-gravity-factor.
+root. Only joint ends are tested, as in VRM, so a leg swung far can still pass
+between strands. A contact from deep inside a capsule has not been observed in
+game. Blender has no per-body gravity, so `physics_preview_blender.py` does not
+simulate gravity-factor.
 
 These surfaces are wider than the body, so they are `shared` internal: only the
 same skeleton's shapes can touch them. Other actors' cloth sees only the body proxy.

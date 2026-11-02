@@ -86,6 +86,42 @@ def spring_settings(document):
     return result
 
 
+def spring_tails(document, worlds):
+    """{node: glTF world point VRM collides with that joint's hitRadius}.
+
+    VRM 1 tests the next listed joint, so the last joint has no tail of its own. VRM 0 has
+    no list: UniVRM takes the first child, or 7 cm past a leaf along its parent's direction.
+    """
+    extension = document.get('extensions', {})
+    nodes = document.get('nodes', [])
+    result = {}
+    for spring in extension.get('VRMC_springBone', {}).get('springs', []):
+        joints = spring.get('joints', [])
+        for joint, tail in zip(joints, joints[1:]):
+            result.setdefault(f'VRMNode_{joint["node"]:05}', worlds[tail['node']][:3, 3])
+    parents = {child: index for index, node in enumerate(nodes) for child in node.get('children', [])}
+    seen = set()
+    for group in extension.get('VRM', {}).get('secondaryAnimation', {}).get('boneGroups', []):
+        stack = list(group.get('bones', []))
+        while stack:
+            index = stack.pop()
+            if index in seen:
+                continue
+            seen.add(index)
+            children = nodes[index].get('children', [])
+            stack.extend(children)
+            name = f'VRMNode_{index:05}'
+            if children:
+                result.setdefault(name, worlds[children[0]][:3, 3])
+            elif index in parents:
+                point = worlds[index][:3, 3]
+                delta = point - worlds[parents[index]][:3, 3]
+                length = np.linalg.norm(delta)
+                if length > 1e-6:
+                    result.setdefault(name, point + delta/length*.07)
+    return result
+
+
 def spring_colliders(document):
     """{group: [{node, head, tail, radius}]} in glTF node-local coordinates; tail None is a sphere.
 
@@ -158,9 +194,14 @@ def blender_point(point):
     return np.array([x, -z, y])
 
 
+def posed_point(transform, orient, point):
+    """A glTF world point in the custom pose of the bone that carries it."""
+    pose = np.asarray(transform) @ np.asarray(orient)
+    return (pose[:3, :3] @ blender_point(point) + pose[:3, 3]).tolist()
+
+
 def posed_colliders(groups, worlds, node_parents, source_bones, transforms, orient, mapping, fallback):
     """Colliders in the custom pose, anchored to the NPC bone of their node or nearest skinned ancestor."""
-    orient = np.asarray(orient)
     result = []
     for group, colliders in sorted(groups.items()):
         for collider in colliders:
@@ -168,12 +209,10 @@ def posed_colliders(groups, worlds, node_parents, source_bones, transforms, orie
             while index is not None and f'VRMNode_{index:05}' not in source_bones:
                 index = node_parents.get(index)
             bone = fallback if index is None else f'VRMNode_{index:05}'
-            pose = np.asarray(transforms[bone]) @ orient
             world = worlds[collider['node']]
 
             def place(offset):
-                point = blender_point(world[:3, :3] @ np.asarray(offset) + world[:3, 3])
-                return (pose[:3, :3] @ point + pose[:3, 3]).tolist()
+                return posed_point(transforms[bone], orient, world[:3, :3] @ np.asarray(offset) + world[:3, 3])
 
             tail = collider['tail']
             result.append({'group': group, 'bone': mapping[bone], 'head': place(collider['head']),
