@@ -94,14 +94,14 @@ def collider_groups(colliders):
 
 
 def collider_depth(colliders):
-    """Triangle penetration making a group behave as the solid colliders VRM declares.
+    """Triangle penetration letting a group push out points that went inside it.
 
     FSMP ignores a point deeper behind a triangle than this, and the default 1 leaves a
-    hollow shell. It must reach the axis of the thickest capsule, yet stay short of the
-    far side of the thinnest one, whose triangles would otherwise pull outside points in.
+    hollow shell. It keeps only the deepest contact per bone pair, so a point must never be
+    deeper behind a far triangle than behind the one it entered through: the depth stops at
+    the radius of the thinnest surface, where the far side becomes the nearer one.
     """
-    radii = [c['radius'] for c in colliders]
-    return round(max(1., min(max(radii), 2*min(radii)-1)), 3)
+    return round(max(1., min(c['radius'] for c in colliders) - TRIANGLE_MARGIN), 3)
 
 
 def contact_collider_groups(bones, contacts, groups):
@@ -344,7 +344,8 @@ def protect_attachments(bones, samples, hulls, globals_, cloth_components):
     never source bone/mesh names. Extend only the fixed prefix of a chain:
     pinning a distal node below a simulated parent would still move its cuff.
     VRM also rotates the first joint of a spring, so a root off the arm stays
-    free when the VRM gives it colliders to keep it off the body.
+    free when it has colliders to keep it off the body, its spring's or borrowed ones.
+    A pinned fold carrying cloth down to the thighs would otherwise stay in the legs.
     """
     result = {n: dict(i) for n, i in bones.items()}
     protected = {}
@@ -367,7 +368,7 @@ def protect_attachments(bones, samples, hulls, globals_, cloth_components):
         if not set(info['components']) <= cloth_components:
             return
         if parent not in result:
-            if not (info.get('spring') or {}).get('groups') or arm_side(parent):
+            if not (contact_spring(info) or {}).get('groups') or arm_side(parent):
                 info['dynamic'] = False
                 protected[name] = 'garment attachment root'
             return
@@ -792,11 +793,10 @@ def build_physics(output):
                     used.add(parent)
                     parent = all_bones[parent]['parent']
             bones = {n: all_bones[n] for n in all_bones if n in used}
+            borrowed = borrowed_colliders(bones, [n for n, i in bones.items() if i['dynamic']], cloth_components)
+            bones = {n: {**i, **({'borrowed': borrowed[n]} if n in borrowed else {})} for n, i in bones.items()}
             bones, protected = protect_attachments(bones, weighted_points(nif, minimum_weight=.2),
                                                    hulls, globals_, cloth_components)
-            movers = [n for n, i in bones.items() if i['dynamic']]
-            for name, values in borrowed_colliders(bones, movers, cloth_components).items():
-                bones[name]['borrowed'] = values
             arm_contacts = arm_cloth_bones(bones, cloth_components, skin_co_influences(nif))
             for name, info in bones.items():
                 if not info['dynamic']:
@@ -1011,7 +1011,10 @@ def validate_physics(output):
                 raise ValueError('FSMP body collision proxy must be present and hidden')
             helpers = set(system.get('noncontact_helpers', []))
             contact_groups = system.get('contact_groups', {})
-            borrowed = borrowed_colliders(physics_bones, system['dynamic_bones'], cloth_components)
+            # Borrowing happens before attachments are pinned, over every mover of the plan.
+            planned = [n for n in [*system['dynamic_bones'], *system.get('protected_bones', {})]
+                       if physics_bones[n]['dynamic']]
+            borrowed = borrowed_colliders(physics_bones, planned, cloth_components)
             if borrowed != system.get('borrowed_colliders', borrowed):
                 raise ValueError('Borrowed colliders do not match the movers of this system')
             contact_bones = {**physics_bones, **{n: {**physics_bones[n], 'borrowed': v} for n, v in borrowed.items()}}

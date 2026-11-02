@@ -332,9 +332,11 @@ class PhysicsTests(unittest.TestCase):
         bones = {'skirt': {**cloth, 'spring': spring},
                  'loop': {**cloth, 'spring': {**spring, 'groups': []}},
                  'apron': cloth,
+                 'fold': {**cloth, 'borrowed': {'hit_radius': .025, 'groups': [3]}},
                  'sleeve': {**cloth, 'parent': 'NPC L UpperArm [LUar]', 'spring': spring}}
         result, protected = protect_attachments(bones, {}, {}, {}, {'cloth'})
         self.assertTrue(result['skirt']['dynamic'])
+        self.assertTrue(result['fold']['dynamic'])  # borrowed colliders keep a fold off the legs
         self.assertEqual(set(protected), {'loop', 'apron', 'sleeve'})
 
     def test_cloth_outside_every_spring_borrows_the_nearest_chains_colliders(self):
@@ -815,12 +817,12 @@ class SpringContactTests(unittest.TestCase):
         self.assertEqual(point([1.5, 0., 0.], 3), [3.4, 0, 0])  # inside the body's clearance
         self.assertEqual(point([9., 0., 0.]), [3.4, 0, 0])  # VRM tests nothing for this spring
 
-    def test_collider_depth_reaches_the_axis_and_stops_before_the_far_side(self):
+    def test_collider_depth_stops_at_the_thinnest_surface_radius(self):
         def group(*radii):
             return [{'radius': r} for r in radii]
-        self.assertEqual(collider_depth(group(6.3)), 6.3)
-        self.assertEqual(collider_depth(group(8.4, 5.6)), 8.4)
-        self.assertEqual(collider_depth(group(8.4, 6.65, 4.55)), 8.1)  # 2*4.55-1 keeps the foot's far side out
+        self.assertEqual(collider_depth(group(6.3)), 5.95)
+        self.assertEqual(collider_depth(group(8.4, 5.6)), 5.25)
+        self.assertEqual(collider_depth(group(8.4, 6.65, 4.55)), 4.2)  # the foot's surface radius
         self.assertEqual(collider_depth(group(.2)), 1.)  # never thinner than FSMP's default
 
     def test_xml_tags_and_margins_for_collider_groups(self):
@@ -930,7 +932,7 @@ class SpringBuildTests(unittest.TestCase):
                              {PROXY, SPRING_PROXY+'3', SPRING_PROXY+'5'})
             self.assertEqual({s.attrib['name'] for s in root.findall('per-vertex-shape')},
                              {SECONDARY_PROXY+'_S1', SECONDARY_PROXY+'_S2'})
-            self.assertEqual(root.findtext(f"per-triangle-shape[@name='{SPRING_PROXY}3']/penetration"), '6.5')
+            self.assertEqual(root.findtext(f"per-triangle-shape[@name='{SPRING_PROXY}3']/penetration"), '6.15')
             self.assertEqual(root.findtext(f"per-triangle-shape[@name='{SPRING_PROXY}5']/penetration"), '1.0')
             self.assertIsNone(root.find(f"per-triangle-shape[@name='{PROXY}']/penetration"))
             self.assertEqual(root.findtext("bone[@name='V2SP_c']/gravity-factor"), '1')
@@ -985,7 +987,7 @@ class SpringBuildTests(unittest.TestCase):
         tampered(change_xml('_g5</no-collide-with-tag>', '_g9</no-collide-with-tag>'), 'must not collide with each other')
         tampered(change_xml('<gravity-factor>1</gravity-factor>', '<gravity-factor>2</gravity-factor>'),
                  'gravity-factor outside')
-        tampered(change_xml('<penetration>6.5</penetration>', '<penetration>1</penetration>'), 'depth differs')
+        tampered(change_xml('<penetration>6.15</penetration>', '<penetration>1</penetration>'), 'depth differs')
 
     def test_contacts_at_vrm_tails_and_borrowed_colliders_build_and_validate(self):
         spring = self.springs()['V2SP_root']
