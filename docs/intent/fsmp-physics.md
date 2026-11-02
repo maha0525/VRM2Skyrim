@@ -260,20 +260,36 @@ The tail is posed by the joint's own bone, and a mover with collider groups take
 it as its contact point unless it starts inside the body's clearance, in which case
 the surface sample stays. `tail_contacts` in `physics.json` lists those on their tail.
 
-Depth rule. Each spring surface sets `penetration` to `collider_depth`: the largest
-radius of the group, at most twice the smallest minus 1, at least FSMP's default 1.
-Below the largest radius part of a thick capsule stays hollow; from twice the smallest
-radius, the far triangles of a thin capsule would catch points beyond it.
+Depth rule. Each spring surface sets `penetration` to `collider_depth`: the surface
+radius of the thinnest collider of the group (radius minus the triangle margin), at
+least FSMP's default 1. FSMP keeps only the deepest contact per bone pair, so a point
+deeper behind a far triangle than behind the near one is pushed through. Past the
+thinnest surface radius the far side of that capsule becomes the deeper one; the part
+of a thicker capsule beyond this depth stays hollow.
 
-Root rule. A garment root off the arm stays free when its spring has collider
-groups, so hem chains, ribbon tails and the like swing from the first joint as in
-VRM. A root with no such spring and a root on the arm stay pinned: those are the
-sleeve and hanging-cloth cases the attachment fixes above were written for.
+Root rule. A garment root off the arm stays free when it has collider groups, its
+spring's or borrowed ones, so hem chains, ribbon tails and folds swing from the first
+joint. A root with no groups and a root on the arm stay pinned: those are the sleeve
+and hanging-cloth cases the attachment fixes above were written for.
 
 Borrow rule. A cloth mover in no spring takes `hit_radius` and groups from the
 nearest mover of its component whose spring has groups, recorded in
 `borrowed_colliders`. It borrows contact only: its joints stay on the preset.
 A spring that the VRM gave no groups is a statement of the VRM and borrows nothing.
+Borrowing is decided before attachments are pinned, over the plan's movers, so the
+validator reads the system's movers together with its pinned roots.
+
+The second game check of DeepSeek-chan still showed the legs through the skirt.
+`build/physics/skirt_probe.cpp` in the old checkout replays her two-handed idle and
+attacks with FSMP's contact selection and counts the visible cloth vertices inside the
+real leg hulls (2 in the rest pose). With the four rules above as first written, the
+average was 610, above the 521 with contact off: the depth then reached twice the
+foot radius and pushed points through, and the two front fold roots carrying cloth
+to the thighs (`DS_skirtFold_L_Upper`/`R_Upper`, in no spring) stayed pinned, which
+held 369 of 375 of those vertices. With the depth and root rules above it is 322
+against 684 with contact off. Twelve contact points per bone instead of one gave
+343, so the count of points is not what limits it. Most of the rest is cloth of the
+fold roots close to their pivot at the pelvis.
 
 Colliders do not depend on the body proxy. `collision_hulls` returns nothing when
 no mesh of a combined appearance is classified as body or face, but the VRM still
@@ -297,8 +313,8 @@ behaviour against the capsules.
 Known limits. The droop rule is per joint: an upstream joint also carries its
 children's scaled weight, so a chain can droop somewhat more than VRM at its
 root. Only joint ends are tested, as in VRM, so a leg swung far can still pass
-between strands. A contact from deep inside a capsule has not been observed in
-game. Blender has no per-body gravity, so `physics_preview_blender.py` does not
+between strands. The replay is a reproduction of FSMP's contact rules on Bullet, not
+the game. Blender has no per-body gravity, so `physics_preview_blender.py` does not
 simulate gravity-factor.
 
 These surfaces are wider than the body, so they are `shared` internal: only the

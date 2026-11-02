@@ -1024,6 +1024,22 @@ class SpringBuildTests(unittest.TestCase):
             refused(lambda s: s['contact_points'].update(V2SP_a=[20., 0., 41.]), 'displaced from its VRM spring tail')
             refused(lambda s: s['borrowed_colliders'].pop('V2SP_b'), 'Borrowed colliders do not match')
 
+    def test_a_root_outside_every_spring_moves_when_it_borrows_colliders(self):
+        spring = self.springs()['V2SP_a']
+        for root_moves in (True, False):
+            with tempfile.TemporaryDirectory() as directory:
+                output = Path(directory)
+                self.fixture(output, {'V2SP_a': spring, 'V2SP_b': spring}, self.colliders())
+                report = json.loads((output/'skeleton.json').read_text(encoding='utf8'))
+                report['physics_bones']['V2SP_root']['dynamic'] = root_moves
+                (output/'skeleton.json').write_text(json.dumps(report), encoding='utf8')
+                build_physics(output)  # validated by build_physics itself
+                system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
+                # A planned mover borrows and stays free; a root the plan keeps still is pinned and borrows nothing.
+                self.assertEqual('V2SP_root' in system['dynamic_bones'], root_moves)
+                self.assertEqual('V2SP_root' in system['borrowed_colliders'], root_moves)
+                self.assertEqual('V2SP_root' in system['protected_bones'], not root_moves)
+
     def test_colliders_work_without_body_hulls(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
