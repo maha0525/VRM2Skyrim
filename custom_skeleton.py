@@ -88,11 +88,22 @@ def set_children(file, node, ids):
     nifly.setNodeChildren(file._handle, node.id, buf, len(ids))
 
 
-def create_skeleton(source, destination, positions, extra_bones=None):
+def animation_translations(skeleton_hkx):
+    """Bone-local translations HKX writes at runtime, from its reference pose."""
+    sys.path.insert(0, str(ROOT / "dependencies/io_scene_nifly/hkx"))
+    from anim_skyrim import load_skyrim_skeleton
+    skeleton = load_skyrim_skeleton(str(skeleton_hkx))
+    return {name: pose.translation[:3] for name, pose in zip(skeleton.bones, skeleton.reference_pose, strict=True)}
+
+
+def create_skeleton(source, destination, positions, extra_bones=None, animated_translations=None):
     """positions is a dict of original bone names to desired global joint positions.
 
     The unanimated proxy transform P satisfies P @ V = C, where V is the
-    unchanged vanilla local transform and C is the desired custom local pose.
+    bone-local transform animation writes and C is the desired custom local
+    pose. animated_translations holds the HKX reference translations: V takes
+    them wherever they differ from the source NIF, as they do for the female
+    fingers, and the node stores them so P @ V = C also holds in the file.
     Native file editing retains the skeleton's collision and extra-data blocks.
     """
     destination = Path(destination)
@@ -102,6 +113,10 @@ def create_skeleton(source, destination, positions, extra_bones=None):
         parents = {name: node.parent.name if node.parent else None for name, node in original.items()}
         local = {name: matrix(node.transform) for name, node in original.items()}
         original_children = {name: children(file, node) for name, node in original.items()}
+        animated = {name: value.copy() for name, value in local.items()}
+        for name, translation in (animated_translations or {}).items():
+            if name in animated and np.linalg.norm(animated[name][:3, 3] - translation) > 1e-3:
+                animated[name][:3, 3] = translation
         desired = {}
 
         def compute(name):
@@ -123,7 +138,13 @@ def create_skeleton(source, destination, positions, extra_bones=None):
             if parent is None:
                 continue
             custom_local = np.linalg.inv(desired[parent]) @ desired[name]
-            offset = custom_local @ np.linalg.inv(local[name])
+            if not np.array_equal(animated[name], local[name]):
+                updated = node.transform.copy()
+                for axis in range(3):
+                    updated.translation[axis] = animated[name][axis, 3]
+                node.transform = updated
+                node.write_properties()
+            offset = custom_local @ np.linalg.inv(animated[name])
             if np.allclose(offset, np.eye(4), atol=1e-5):
                 continue
             proxy_name = "VRM2SkyrimOffset_" + name
@@ -162,8 +183,8 @@ def create_skeleton(source, destination, positions, extra_bones=None):
             error = float(np.max(np.abs(observed - expected)))
             if error > 5e-4:
                 errors[name] = error
-            # Animation must still find its own original bone-local transform.
-            if not np.allclose(matrix(file.nodes[name].transform), local[name], atol=1e-5):
+            # Animation must still find the bone-local transform it writes.
+            if not np.allclose(matrix(file.nodes[name].transform), animated[name], atol=1e-5):
                 raise ValueError(f"Animation-controlled transform changed: {name}")
         node_count = len(file.nodes)
         for name, info in extra_bones.items():

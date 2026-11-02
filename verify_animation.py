@@ -29,7 +29,12 @@ def verify_animation(output):
         for a, b, ca, cb in (("UpperArm", "Forearm", "Uar", "Lar"), ("Forearm", "Hand", "Lar", "Hnd"),
                              ("Thigh", "Calf", "Thg", "Clf"), ("Calf", "Foot", "Clf", "ft ")):
             start, end = f"NPC {side} {a} [{side}{ca}]", f"NPC {side} {b} [{side}{cb}]"
-            segments[start] = (end, np.linalg.norm(original[end] - original[start]))
+            segments[start, end] = np.linalg.norm(original[end] - original[start])
+        for finger in range(5):
+            joints = [f"NPC {side} Hand [{side}Hnd]"] + [f"NPC {side} Finger{finger}{j} [{side}F{finger}{j}]"
+                                                         for j in range(3)]
+            for start, end in zip(joints, joints[1:]):
+                segments[start, end] = np.linalg.norm(original[end] - original[start])
     reports = {}
     for kind, filename in (("walk", f"animations/{settings.sex}/mt_walkforward.hkx"),
                            ("attack", "animations/1hm_attackright.hkx")):
@@ -43,7 +48,8 @@ def verify_animation(output):
                 if name not in local:
                     continue
                 value = np.eye(4)
-                value[:3, :3] = Rotation.from_quat(track.rotations[frame]).as_matrix() @ np.diag(track.scales[frame])
+                # A hand's node scale is uniform, so it cannot stretch a finger against its own width.
+                value[:3, :3] = Rotation.from_quat(track.rotations[frame]).as_matrix() * np.cbrt(np.linalg.det(local[name][:3, :3]))
                 value[:3, 3] = track.translations[frame]
                 animated[name] = value
             globals_ = {}
@@ -54,7 +60,7 @@ def verify_animation(output):
                     globals_[name] = (global_transform(parent) if parent else np.eye(4)) @ animated[name]
                 return globals_[name]
 
-            for start, (end, expected) in segments.items():
+            for (start, end), expected in segments.items():
                 actual = np.linalg.norm(global_transform(end)[:3, 3] - global_transform(start)[:3, 3])
                 errors.append(abs(actual / expected - 1))
         error = float(max(errors))
