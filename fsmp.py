@@ -29,7 +29,6 @@ MASS = .1
 INERTIA_MULTIPLIER = 5.  # Increase geometric inertia without increasing spring torque
 CONTACT_MARGIN = .4
 TRIANGLE_MARGIN = .35
-SPRING_REFERENCE_STIFFNESS = 2.  # VRM stiffness that keeps the preset spring; not validated in game
 
 
 def contact_patches(base, names):
@@ -140,16 +139,23 @@ def rest_spring(radius, stiffness=1., mass=MASS):
     return geometric_inertia * omega**2
 
 
-def spring_gravity_factor(spring, stiffness, radius, mass, length):
-    """gravity-factor giving the static droop of VRM, tan(a) ~= (gravity/stiffness)*sin(tilt).
+def spring_joint(spring, stiffness, radius, mass, length):
+    """(spring multiplier for joint_profile, gravity-factor) with VRM's droop at the preset's speed.
 
-    stiffness is the value given to joint_profile. The factor scales with its spring,
-    so the droop does not depend on the user's stiffness preset.
+    VRM's steady direction gives tan(a) ~= (gravity/stiffness)*sin(tilt), so the joint spring
+    and the scaled gravity torque keep that ratio. Their sum stays the preset spring plus full
+    gravity, the restoring torque of a mover without VRM settings: lowering gravity alone left
+    hair swinging about three times slower. Stiffness 0 hangs straight down under full gravity.
     """
+    gravity_torque = mass * GRAVITY * length
     if spring['stiffness'] <= 0 or length <= .001:
-        return 1.
+        return (0. if spring['stiffness'] <= 0 else stiffness), 1.
     ratio = spring['gravity'] / spring['stiffness']
-    return float(np.clip(rest_spring(radius, stiffness, mass) * ratio / (mass * GRAVITY * length), 0, 1))
+    unit = rest_spring(radius, 1., mass)
+    joint = (rest_spring(radius, stiffness, mass) + gravity_torque) / (1 + ratio)
+    if joint * ratio > gravity_torque:  # gravity-factor cannot exceed 1; keep the droop instead
+        joint = gravity_torque / ratio
+    return joint / unit, float(joint * ratio / gravity_torque)
 
 
 def joint_profile(com, radius, global_matrix, stiffness=1., mass=MASS, gravity_factor=1.):
@@ -438,8 +444,7 @@ def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag
         scalar(bone, 'angularDamping', .95)
         spring = info.get('spring')
         if spring:
-            joint_stiffness = stiffness * spring['stiffness'] / SPRING_REFERENCE_STIFFNESS
-            factor = spring_gravity_factor(spring, joint_stiffness, radius, mass, float(np.linalg.norm(com)))
+            joint_stiffness, factor = spring_joint(spring, stiffness, radius, mass, float(np.linalg.norm(com)))
             scalar(bone, 'gravity-factor', f'{factor:.9f}')
             profiles[name] = joint_profile(com, radius, info['matrix'], joint_stiffness, mass, factor)
         else:

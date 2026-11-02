@@ -14,7 +14,7 @@ from fsmp import (ARM_PROXY, SECONDARY_PROXY, SPRING_PROXY, TRIANGLE_MARGIN, GRA
                   add_arm_collision_proxy, add_rigid_collision_proxy, borrowed_colliders, contact_patches,
                   add_collision_proxy, arm_cloth_bones, attach, build_physics, capsule_mesh, collider_depth,
                   contact_classes, contact_collider_groups, collider_groups, is_contact_patch, joint_profile, read_system,
-                  local_points, protect_attachments, skin_samples, spring_gravity_factor, spring_mesh, system_xml,
+                  local_points, protect_attachments, rest_spring, skin_samples, spring_joint, spring_mesh, system_xml,
                   contact_surface_points, validate_physics)
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
 from physics_rig import (blender_point, inertia_sphere_radius, inherited_spring, node_local_matrix, posed_point,
@@ -662,6 +662,7 @@ class SpringJointTests(unittest.TestCase):
                 for preset in (.3, 1., 3.):
                     _, k, factor = self.joint(tilt, spring, preset)
                     self.assertLess(factor, 1)
+                    self.assertGreater(factor, 0)
                     low, high = 0., tilt  # k*a = factor*m*G*L*sin(tilt-a)
                     for _ in range(60):
                         droop = (low+high)/2
@@ -671,19 +672,22 @@ class SpringJointTests(unittest.TestCase):
                             high = droop
                     self.assertAlmostEqual(droop, vrm, delta=max(.002, vrm*.01))
 
-    def test_preset_changes_the_spring_but_not_the_droop(self):
+    def test_preset_changes_the_speed_but_not_the_droop(self):
         spring = {'stiffness': 8, 'gravity': .12, 'hit_radius': 0, 'groups': []}
         (_, soft, soft_factor), (_, firm, firm_factor) = [self.joint(1., spring, s) for s in (.3, 3.)]
-        self.assertAlmostEqual(firm/soft, 10.)
-        self.assertAlmostEqual(firm_factor/soft_factor, 10., places=3)
+        self.assertGreater(firm, soft)
+        self.assertGreater(firm_factor, soft_factor)
+        self.assertAlmostEqual((firm/firm_factor)/(soft/soft_factor), 1., places=5)
 
-    def test_reference_stiffness_keeps_the_preset_spring(self):
-        spring = {'stiffness': 2, 'gravity': 0, 'hit_radius': 0, 'groups': []}
-        root, k, factor = self.joint(1., spring)
-        bare = root.find("bone[@name='cloth']")
-        radius = float(bare.findtext('shape/radius'))
-        np.testing.assert_allclose(k, joint_profile([10, 0, 0], radius, np.eye(4), 1.)[1][0])
-        self.assertEqual(factor, 0)
+    def test_vrm_movers_restore_as_fast_as_movers_without_settings(self):
+        # Their restoring torque is the preset spring plus full gravity, split by VRM's ratio.
+        for stiffness, gravity in ((8, .12), (2.2, .01), (2, 0)):
+            spring = {'stiffness': stiffness, 'gravity': gravity, 'hit_radius': 0, 'groups': []}
+            for preset in (.3, 1., 3.):
+                root, k, factor = self.joint(1., spring, preset)
+                radius = float(root.findtext("bone[@name='cloth']/shape/radius"))
+                plain = rest_spring(radius, preset, MASS) + MASS*GRAVITY*10
+                self.assertAlmostEqual((k + factor*MASS*GRAVITY*10)/plain, 1., places=5)
 
     def test_damping_uses_the_scaled_gravity(self):
         spring = {'stiffness': 8, 'gravity': .12, 'hit_radius': 0, 'groups': []}
@@ -691,17 +695,20 @@ class SpringJointTests(unittest.TestCase):
         com = [10*math.sin(1.), 0, -10*math.cos(1.)]
         radius = float(root.findtext("bone[@name='cloth']/shape/radius"))
         joint = root.find('generic-constraint/angularDamping').attrib
-        expected = joint_profile(com, radius, np.eye(4), 4., MASS, factor)[2]
+        multiplier, _ = spring_joint(spring, 1., radius, MASS, 10.)
+        expected = joint_profile(com, radius, np.eye(4), multiplier, MASS, factor)[2]
         np.testing.assert_allclose([float(joint[a]) for a in 'xyz'], expected, atol=1e-6)
-        self.assertLess(expected[0], joint_profile(com, radius, np.eye(4), 4., MASS)[2][0])
+        self.assertLess(expected[0], joint_profile(com, radius, np.eye(4), multiplier, MASS)[2][0])
 
     def test_factor_limits(self):
-        def factor(stiffness, gravity, length=10.):
-            return spring_gravity_factor({'stiffness': stiffness, 'gravity': gravity}, 1., 10., MASS, length)
-        self.assertEqual(factor(0, .5), 1)  # no restoring term: VRM hangs straight down
-        self.assertEqual(factor(8, 0), 0)
-        self.assertEqual(factor(.001, 100), 1)
-        self.assertEqual(factor(8, .1, 0.), 1)  # no lever, no gravity torque to scale
+        def joint(stiffness, gravity, length=10.):
+            return spring_joint({'stiffness': stiffness, 'gravity': gravity}, 1., 10., MASS, length)
+        self.assertEqual(joint(0, .5), (0., 1.))  # no restoring term: VRM hangs straight down
+        self.assertEqual(joint(8, 0)[1], 0)
+        multiplier, factor = joint(.001, 100)  # gravity capped at 1, the spring keeps the droop
+        self.assertEqual(factor, 1.)
+        self.assertAlmostEqual(multiplier*rest_spring(10., 1., MASS), MASS*GRAVITY*10/1e5)
+        self.assertEqual(joint(8, .1, 0.), (1., 1.))  # no lever, no gravity torque to scale
 
     def test_movers_without_spring_keep_the_exact_xml(self):
         # Hash of this input's XML from system_xml before VRM spring settings existed.

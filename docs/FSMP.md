@@ -67,8 +67,8 @@ VRM ファイルを読み込むと、含まれている Spring Bone が自動検
   - 静止姿勢で接触点がコライダーの内側に入っているボーンは、そのグループへの当たり判定を外します（閉じたメッシュの内側から始まると内向きに押されるため）。`V2SCollision_Body` への当たり判定は残り、外したグループは `physics.json` の `rest_inside_colliders` に記録されます。
 - **VRM の揺れ設定の反映**
   - VRM に Spring Bone があるボーンは、VRM の `stiffness`・`gravityPower` から復元力と `gravity-factor` を計算します。VRM に設定があるボーンの子孫で設定が無いものは、最も近い祖先の設定を使います。
-  - 復元力は「揺れの硬さ」の値 × `stiffness` ÷ 2 です。この 2 は `SPRING_REFERENCE_STIFFNESS` という調整値で、ゲーム内ではまだ確かめていません。
-  - `gravity-factor` は、静止時の垂れ下がりが VRM と同じになるように計算します。復元力に比例して決まるので、「揺れの硬さ」を変えても垂れ下がりは変わらず、揺れの大きさだけが変わります。
+  - 復元力と `gravity-factor` の比は、静止時の垂れ下がりが VRM と同じになるように決めます。両者の合計は、Spring Bone の無いボーンと同じ（「揺れの硬さ」の復元力 + 重力そのもの）なので、揺れて戻る速さは設定の無いボーンと変わりません。
+  - 「揺れの硬さ」を変えると揺れる速さが変わり、垂れ下がりは変わりません。
   - Spring Bone の無いボーン（Spring Bone を持たない VRM を含む）は、`gravity-factor` 1 と標準の復元力のままです。
   - `dragForce`・`gravityDir`・`center` は使いません。
 - **部品ごとのボーン数**

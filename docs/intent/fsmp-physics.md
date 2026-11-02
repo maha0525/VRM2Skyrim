@@ -222,13 +222,20 @@ gains empty fields per system. Each bone keeps one contact point.
 
 Joint rule. VRM's steady direction is proportional to
 `stiffness*rest_dir + gravityPower*gravity_dir`, so its droop satisfies
-`tan(a) ~= (gravity/stiffness)*sin(tilt)`. The joint spring is `joint_profile`
-called with `physics_stiffness * stiffness / SPRING_REFERENCE_STIFFNESS`.
-gravity-factor is `k*(gravity/stiffness)/(mass*GRAVITY*length)` clamped to 0..1,
-with k that spring and length the norm of the com; stiffness 0 gives 1. Since k
-scales the factor, the droop does not depend on the stiffness preset, which now
-changes only how far a mover swings. Damping uses the scaled gravity. Bones
-without their own settings inherit from the nearest ancestor that has them.
+`tan(a) ~= (gravity/stiffness)*sin(tilt)`. `spring_joint` keeps the joint spring k
+and the scaled gravity torque in that ratio, k*(gravity/stiffness) =
+gravity-factor*mass*GRAVITY*length, with length the norm of the com. Their sum is
+the restoring torque of a mover without VRM settings, the preset's `rest_spring`
+plus full gravity, so a VRM mover swings back as fast as before. When the factor
+would exceed 1 it stays 1 and k keeps the droop. Stiffness 0 hangs straight down
+under full gravity with no spring. The preset changes the speed, not the droop.
+Damping uses the scaled gravity. Bones without their own settings inherit from
+the nearest ancestor that has them.
+
+The first form scaled the preset spring by VRM stiffness / 2 and derived the
+factor from it. Hair with gravityPower 0.01 got a factor near 0.0001 and lost the
+gravity part of its restoring torque: on DeepSeek-chan the median swing period went
+from 0.94 s (no VRM settings, like Erys's 0.89 s) to 3.03 s.
 
 Contact rule. FSMP collides only mesh shapes, so each collider group used by a
 mover in a system becomes a hidden closed per-triangle mesh
@@ -306,9 +313,9 @@ head spheres also protrude less from the skin once negated. VRM 1.0 colliders
 were checked against DeepSeek's finished skeleton: thigh, calf and foot capsules
 start at their bones.
 
-Not used: dragForce, gravityDir and center. `SPRING_REFERENCE_STIFFNESS` (2.0) is
-a tuning value and has not been validated in game; neither has the skirt's
-behaviour against the capsules.
+Not used: dragForce, gravityDir and center, nor VRM stiffness as a speed: it sets
+only the droop with gravityPower. The skirt's behaviour against the capsules has
+not been validated in game.
 
 Known limits. The droop rule is per joint: an upstream joint also carries its
 children's scaled weight, so a chain can droop somewhat more than VRM at its
