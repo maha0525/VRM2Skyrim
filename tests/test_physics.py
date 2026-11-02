@@ -770,7 +770,7 @@ class SpringBuildTests(unittest.TestCase):
     PELVIS, THIGH = 'NPC Pelvis [Pelv]', 'NPC L Thigh [LThg]'
     TEXTURE = 'textures/spring/flat_n.dds'
 
-    def fixture(self, output, springs, colliders):
+    def fixture(self, output, springs, colliders, body_role='body'):
         settings = FollowerSettings(physics_enabled=True, mod_id='SpringTest')
         settings.save(output/'settings.json')
         mesh_dir = output/'mod/meshes'/settings.asset_dir
@@ -808,7 +808,7 @@ class SpringBuildTests(unittest.TestCase):
                   for n, (p, _) in chain.items()}
         for name, value in (('skeleton.json', {'physics_bones': report}),
                             ('appearance.json', {'components': [{'id': 'appearance', 'role': 'body', 'file': 'avatar.nif'}]}),
-                            ('source.json', {'parts': [{'node': 1, 'name': 'Body', 'suggested_role': 'body'}]}),
+                            ('source.json', {'parts': [{'node': 1, 'name': 'Body', 'suggested_role': body_role}]}),
                             ('spring-colliders.json', colliders)):
             (output/name).write_text(json.dumps(value), encoding='utf8')
         return mesh_dir, settings
@@ -901,6 +901,46 @@ class SpringBuildTests(unittest.TestCase):
         tampered(change_xml('_g5</no-collide-with-tag>', '_g9</no-collide-with-tag>'), 'must not collide with each other')
         tampered(change_xml('<gravity-factor>1</gravity-factor>', '<gravity-factor>2</gravity-factor>'),
                  'gravity-factor outside')
+
+    def test_colliders_work_without_body_hulls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            mesh_dir, _ = self.fixture(output, self.springs(), self.colliders(), body_role='fixed')
+            build_physics(output)
+            system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
+            self.assertEqual(system['body_hulls'], 0)
+            self.assertEqual(system['contact_groups'], {'V2SP_a': [3, 5], 'V2SP_b': [5]})
+            self.assertEqual(system['secondary_contact_bones'], ['V2SP_a', 'V2SP_b'])
+            root = read_system(output/'mod'/system['xml'])
+            self.assertEqual({s.attrib['name'] for s in root.findall('per-triangle-shape')},
+                             {SPRING_PROXY+'3', SPRING_PROXY+'5'})
+            patches = {s.attrib['name']: {e.text.rsplit('_', 1)[1] for e in s.findall('can-collide-with-tag')}
+                       for s in root.findall('per-vertex-shape')}
+            self.assertEqual(patches, {SECONDARY_PROXY+'_S1': {'g3', 'g5'}, SECONDARY_PROXY+'_S2': {'g5'}})
+            with NifFile(str(mesh_dir/'avatar.nif')) as nif:
+                self.assertEqual({s.name for s in nif.shapes if s.name.startswith('V2SCollision_')},
+                                 {SPRING_PROXY+'3', SPRING_PROXY+'5', SECONDARY_PROXY+'_S1', SECONDARY_PROXY+'_S2'})
+            build_physics(output)  # idempotent on rebuild, and validated by build_physics itself
+
+            path = output/'mod'/system['xml']
+            text = path.read_text(encoding='utf8')
+            path.write_text(text.replace('_g5</can-collide-with-tag>', '_g9</can-collide-with-tag>', 1), encoding='utf8')
+            with self.assertRaisesRegex(ValueError, 'margin or tags differ'):
+                validate_physics(output)
+
+    def test_no_body_hulls_and_no_contact_adds_no_collision_shape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            swallowing = {'group': 3, 'bone': self.THIGH, 'head': [20, 0, 45], 'tail': None, 'radius': 40.}
+            mesh_dir, _ = self.fixture(output, self.springs(), [swallowing], body_role='fixed')
+            build_physics(output)
+            system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
+            self.assertEqual((system['contact_groups'], system['secondary_contact_bones']), ({}, []))
+            self.assertEqual(set(system['rest_inside_colliders']), {'V2SP_a', 'V2SP_b'})
+            root = read_system(output/'mod'/system['xml'])
+            self.assertEqual(root.findall('per-triangle-shape')+root.findall('per-vertex-shape'), [])
+            with NifFile(str(mesh_dir/'avatar.nif')) as nif:
+                self.assertFalse(any(s.name.startswith('V2SCollision_') for s in nif.shapes))
 
     def test_spring_without_colliders_scales_the_joint_and_adds_no_shape(self):
         spring = {'stiffness': 8., 'gravity': .12, 'hit_radius': 0., 'groups': []}

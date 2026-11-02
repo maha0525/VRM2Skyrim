@@ -245,6 +245,12 @@ group, because a sphere starting inside a closed mesh gets an inward contact. It
 keeps the body tag. `rest_inside_colliders` in `physics.json` records this, and
 `validate_physics` re-derives it from `spring-colliders.json`.
 
+Colliders do not depend on the body proxy. `collision_hulls` returns nothing when
+no mesh of a combined appearance is classified as body or face, but the VRM still
+states its colliders. Such a system has spring surfaces without `V2SCollision_Body`,
+and only movers that touch a collider get a patch, with no body tag. A bone whose
+every group starts inside its colliders then has no contact at all.
+
 VRM 0 offsets are not glTF node-local. On AnimalKawaii_01_Kuro.vrm x keeps its
 sign: left arm offsets run towards -x and right arm offsets towards +x, the
 child directions of those arm nodes. z must be negated: forearm offsets have
