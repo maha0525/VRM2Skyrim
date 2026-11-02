@@ -227,6 +227,13 @@ def main():
     if math.hypot(across.x, across.y) < 1e-7:
         raise ValueError("Cannot determine avatar facing from the shoulder joints")
     orient = Matrix.Rotation(math.pi - math.atan2(across.y, across.x), 4, "Z") @ Matrix.Scale(70.0, 4)
+    # Animations turn and bend the body around the actor's origin. A VRM placed off its
+    # origin (DeepSeek-chan's root sits 27.5 cm forward) would swing in wide arcs, so the
+    # hips are moved over the origin; their height and every relative position stay.
+    hips_point = orient @ joint_world[hips_name]
+    orient = Matrix.Translation((-hips_point.x, -hips_point.y, 0.)) @ orient
+    LOG.info("Avatar placement: hips moved %.2f units horizontally onto the origin",
+             math.hypot(hips_point.x, hips_point.y))
     source_positions = {bone.name: orient @ rig.matrix_world @ bone.head_local
                         for rig in source_rigs for bone in rig.data.bones}
     bone_names = {key: document["nodes"][index]["name"] for key, index in humanoid.items()}
