@@ -18,6 +18,7 @@ from physics_rig import read_system
 from physics_frames import shift_frames, translation
 from pyn.pynifly import NiStringExtraData
 from pyn.structs import TransformBuf
+from skirt_plate import LINK_SLACK, PLATE, leg_groups, segment_distance, skirt_plate
 
 LINK = 'HDT Skinned Mesh Physics Object'
 PROXY = 'V2SCollision_Body'
@@ -29,6 +30,7 @@ MASS = .1
 INERTIA_MULTIPLIER = 5.  # Increase geometric inertia without increasing spring torque
 CONTACT_MARGIN = .4
 TRIANGLE_MARGIN = .35
+BODY_DEPTH = 1.  # FSMP's penetration for a per-triangle shape that names none
 
 
 def contact_patches(base, names):
@@ -53,19 +55,47 @@ def contact_margin(info):
     return max(CONTACT_MARGIN, round(spring['hit_radius']*70, 3)) if spring else CONTACT_MARGIN
 
 
-def contact_classes(base, owners, bones, contact_groups=None, helpers=()):
-    """Partition patch owners by (margin, collider groups): [(patch base, margin, groups, owners)].
+def contact_classes(base, owners, bones, contact_groups=None, helpers=(), body_inside=()):
+    """Partition patch owners by (margin, collider groups, body): [(patch base, margin, groups, owners)].
 
     Only the default class keeps the plain base name. A helper never touches anything.
+    Owners in body_inside skip the body surface, so they form classes of their own.
     """
     classes = {}
     for name in sorted(owners):
-        key = ((CONTACT_MARGIN, ()) if name in helpers else
-               (contact_margin(bones[name]), tuple((contact_groups or {}).get(name, ()))))
+        key = ((CONTACT_MARGIN, (), True) if name in helpers else
+               (contact_margin(bones[name]), tuple((contact_groups or {}).get(name, ())), name not in body_inside))
         classes.setdefault(key, []).append(name)
-    default = classes.pop((CONTACT_MARGIN, ()), None)
+    default = classes.pop((CONTACT_MARGIN, (), True), None)
     result = [(base, CONTACT_MARGIN, (), default)] if default else []
-    return result + [(f'{base}_S{index}', *key, classes[key]) for index, key in enumerate(sorted(classes), 1)]
+    return result + [(f'{base}_S{index}', *key[:2], classes[key]) for index, key in enumerate(sorted(classes), 1)]
+
+
+def starts_inside(point, reach, vertices, triangles, depth=BODY_DEPTH):
+    """Whether FSMP finds a contact for a point at rest: over a triangle, from reach in front to depth behind."""
+    vertices, triangles = np.asarray(vertices), np.asarray(triangles)
+    a, b, c = vertices[triangles[:, 0]], vertices[triangles[:, 1]], vertices[triangles[:, 2]]
+    raw = np.cross(b-a, c-a)
+    area = np.linalg.norm(raw, axis=1)
+    ok = area > 1e-7
+    distance = np.einsum('ij,ij->i', np.asarray(point)-a, raw)/np.where(ok, area, 1)
+    for i in np.where(ok & (distance < reach) & (distance >= -depth))[0]:
+        p = point - raw[i]/area[i]*distance[i]
+        shares = [np.linalg.norm(np.cross(b[i]-p, c[i]-p)), np.linalg.norm(np.cross(c[i]-p, a[i]-p)),
+                  np.linalg.norm(np.cross(a[i]-p, b[i]-p))]
+        if sum(shares) <= area[i] + 1e-5:
+            return True
+    return False
+
+
+def rest_inside_body(bones, contacts, vertices, triangles):
+    """Movers whose contact point the body surface already pushes at rest.
+
+    Such a point is pushed out from the first frame and its cloth never settles back
+    (the top of Lucia's skirt front starts 2-4 units inside her hips); it skips the body.
+    """
+    return sorted(name for name, point in contacts.items()
+                  if starts_inside(point, contact_margin(bones[name]) + TRIANGLE_MARGIN, vertices, triangles))
 
 
 def system_tag(settings, nif_path):
@@ -74,15 +104,6 @@ def system_tag(settings, nif_path):
 
 def spring_tag(collision_tag, group):
     return f'{collision_tag}_g{group}'
-
-
-def segment_distance(point, head, tail):
-    point, head = np.asarray(point), np.asarray(head)
-    if tail is None:
-        return float(np.linalg.norm(point-head))
-    axis = np.asarray(tail)-head
-    position = np.clip(np.dot(point-head, axis) / max(np.dot(axis, axis), 1e-12), 0, 1)
-    return float(np.linalg.norm(point-head-position*axis))
 
 
 def collider_groups(colliders):
@@ -408,7 +429,8 @@ def protect_attachments(bones, samples, hulls, globals_, cloth_components):
 
 def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag='V2SBody',
                sample_weights=None, arm_contacts=(), secondary_contacts=(), noncontact_helpers=(),
-               contact_groups=None, collider_bones=(), collider_depths=None):
+               contact_groups=None, collider_bones=(), collider_depths=None, body_inside=(), plate=None):
+    """plate: {'legs': leg collider groups, 'depth': penetration, 'links': [(a, b, point in b's frame)]}."""
     root = ET.Element('system', xmlns='FSMP-Validator')
     scalar(ET.SubElement(root, 'bone-default'), 'mass', 0)
     colliders = sorted((set(hulls) | set(collider_bones)) - set(bones))
@@ -475,6 +497,20 @@ def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag
         # Retain Bullet's timestep safety caps when chains share moving bodies.
         scalar(joint, 'angularStiffnessLimited', 'true')
         scalar(joint, 'springDampingLimited', 'true')
+    for a, b, origin in (plate or {}).get('links', ()):
+        # Neighbouring skirt chains keep their spacing at each height; rotation stays free.
+        joint = ET.SubElement(root, 'generic-constraint', bodyA=a, bodyB=b)
+        transform(joint, 'frameInB', origin)
+        ET.SubElement(joint.find('frameInB'), 'basis', x='0', y='0', z='0', w='1')
+        vector(joint, 'linearLowerLimit', [-LINK_SLACK]*3)
+        vector(joint, 'linearUpperLimit', [LINK_SLACK]*3)
+        # A lower limit above the upper one leaves the axis free in Bullet's 6DOF spring2.
+        vector(joint, 'angularLowerLimit', [1]*3)
+        vector(joint, 'angularUpperLimit', [-1]*3)
+        vector(joint, 'angularStiffness', [0]*3)
+        vector(joint, 'angularDamping', [0]*3)
+        scalar(joint, 'enableLinearSprings', 'false')
+        scalar(joint, 'enableAngularSprings', 'false')
     used_groups = sorted({g for groups in (contact_groups or {}).values() for g in groups})
     if hulls or used_groups:
         body_tags = [collision_tag] if hulls else []
@@ -495,6 +531,15 @@ def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag
             scalar(shape, 'shared', 'internal')
             for tag in generated:
                 scalar(shape, 'no-collide-with-tag', tag)
+        if plate:
+            # Only the leg surfaces push it; the body and the other generated shapes never see it.
+            shape = ET.SubElement(root, 'per-triangle-shape', name=PLATE)
+            scalar(shape, 'margin', TRIANGLE_MARGIN)
+            scalar(shape, 'penetration', plate['depth'])
+            scalar(shape, 'tag', f'{collision_tag}_plate')
+            scalar(shape, 'shared', 'internal')
+            for group in plate['legs']:
+                scalar(shape, 'can-collide-with-tag', spring_tag(collision_tag, group))
         for name in mesh_names if hulls else ():
             shape = ET.SubElement(root, 'per-vertex-shape', name=name)
             scalar(shape, 'margin', CONTACT_MARGIN)
@@ -505,11 +550,12 @@ def system_xml(bones, samples, hulls, stiffness=1., mesh_names=(), collision_tag
                 ET.SubElement(shape, 'weight-threshold', bone=bone).text = '1'
         for base, owners in ((ARM_PROXY, arm_contacts), (SECONDARY_PROXY, secondary_contacts)):
             for patch_base, margin, groups, members in contact_classes(base, owners, bones, contact_groups,
-                                                                       noncontact_helpers):
+                                                                       noncontact_helpers, body_inside):
+                touches_body = body_tags if members[0] not in body_inside else []
                 for patch, chunk in contact_patches(patch_base, members):
                     shape = ET.SubElement(root, 'per-vertex-shape', name=patch)
                     scalar(shape, 'margin', margin)
-                    for tag in body_tags + [spring_tag(collision_tag, g) for g in groups]:
+                    for tag in touches_body + [spring_tag(collision_tag, g) for g in groups]:
                         scalar(shape, 'can-collide-with-tag', tag)
                     for name in sorted(set(noncontact_helpers) & set(chunk)):
                         ET.SubElement(shape, 'weight-threshold', bone=name).text = '1'
@@ -625,17 +671,13 @@ def add_arm_collision_proxy(nif, skeleton, names, positions=None):
     add_rigid_collision_proxy(nif, skeleton, names, ARM_PROXY, positions)
 
 
-def add_collision_proxy(nif, skeleton, hulls):
-    existing = [s for s in nif.shapes if s.name == PROXY]
-    if existing:
-        if len(existing) != 1:
-            raise ValueError('Duplicate FSMP body proxies')
-        return
+def body_mesh(hulls, globals_):
+    """World vertices, outward triangles and rigid weights of the body proxy at rest."""
     vertices, triangles, weights = [], [], {}
     for name, local in hulls.items():
         values = np.asarray(local)
         hull = ConvexHull(values)
-        value = matrix(skeleton.nodes[name].global_transform)
+        value = globals_[name]
         points = values @ value[:3, :3].T + value[:3, 3]
         start = len(vertices)
         vertices.extend(map(tuple, points.tolist()))
@@ -646,7 +688,27 @@ def add_collision_proxy(nif, skeleton, hulls):
                 tri = tri[[0, 2, 1]]
             triangles.append(tuple(int(i)+start for i in tri))
         weights[name] = [(start+i, 1.) for i in range(len(points))]
-    add_skinned_proxy(nif, skeleton, PROXY, vertices, triangles, weights)
+    return vertices, triangles, weights
+
+
+def add_collision_proxy(nif, skeleton, hulls):
+    existing = [s for s in nif.shapes if s.name == PROXY]
+    if existing:
+        if len(existing) != 1:
+            raise ValueError('Duplicate FSMP body proxies')
+        return
+    globals_ = {name: matrix(skeleton.nodes[name].global_transform) for name in hulls}
+    add_skinned_proxy(nif, skeleton, PROXY, *body_mesh(hulls, globals_))
+
+
+def add_plate_proxy(nif, skeleton, plate):
+    existing = [s for s in nif.shapes if s.name == PLATE]
+    if existing:
+        if (len(existing) != 1 or set(existing[0].bone_names) != set(plate['weights']) or
+                len(existing[0].verts) != len(plate['vertices'])):
+            raise ValueError('Skirt plate changed; regenerate appearance')
+        return
+    add_skinned_proxy(nif, skeleton, PLATE, plate['vertices'], plate['triangles'], plate['weights'])
 
 
 def capsule_mesh(head, tail, radius, segments=12, rings=3):
@@ -766,6 +828,24 @@ def load_collider_groups(output):
     return collider_groups(json.loads(path.read_text(encoding='utf8'))) if path.is_file() else {}
 
 
+def skirt_plate_for(bones, samples, sample_weights, groups, used_groups, targets):
+    """(plate geometry, its XML values) for the skirt chains of one system, or (None, None).
+
+    The plate only meets the leg collider surfaces this system builds anyway.
+    """
+    legs = [g for g in leg_groups(groups) if g in used_groups]
+    touching = [n for n, i in bones.items() if i['dynamic'] and
+                set((contact_spring(i) or {}).get('groups') or ()) & set(leg_groups(groups))]
+    if not legs or not touching:
+        return None, None
+    colliders = [c for g in legs for c in groups[g]]
+    plate = skirt_plate(bones, touching, samples, sample_weights, colliders, TRIANGLE_MARGIN)
+    if not plate:
+        return None, None
+    links = [(a, b, (np.linalg.inv(targets[b]) @ np.r_[point, 1])[:3]) for a, b, point in plate['links']]
+    return plate, {'legs': legs, 'depth': collider_depth(colliders), 'links': links}
+
+
 def build_physics(output):
     output = Path(output)
     settings = load_settings(output)
@@ -782,6 +862,11 @@ def build_physics(output):
     body_nodes = [p['node'] for p in source['parts'] if p['suggested_role'] == 'body' or
                   ('face' in p['name'].lower() and 'hair' not in p['name'].lower())]
     hulls = collision_hulls(mesh_dir, appearance, globals_, body_nodes)
+    body_surface = None
+    if hulls:
+        vertices, triangles, _ = body_mesh(hulls, globals_)
+        # As the NIF stores it, so validation reading the proxy back decides the same way.
+        body_surface = np.float32(vertices), triangles
     cloth_components = cloth_component_ids(appearance)
     paths = [mesh_dir / p['file'] for p in appearance['components']]
     paths += sorted(mesh_dir.glob('fixed_*.nif'))
@@ -833,10 +918,13 @@ def build_physics(output):
             noncontact_helpers = {n for n in bones if bones[n]['dynamic'] and n not in samples}
             mesh_names = []
             contact_groups, rest_inside = contact_collider_groups(bones, contacts, groups)
+            body_inside = rest_inside_body(bones, contacts, *body_surface) if hulls else []
             used_groups = sorted({g for values in contact_groups.values() for g in values})
-            if not hulls:  # Only VRM colliders remain to touch; a patch needs one of them.
-                arm_contacts = arm_contacts & set(contact_groups)
-                secondary_contacts = secondary_contacts & set(contact_groups)
+            # A patch needs a surface to touch: the body, unless it starts inside it, or a VRM collider.
+            reachable = set(contact_groups) | (set(bones) - set(body_inside) if hulls else set())
+            arm_contacts = arm_contacts & reachable
+            secondary_contacts = secondary_contacts & reachable
+            plate, plate_xml = skirt_plate_for(bones, samples, sample_weights, groups, used_groups, targets)
             if hulls or used_groups:
                 with NifFile(str(mesh_dir / 'skeleton.nif')) as skeleton:
                     if hulls:
@@ -845,13 +933,15 @@ def build_physics(output):
                         add_spring_proxy(nif, skeleton, group, groups[group])
                     for base, owners in ((ARM_PROXY, arm_contacts), (SECONDARY_PROXY, secondary_contacts)):
                         for patch_base, _, _, members in contact_classes(base, owners, bones, contact_groups,
-                                                                         noncontact_helpers):
+                                                                         noncontact_helpers, body_inside):
                             add_rigid_collision_proxy(nif, skeleton, members, patch_base, contacts)
+                    if plate:
+                        add_plate_proxy(nif, skeleton, plate)
             root = system_xml(bones, samples, hulls, settings.physics_stiffness,
                               mesh_names, system_tag(settings, path),
                               sample_weights, arm_contacts, secondary_contacts, noncontact_helpers,
                               contact_groups, {c['bone'] for g in used_groups for c in groups[g]},
-                              {g: collider_depth(groups[g]) for g in used_groups})
+                              {g: collider_depth(groups[g]) for g in used_groups}, body_inside, plate_xml)
             ET.indent(root)
             ET.ElementTree(root).write(xml_path, encoding='utf-8', xml_declaration=True)
             attach(nif, relative.replace('/', '\\'))
@@ -864,6 +954,11 @@ def build_physics(output):
                             'contact_points': contacts,
                             'contact_groups': contact_groups,
                             'rest_inside_colliders': rest_inside,
+                            'rest_inside_body': body_inside,
+                            'skirt_plate': plate and {
+                                'leg_groups': plate_xml['legs'], 'bones': sorted(plate['weights']),
+                                'triangles': len(plate['triangles']), 'left_out': plate['left_out'],
+                                'links': [[a, b] for a, b, _ in plate['links']], 'rings': plate['rings']},
                             'tail_contacts': sorted(n for n, p in contacts.items() if p == bones[n].get('spring_tail')),
                             'borrowed_colliders': {n: i['borrowed'] for n, i in bones.items() if 'borrowed' in i},
                             'body_hulls': len(hulls)})
@@ -882,6 +977,11 @@ def build_physics(output):
                          '%s contacts at their spring tail, %s movers borrow colliders',
                          path.name, len(used_groups), len(contact_groups), len(rest_inside),
                          len(systems[-1]['tail_contacts']), len(systems[-1]['borrowed_colliders']))
+            logging.info('FSMP %s: %s movers start inside the body and skip it; skirt plate %s',
+                         path.name, len(body_inside),
+                         f"{len(plate['triangles'])} triangles on {len(plate['weights'])} bones, "
+                         f"{plate['left_out']} touching a leg at rest left out, {len(plate['links'])} side links"
+                         if plate else 'none')
     if not systems:
         raise ValueError('FSMP enabled but no appearance NIF retained movable bone weights')
     result = {'enabled': True, 'systems': systems, 'profile': 'rigid_secondary_contacts_v6',
@@ -911,12 +1011,20 @@ def validate_spring_contacts(system, root, proxies, bones, groups, patch_classes
     used = sorted({g for values in kept.values() for g in values})
     body_tags = {tag} if system['body_hulls'] else set()
     generated = body_tags | {spring_tag(tag, g) for g in used}
-    surfaces = root.findall('per-triangle-shape')
+    shapes = {s.name: s for s in proxies}
+    if system['body_hulls']:
+        body = shapes[PROXY]
+        if rest_inside_body(bones, system.get('contact_points', {}), body.verts, body.tris) != \
+                system.get('rest_inside_body'):
+            raise ValueError('Movers starting inside the body do not match the rest contact points')
+    plate = system.get('skirt_plate')
+    surfaces = [s for s in root.findall('per-triangle-shape') if s.attrib['name'] != PLATE]
     if ({s.attrib['name'] for s in surfaces} !=
             ({PROXY} if system['body_hulls'] else set()) | {f'{SPRING_PROXY}{g}' for g in used}):
         raise ValueError('Spring collider shapes do not match the groups in use')
     if any(root.findtext(f"per-triangle-shape[@name='{SPRING_PROXY}{g}']/shared") != 'internal' for g in used):
         raise ValueError('Spring collider shapes must stay internal to their actor')
+    validate_skirt_plate(plate, root, shapes.get(PLATE), bones, set(system['dynamic_bones']), groups, used, tag)
     for surface in surfaces:
         if (float(surface.findtext('margin')) != TRIANGLE_MARGIN or
                 {e.text for e in surface.findall('no-collide-with-tag')} != generated):
@@ -929,12 +1037,11 @@ def validate_spring_contacts(system, root, proxies, bones, groups, patch_classes
         if not np.allclose(system['contact_points'][name], bones[name]['spring_tail'], atol=.001):
             raise ValueError('Tail contact is displaced from its VRM spring tail: '+name)
     for surface in root.findall('per-vertex-shape'):
-        margin, member_groups = patch_classes[surface.attrib['name']]
+        margin, member_groups, touches_body = patch_classes[surface.attrib['name']]
         if (float(surface.findtext('margin')) != margin or
                 {e.text for e in surface.findall('can-collide-with-tag')} !=
-                body_tags | {spring_tag(tag, g) for g in member_groups}):
+                (body_tags if touches_body else set()) | {spring_tag(tag, g) for g in member_groups}):
             raise ValueError('Contact patch margin or tags differ from its class: '+surface.attrib['name'])
-    shapes = {s.name: s for s in proxies}
     for group in used:
         name = f'{SPRING_PROXY}{group}'
         vertices, triangles, weights = spring_mesh(groups[group])
@@ -947,6 +1054,41 @@ def validate_spring_contacts(system, root, proxies, bones, groups, patch_classes
         if (set(shape.bone_weights) != set(weights) or
                 any(sorted(shape.bone_weights[b]) != pairs for b, pairs in weights.items())):
             raise ValueError('Spring collider vertices must have one rigid influence: '+name)
+
+
+def validate_skirt_plate(plate, root, shape, bones, dynamic, groups, used, tag):
+    """The plate meets only the leg surfaces in use, and each of its triangles has one dynamic owner."""
+    element = root.find(f"per-triangle-shape[@name='{PLATE}']")
+    if not plate:
+        if element is not None or shape is not None:
+            raise ValueError('Skirt plate present without a declared plate')
+        return
+    legs = plate['leg_groups']
+    if not legs or set(legs) - set(used) or set(legs) - set(leg_groups(groups)):
+        raise ValueError('Skirt plate must meet leg collider surfaces in use')
+    if (element is None or float(element.findtext('margin')) != TRIANGLE_MARGIN or
+            element.findtext('shared') != 'internal' or element.findtext('tag') != f'{tag}_plate' or
+            float(element.findtext('penetration')) != collider_depth([c for g in legs for c in groups[g]]) or
+            [e.text for e in element.findall('can-collide-with-tag')] != [spring_tag(tag, g) for g in legs] or
+            element.find('no-collide-with-tag') is not None):
+        raise ValueError('Skirt plate collision values differ from its leg colliders')
+    if shape is None or not shape.properties.flags & 1 or len(shape.tris) != plate['triangles']:
+        raise ValueError('Skirt plate must be present and hidden')
+    owner = {}
+    for name, pairs in shape.bone_weights.items():
+        if name not in dynamic or any(w != 1. for _, w in pairs):
+            raise ValueError('Skirt plate vertices must have one rigid dynamic owner: '+name)
+        owner.update((v, name) for v, _ in pairs)
+    # FSMP hands a triangle's contact to every bone of its vertices.
+    if len(owner) != len(shape.verts) or any(len({owner[v] for v in t}) != 1 for t in shape.tris):
+        raise ValueError('Skirt plate triangles must each belong to one bone')
+    if sorted(shape.bone_weights) != plate['bones']:
+        raise ValueError('Skirt plate owners differ from the report')
+    links = [(j.attrib['bodyA'], j.attrib['bodyB']) for j in root.findall('generic-constraint')
+             if j.attrib['bodyA'] in dynamic and
+             j.attrib['bodyA'] != bones[j.attrib['bodyB']]['parent']]
+    if links != [tuple(link) for link in plate['links']]:
+        raise ValueError('Skirt side links differ from the report')
 
 
 def validate_physics(output):
@@ -1024,10 +1166,12 @@ def validate_physics(output):
                 raise ValueError('Borrowed colliders do not match the movers of this system')
             contact_bones = {**physics_bones, **{n: {**physics_bones[n], 'borrowed': v} for n, v in borrowed.items()}}
 
+            body_inside = system.get('rest_inside_body', [])
+
             def classified_patches(base, owners):
-                return [(patch, chunk, margin, tuple(member_groups))
+                return [(patch, chunk, margin, tuple(member_groups), members[0] not in body_inside)
                         for patch_base, margin, member_groups, members in contact_classes(
-                            base, owners, contact_bones, contact_groups, helpers)
+                            base, owners, contact_bones, contact_groups, helpers, body_inside)
                         for patch, chunk in contact_patches(patch_base, members)]
 
             classified = {ARM_PROXY: classified_patches(ARM_PROXY, system.get('arm_contact_bones', [])),
@@ -1035,7 +1179,7 @@ def validate_physics(output):
             arm_patches, secondary_patches = [[p[:2] for p in classified[b]] for b in (ARM_PROXY, SECONDARY_PROXY)]
             patch_owners = dict(arm_patches + secondary_patches)
             spring_names = {f'{SPRING_PROXY}{g}' for values in contact_groups.values() for g in values}
-            if {s.name for s in proxies} - {PROXY} - set(patch_owners) - spring_names:
+            if {s.name for s in proxies} - {PROXY, PLATE} - set(patch_owners) - spring_names:
                 raise ValueError('Unexpected generated collision shape in NIF')
 
             def patches_match(base, patches):
@@ -1056,7 +1200,8 @@ def validate_physics(output):
             if report.get('profile') == 'rigid_secondary_contacts_v6' and (system['body_hulls'] or groups):
                 arm = set(system['arm_contact_bones'])
                 secondary = set(system['secondary_contact_bones'])
-                contact_owners = set(system['dynamic_bones']) if system['body_hulls'] else set(contact_groups)
+                contact_owners = set(contact_groups) | (set(system['dynamic_bones']) - set(body_inside)
+                                                        if system['body_hulls'] else set())
                 if arm & secondary or arm | secondary != contact_owners:
                     raise ValueError('Secondary contact ownership must partition all movable bones')
                 if secondary and not patches_match(SECONDARY_PROXY, secondary_patches):
