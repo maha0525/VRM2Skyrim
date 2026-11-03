@@ -331,3 +331,60 @@ Converted through the whole pipeline: DeepSeek-chan (VRM 1, fixed appearance),
 Lucia (VRM 1, removable wardrobe) and AnimalKawaii_01_Kuro (VRM 0). The VRM 0
 offset rule matches UniGLTF's z reversal and the limb axes; its front/back
 placement on the torso was not checked in game.
+
+## Skirt plate and rest contacts (2026-11-03)
+
+The outcome: a thigh stays inside a VRM skirt through crouching and attacks,
+with no setting per model. Checked in game on DeepSeek-chan and Lucia with ZIPs
+made by diagnostic scripts before this was ported; the converter now builds the
+same shapes.
+
+Joint ends alone do not hold a skirt: a thigh passes between two chains. Three
+causes stacked on Lucia, and each fix is general.
+
+Pin rule. A mesh outside physics pins the bones it is weighted to, because it
+cannot follow them. A body mesh is the exception: the export hands its weights
+on cloth bones to their humanoid ancestor, so it never followed them. Lucia's
+body carries 0.002-0.004 of three skirt front chains under the skirt, which
+pinned those chains at thigh height.
+
+Body rest rule. A contact point that FSMP already pushes out of the body
+surface at rest skips the body tag, as a point inside a VRM collider skips that
+group. FSMP counts a point from its margin plus the triangle margin in front of
+a triangle down to the penetration behind it (1 by default for the body). The
+top of Lucia's skirt front starts 2-4 units inside her hip hull, was pushed out
+35 degrees from the first frame and, through the side links, made the whole front
+bulge. `rest_inside_body` in `physics.json` records these movers; one with no
+collider group left has no contact patch.
+
+Plate rule. Skirt chains are the movers whose VRM groups (their own or
+borrowed) include a group with a collider on a thigh or calf. Chains under the
+same torso bone form one ring, ordered by angle around the actor's origin, which
+the hips stand over. Every chain is sampled at the ring's common heights (the
+median joint heights of its longest chains), and each band between two heights
+belongs to the bone carrying the lower point. That bone carries a hidden strip
+from its chain to 55% of the way to each neighbour: FSMP hands a triangle's
+contact to every bone of its vertices, and the first plate, whose triangles
+spanned two chains and two heights, pulled hip bones with knee contacts and made
+the hem jump. Plate points sit 0.5 inside the real cloth, not on the bones,
+because Lucia's front chains curl between her legs at knee height while her
+cloth hangs in front. A strip grazing a leg at rest moves outward until it
+clears it. Neighbouring chains get plate only in bands where the ring's cloth
+reaches halfway between them, so a slit or an open cloak front stays open. The
+plate `V2SCollision_SkirtPlate` is a per-triangle shape that only the used leg
+groups' tags may touch, with their `collider_depth`, internal to the actor.
+
+Link rule. Neighbouring chains are tied at each height of their joined bands by a
+`generic-constraint` at the midpoint whose point may move 2 units along each
+axis, rotation free. 4 units let the knees through; angle limits did not help.
+
+Charakuru 1.1.1 (2026-11-02) solves the same problem from the leg side: a large
+sphere per skirt chain on the thigh, placed from the bones. It fails where bones
+do not follow the cloth, which its own guide states. A VRM made with it brings
+those 45 cm spheres here as coarse closed meshes; not yet seen on a real model.
+
+Known limits. The replay (`build/physics/plate_probe.cpp`) varies run to run more
+than versions differ; the game decides. In the replay a strong attack lunge still
+shows Lucia's legs. Kuro has thigh colliders but no spring that uses them, so she gets
+no plate; two of her hair bones start inside the head hull and skip the body,
+keeping the VRM's head and neck colliders.
