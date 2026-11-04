@@ -19,7 +19,7 @@ from gear_head_runtime import validate_head_models
 from head_visibility import validate_head_visibility
 from equipment_runtime import runtime_records, vmad, script_name, pex_strings
 from nif_materials import DOUBLE_SIDED, validate_alpha_order
-from nif_limits import SHAPE_BONE_CAPACITY
+from nif_limits import SHAPE_BONE_CAPACITY, SHAPE_BONE_LIMIT
 from dds import validate_dds
 from clothing_validation import validate_clothing_skin
 from plugin_validation import validate_private_records
@@ -65,9 +65,13 @@ def validate(output, skeleton=None, game_data=None):
             if policies:
                 validate_alpha_order(nif, policies)
             for shape in nif.shapes:
-                if len(shape.bone_names) > SHAPE_BONE_CAPACITY:
+                if shape.name.startswith('V2SCollision_'):  # never rendered
+                    if len(shape.bone_names) > SHAPE_BONE_CAPACITY:
+                        raise ValueError(f'{part["file"]}/{shape.name} has {len(shape.bone_names)} bones; '
+                                         f'a shape addresses at most {SHAPE_BONE_CAPACITY}')
+                elif len(shape.bone_names) > SHAPE_BONE_LIMIT:
                     raise ValueError(f'{part["file"]}/{shape.name} has {len(shape.bone_names)} bones; '
-                                     f'a shape addresses at most {SHAPE_BONE_CAPACITY}')
+                                     f'the game crashes drawing shapes over {SHAPE_BONE_LIMIT}')
                 if (part['file'], shape.name) in outlines:
                     continue  # Owner, topology, skin and marker were verified by validate_toon.
                 if settings.physics_enabled and shape.name.startswith('V2SCollision_'):
