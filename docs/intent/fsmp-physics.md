@@ -379,15 +379,6 @@ degrees apart. A slit or an open cloak front has neither and stays open. The
 plate `V2SCollision_SkirtPlate` is a per-triangle shape that only the used leg
 groups' tags may touch, with their `collider_depth`, internal to the actor.
 
-Lift rule. A contact point starting inside a leg collider it may touch is not
-dropped from that collider, as other colliders are: it moves straight out of the
-collider it is deepest in until it clears every leg collider of its groups by its
-contact margin plus 0.05, and keeps them. Dropping left a third of Air's skirt bones
-with no thigh to push them. `lifted_contacts` in `physics.json` keeps each lifted
-point's rest position; validation lifts those again and compares. In the replay,
-garment vertices inside the thigh colliders fell by a fifth to a third on Air,
-DeepSeek-chan and Lucia, while crouching and attacking.
-
 Link rule. Neighbouring chains are tied at each height of their joined bands by a
 `generic-constraint` at the midpoint whose point may move 2 units along each
 axis, rotation free. 4 units let the knees through; angle limits did not help.

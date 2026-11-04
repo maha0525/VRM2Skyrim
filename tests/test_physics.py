@@ -15,7 +15,7 @@ from fsmp import (ARM_PROXY, SECONDARY_PROXY, SPRING_PROXY, TRIANGLE_MARGIN, GRA
                   add_collision_proxy, arm_cloth_bones, attach, build_physics, capsule_mesh, collider_depth,
                   contact_classes, contact_collider_groups, collider_groups, is_contact_patch, joint_profile, read_system,
                   local_points, protect_attachments, rest_spring, skin_samples, spring_joint, spring_mesh, system_xml,
-                  body_mesh, contact_surface_points, lift_off_legs, rest_inside_body, starts_inside, validate_physics)
+                  body_mesh, contact_surface_points, rest_inside_body, starts_inside, validate_physics)
 from skirt_plate import CLOTH_GAP, LINK_SLACK, PLATE, leg_groups, segment_distance, skirt_plate
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
 from physics_rig import (blender_point, inertia_sphere_radius, inherited_spring, node_local_matrix, posed_point,
@@ -920,8 +920,7 @@ class SpringBuildTests(unittest.TestCase):
         return {n: spring for n in ('V2SP_root', 'V2SP_a', 'V2SP_b')}
 
     def colliders(self):
-        # Group 3 is not on a leg: a rest point inside it drops it rather than being lifted off.
-        return [{'group': 3, 'bone': self.PELVIS, 'head': [20, 0, 28], 'tail': None, 'radius': 6.5},
+        return [{'group': 3, 'bone': self.THIGH, 'head': [20, 0, 28], 'tail': None, 'radius': 6.5},
                 {'group': 5, 'bone': self.THIGH, 'head': [30, 0, 30], 'tail': [30, 0, 50], 'radius': 2.},
                 {'group': 5, 'bone': self.PELVIS, 'head': [10, 0, 60], 'tail': None, 'radius': 1.}]
 
@@ -1079,7 +1078,7 @@ class SpringBuildTests(unittest.TestCase):
     def test_no_body_hulls_and_no_contact_adds_no_collision_shape(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
-            swallowing = {'group': 3, 'bone': self.PELVIS, 'head': [20, 0, 45], 'tail': None, 'radius': 40.}
+            swallowing = {'group': 3, 'bone': self.THIGH, 'head': [20, 0, 45], 'tail': None, 'radius': 40.}
             mesh_dir, _ = self.fixture(output, self.springs(), [swallowing], body_role='fixed')
             build_physics(output)
             system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
@@ -1229,20 +1228,6 @@ class SkirtPlateTests(unittest.TestCase):
         self.assertEqual(slit['rings'][0]['joined'], 2*(self.CHAINS-1))
         self.assertNotIn({'c0', 'c1'}, {frozenset((a.split('_')[1], b.split('_')[1])) for a, b, _ in slit['links']})
 
-    def test_a_contact_starting_inside_a_thigh_moves_just_outside_and_keeps_it(self):
-        legs = collider_groups(self.legs() + [{'group': 5, 'bone': 'NPC Spine', 'head': [0, 0, 90], 'tail': None,
-                                               'radius': 1.}])
-        spring = {'hit_radius': .025, 'groups': [3, 5]}
-        bones = {'hem': {'spring': spring}, 'clear': {'spring': spring}, 'plain': {}}
-        contacts = {'hem': [7., 1., 40.], 'clear': [15., 0., 40.], 'plain': [6., 0., 40.]}
-        lifted = lift_off_legs(bones, contacts, legs)
-        self.assertEqual(lifted, {'hem': [7., 1., 40.]})  # plain has no leg group; clear is outside
-        moved = np.asarray(contacts['hem'])
-        self.assertAlmostEqual(np.linalg.norm(moved[:2]-[5, 0]), 5+1.75+.05, delta=.01)  # straight out
-        self.assertAlmostEqual(moved[2], 40.)
-        kept, inside = contact_collider_groups(bones, contacts, legs)
-        self.assertEqual((kept['hem'], inside.get('hem')), ([3, 5], None))  # keeps the thigh
-
     def test_no_ring_without_three_chains(self):
         bones, samples = self.ring(slit=False)
         weights = {n: [1.]*len(v) for n, v in samples.items()}
@@ -1296,13 +1281,13 @@ class SkirtPlateTests(unittest.TestCase):
         (output/'mod'/self.TEXTURE).write_bytes(b'')
         bones, samples = self.ring()
         # Two short chains whose cloth starts .5 inside the body box: one only meets the body, one also a VRM collider.
-        for side, groups in ((1, [6]), (-1, [5])):
+        for side, groups in ((1, []), (-1, [5])):
             name = f'V2SP_in_{0 if side > 0 else 1}'
             bones[name] = {'name': name, 'parent': self.PELVIS, 'dynamic': True, 'components': ['appearance_cloth'],
-                           'matrix': translation([0, 5.5*side, 50]).tolist(),
-                           # in_0 starts inside its only VRM collider (group 6), so it meets nothing else.
-                           'spring': {'stiffness': 1., 'gravity': 0., 'hit_radius': .025, 'groups': groups}}
-            samples[name] = [[x, 5.5*side, z] for x in (-1, 0, 1) for z in (48, 46)]
+                           'matrix': translation([5.5*side, 0, 50]).tolist(),
+                           **({'spring': {'stiffness': 1., 'gravity': 0., 'hit_radius': .025, 'groups': groups}}
+                              if groups else {})}
+            samples[name] = [[5.5*side, y, z] for y in (-1, 0, 1) for z in (48, 46)]
         poses = {self.PELVIS: np.eye(4), self.THIGH: translation([5, 0, 55]),
                  **{n: np.asarray(i['matrix']) for n, i in bones.items()}}
         parents = {self.THIGH: self.PELVIS, **{n: i['parent'] for n, i in bones.items()}}
@@ -1327,8 +1312,7 @@ class SkirtPlateTests(unittest.TestCase):
                     SpringBuildTests.skinned(self, nif, 'VRMNode_00002', cloth,
                                              [(i, i+1, i+2) for i in range(0, len(cloth)-2, 3)], weights, poses, parents)
                 nif.save()
-        colliders = self.legs() + [{'group': 5, 'bone': self.PELVIS, 'head': [0, 0, 90], 'tail': None, 'radius': 1.},
-                                   {'group': 6, 'bone': self.PELVIS, 'head': [0, 5.5, 47], 'tail': None, 'radius': 2.}]
+        colliders = self.legs() + [{'group': 5, 'bone': self.PELVIS, 'head': [0, 0, 90], 'tail': None, 'radius': 1.}]
         for name, value in (('skeleton.json', {'physics_bones': bones}),
                             ('appearance.json', {'components': [{'id': 'appearance', 'role': 'body', 'file': 'avatar.nif'}]}),
                             ('source.json', {'parts': [{'node': 1, 'name': 'Body', 'suggested_role': 'body'}]}),
