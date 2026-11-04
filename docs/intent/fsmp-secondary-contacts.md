@@ -64,13 +64,16 @@ In the written files no vertex was weighted to bone 256 or later: those
 vertices followed earlier bones instead. The visible hair would have deformed
 with the wrong bones; only the contact patch check stopped the conversion.
 
-Split every exported shape to at most `SHAPE_BONE_LIMIT` (100) bones, within
-the largest shape already seen working in game (108). `partition_shape` cuts
+Split every exported shape to at most `SHAPE_BONE_LIMIT` (60) bones. The first
+limit was 100, but Skyrim SE crashed while drawing Erystelis' 100-bone hair
+shape (2026-11-05, a memory copy overrun in the skinned depth pass); the same
+hair split into shapes of 60 or fewer bones drew without a crash. `partition_shape` cuts
 visible meshes by faces and keeps only the bones each part is weighted to.
 Contact patches split into `V2SCollision_ArmCloth` / `V2SCollision_Secondary`
 plus numbered shapes (`_001`, ...), each declared in the XML with its own
-helper exclusions. Validation refuses any shape over 256 bones, so a NIF with
-remapped weights is never packaged.
+helper exclusions. Validation refuses a rendered shape over 60 bones and a
+collision shape over 256, so a NIF that crashes the renderer or has remapped
+weights is never packaged.
 
 Not yet verified in game: whether FSMP stays responsive with about 590
 movers in one system (Aifi's 251-bone systems were noticeably heavy when

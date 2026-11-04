@@ -3,6 +3,7 @@
 # A skinned vertex stores its bone indices as bytes, so one shape addresses at most 256
 # bones; a written shape with more maps the rest onto earlier bones.
 SHAPE_BONE_CAPACITY = 256
-# Exports split shapes below the capacity, within the largest shape already seen
-# working in game (108 bones).
-SHAPE_BONE_LIMIT = 100
+# Exports split rendered shapes to at most this many bones. Skyrim SE crashed while
+# drawing a 100-bone hair shape (Erystelis, 2026-11-05: memcpy overrun in the skinned
+# depth pass); the same hair split into shapes of 60 or fewer bones drew without a crash.
+SHAPE_BONE_LIMIT = 60
