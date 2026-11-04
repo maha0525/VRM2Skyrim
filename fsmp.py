@@ -31,6 +31,7 @@ INERTIA_MULTIPLIER = 5.  # Increase geometric inertia without increasing spring 
 CONTACT_MARGIN = .4
 TRIANGLE_MARGIN = .35
 BODY_DEPTH = 1.  # FSMP's penetration for a per-triangle shape that names none
+LIFT_CLEARANCE = .05
 
 
 def contact_patches(base, names):
@@ -69,6 +70,42 @@ def contact_classes(base, owners, bones, contact_groups=None, helpers=(), body_i
     default = classes.pop((CONTACT_MARGIN, (), True), None)
     result = [(base, CONTACT_MARGIN, (), default)] if default else []
     return result + [(f'{base}_S{index}', *key[:2], classes[key]) for index, key in enumerate(sorted(classes), 1)]
+
+
+def lift_off_legs(bones, contacts, groups):
+    """Move contact points that start inside a leg collider they may touch to just outside it.
+
+    Such a point would otherwise drop that collider (it would be pushed from the first frame),
+    and the thigh would pass through its cloth: a third of Air's skirt bones lost their thigh
+    this way. The point moves straight out of the collider it is deepest in until it clears every
+    leg collider of its groups by its contact margin, and keeps them. Changes contacts in place;
+    returns {mover: its point before lifting}.
+    """
+    legs = set(leg_groups(groups))
+    lifted = {}
+    for name, point in contacts.items():
+        mine = [c for g in (contact_spring(bones[name]) or {}).get('groups', ()) if g in legs
+                for c in groups.get(g, ())]
+        clear = contact_margin(bones[name]) + LIFT_CLEARANCE
+        moved = np.asarray(point, dtype=float)
+        for _ in range(100):
+            depth, collider = max(((c['radius'] + clear - segment_distance(moved, c['head'], c['tail']), c)
+                                   for c in mine), key=lambda x: x[0], default=(0, None))
+            if depth <= 0:
+                break
+            head = np.asarray(collider['head'], dtype=float)
+            axis = (np.asarray(collider['tail'], dtype=float) if collider['tail'] is not None else head) - head
+            closest = head + np.clip(np.dot(moved-head, axis)/max(np.dot(axis, axis), 1e-12), 0, 1)*axis
+            out = moved - closest
+            if np.linalg.norm(out) < 1e-6:  # on the axis: out sideways, away from the actor's axis
+                out = np.array([closest[0], closest[1], 0.])
+            moved = closest + out/np.linalg.norm(out)*(collider['radius'] + clear + 1e-3)
+        else:
+            continue  # wedged between colliders: keep the point and let it drop them
+        if mine and not np.allclose(moved, point):
+            lifted[name] = list(point)
+            contacts[name] = moved.tolist()
+    return lifted
 
 
 def starts_inside(point, reach, vertices, triangles, depth=BODY_DEPTH):
@@ -935,6 +972,7 @@ def build_physics(output):
             secondary_contacts = {n for n in bones if bones[n]['dynamic']} - arm_contacts
             noncontact_helpers = {n for n in bones if bones[n]['dynamic'] and n not in samples}
             mesh_names = []
+            lifted = lift_off_legs(bones, contacts, groups)
             contact_groups, rest_inside = contact_collider_groups(bones, contacts, groups)
             body_inside = rest_inside_body(bones, contacts, *body_surface) if hulls else []
             used_groups = sorted({g for values in contact_groups.values() for g in values})
@@ -974,6 +1012,7 @@ def build_physics(output):
                             'contact_groups': contact_groups,
                             'rest_inside_colliders': rest_inside,
                             'rest_inside_body': body_inside,
+                            'lifted_contacts': lifted,
                             'skirt_plate': plate and {
                                 'leg_groups': plate_xml['legs'], 'bones': sorted(plate['weights']),
                                 'triangles': len(plate['triangles']), 'left_out': plate['left_out'],
@@ -1024,6 +1063,11 @@ def build_physics(output):
 
 def validate_spring_contacts(system, root, proxies, bones, groups, patch_classes, tag):
     """Re-derive collider contacts from the rest pose; compare them with the XML and NIF."""
+    lifted = system.get('lifted_contacts', {})
+    again = {**system.get('contact_points', {}), **lifted}
+    if lift_off_legs(bones, again, groups) != lifted or any(
+            not np.allclose(again[n], p, atol=.001) for n, p in system.get('contact_points', {}).items()):
+        raise ValueError('Contact points lifted off the legs do not match their rest points')
     kept, inside = contact_collider_groups(bones, system.get('contact_points', {}), groups)
     if kept != system.get('contact_groups', {}) or inside != system.get('rest_inside_colliders', {}):
         raise ValueError('Collider contact groups do not match the rest contact points')
@@ -1234,7 +1278,12 @@ def validate_physics(output):
                 if set(points) != set(system['dynamic_bones']) - helpers:
                     raise ValueError('Every weighted secondary bone needs a declared contact surface point')
                 tail_contacts = set(system.get('tail_contacts', []))
+                lifted = system.get('lifted_contacts', {})
                 for name, point in points.items():
+                    if name in lifted:  # validate_spring_contacts re-derives the lift from its rest point
+                        point = lifted[name]
+                        if np.allclose(point, contact_bones[name].get('spring_tail', [np.inf]*3), atol=.001):
+                            continue
                     if name in arm and np.linalg.norm(globals_[name][:3, 3]-point) < .001:
                         continue  # Preserve established sleeve contacts clear of the rest body.
                     if name in tail_contacts:
