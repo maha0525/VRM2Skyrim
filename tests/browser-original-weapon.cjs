@@ -70,7 +70,9 @@ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42
   // A missing GLB blocks STEP 03 with a message instead of a server round trip.
   await page.locator('#next').click();
   assert.match(await page.locator('#error').textContent(),/オリジナル武器のGLBを選んでください/);
-  await uploadGlb('crescent-staff.glb');
+  // Dropping the GLB on its zone uploads it, as dropping a VRM does.
+  const dropped=await page.evaluateHandle(()=>{const d=new DataTransfer();d.items.add(new File(['glTF fixture'],'crescent-staff.glb',{type:'model/gltf-binary'}));return d;});
+  await page.locator('#weapon-glb-drop').dispatchEvent('drop',{dataTransfer:dropped});
   await page.waitForFunction(()=>document.querySelector('#weapon-glb-status').textContent.includes('19,999'));
   assert.match(await page.locator('#weapon-glb-status').textContent(),/頂点25,540.*約9\.7倍/);
   assert.equal(await value('weapon-name'),'crescent-staff');

@@ -341,6 +341,14 @@ input[type="checkbox"] {
   display: block;
 }
 
+.dropzone.compact {
+  padding: 16px 20px;
+}
+
+.dropzone.compact strong {
+  margin-top: 0;
+}
+
 .dropzone strong {
   font-size: 16px;
   margin-top: 10px;
