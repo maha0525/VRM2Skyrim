@@ -1219,6 +1219,17 @@ class SkirtPlateTests(unittest.TestCase):
         bones = {'near': {}, 'far': {'spring': {'hit_radius': .025, 'groups': []}}}
         self.assertEqual(rest_inside_body(bones, {'near': [5., 0, 0], 'far': [5., 0, 0]}, cube, triangles), ['far'])
 
+    def test_body_rest_contact_on_a_large_hip_triangle_agrees_in_any_precision(self):
+        # Air's hip proxy triangle (232 units across) and a skirt contact .9 behind it; single
+        # precision once called it outside while validation, reading doubles back, called it inside.
+        triangle = [[7.893758773803711, 8.995084762573242, 66.25556945800781],
+                    [-0.14905144274234772, -5.032166957855225, 63.19221496582031],
+                    [-7.904036045074463, 9.712546348571777, 66.16022491455078]]
+        point = [5.452085018157959, 6.12227725982666, 66.5430679321289]
+        for vertices in (triangle, np.float32(triangle)):
+            self.assertTrue(starts_inside(point, 1.75, vertices, [(0, 1, 2)]))
+            self.assertTrue(starts_inside(point, 1.75, vertices, [(0, 2, 1)]))
+
     def test_contact_classes_keep_body_skipping_owners_apart(self):
         bones = {'a': {}, 'b': {}, 'c': {'spring': {'hit_radius': .025, 'groups': [3]}},
                  'd': {'spring': {'hit_radius': .025, 'groups': [3]}}}

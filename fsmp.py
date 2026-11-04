@@ -73,7 +73,9 @@ def contact_classes(base, owners, bones, contact_groups=None, helpers=(), body_i
 
 def starts_inside(point, reach, vertices, triangles, depth=BODY_DEPTH):
     """Whether FSMP finds a contact for a point at rest: over a triangle, from reach in front to depth behind."""
-    vertices, triangles = np.asarray(vertices), np.asarray(triangles)
+    # Double precision: a hip triangle of a few hundred square units leaves single precision
+    # unable to tell a point on it from one beside it, and validation reads the proxy back as doubles.
+    vertices, triangles = np.asarray(vertices, dtype=float), np.asarray(triangles)
     a, b, c = vertices[triangles[:, 0]], vertices[triangles[:, 1]], vertices[triangles[:, 2]]
     raw = np.cross(b-a, c-a)
     area = np.linalg.norm(raw, axis=1)
@@ -83,7 +85,7 @@ def starts_inside(point, reach, vertices, triangles, depth=BODY_DEPTH):
         p = point - raw[i]/area[i]*distance[i]
         shares = [np.linalg.norm(np.cross(b[i]-p, c[i]-p)), np.linalg.norm(np.cross(c[i]-p, a[i]-p)),
                   np.linalg.norm(np.cross(a[i]-p, b[i]-p))]
-        if sum(shares) <= area[i] + 1e-5:
+        if sum(shares) <= area[i]*(1 + 1e-9):
             return True
     return False
 
@@ -864,9 +866,7 @@ def build_physics(output):
     hulls = collision_hulls(mesh_dir, appearance, globals_, body_nodes)
     body_surface = None
     if hulls:
-        vertices, triangles, _ = body_mesh(hulls, globals_)
-        # As the NIF stores it, so validation reading the proxy back decides the same way.
-        body_surface = np.float32(vertices), triangles
+        body_surface = body_mesh(hulls, globals_)[:2]
     cloth_components = cloth_component_ids(appearance)
     paths = [mesh_dir / p['file'] for p in appearance['components']]
     paths += sorted(mesh_dir.glob('fixed_*.nif'))
