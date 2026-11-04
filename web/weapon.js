@@ -142,8 +142,14 @@ function weaponSummary(settings){
 function initWeapon(){
   $('weapon_mode').addEventListener('change',()=>{error();setupWeapon();});
   // The native input is hidden: it is cleared after each upload, so its own label would say nothing is chosen.
-  $('weapon-glb-choose').onclick=()=>$('weapon-glb').click();
+  // The drop zone is its label, so a click opens the file dialog and a dropped file uploads like the VRM's.
   $('weapon-glb').addEventListener('change',()=>uploadWeapon($('weapon-glb').files[0]));
+  const zone=$('weapon-glb-drop');
+  zone.ondragover=e=>{e.preventDefault();zone.classList.add('drag');};
+  zone.ondragleave=()=>zone.classList.remove('drag');
+  zone.ondrop=e=>{e.preventDefault();zone.classList.remove('drag');uploadWeapon(e.dataTransfer.files[0]);};
+  // The input is hidden, so the zone itself takes the keyboard, as the button it replaced did.
+  zone.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('weapon-glb').click();}};
   $('weapon-glb-forget').onclick=()=>{state.weaponExpected=null;state.weaponGlb=null;state.weaponMismatch='';$('weapon-glb').value='';markWeaponPreviewStale();renderWeaponGlb();$('weapon-glb').click();};
   $('weapon-kind').addEventListener('change',()=>{state.weaponBaseMissing='';fillWeaponBases('');markWeaponPreviewStale();updateWeaponBase();});
   $('weapon-base').addEventListener('change',()=>{state.weaponBaseMissing='';markWeaponPreviewStale();updateWeaponBase();});
