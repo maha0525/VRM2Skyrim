@@ -54,8 +54,10 @@ def main():
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
-    output = parser.parse_args(sys.argv[sys.argv.index('--') + 1:]).output.resolve()
-    plan = json.loads((output / 'weapon-plan.json').read_text(encoding='utf8'))
+    parser.add_argument('--plan', default='weapon-plan.json', help='plan of one original weapon (weapon.stem)')
+    args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:])
+    output = args.output.resolve()
+    plan = json.loads((output / args.plan).read_text(encoding='utf8'))
     source = Path(plan['glb'])
     source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -142,7 +144,7 @@ def main():
     report = {'placement': to_nif.tolist(), 'collision': collision,
               'shapes': [{'name': s['name'], 'material': s['material'], 'vertices': len(s['vertices']),
                           'triangles': len(s['triangles'])} for s in shapes]}
-    (output / 'weapon-nif.json').write_text(json.dumps(report, indent=2), encoding='utf8')
+    (output / plan.get('report', 'weapon-nif.json')).write_text(json.dumps(report, indent=2), encoding='utf8')
     LOG.info('Original weapon NIF: %s shapes, %s triangles, hull %s vertices/%s planes', len(shapes),
              sum(len(s['triangles']) for s in shapes), collision['hull_vertices'], collision['hull_planes'])
 

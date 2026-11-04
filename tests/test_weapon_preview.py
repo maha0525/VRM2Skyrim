@@ -34,7 +34,7 @@ class WeaponPreviewTests(unittest.TestCase):
         self.blender = self.root / 'blender.exe'
         self.blender.write_bytes(b'blender')
         self.refs = self.root / 'refs'
-        self.settings = FollowerSettings(weapon_mode='original', original_weapon=original(self.sha))
+        self.settings = FollowerSettings(weapon_mode='original', original_weapons=[original(self.sha)])
         self.calls = dict(avatar=0, weapon=0, textures=0, decode=0, compare=0, render=0, animation=0)
         stack = ExitStack()
         self.addCleanup(stack.close)
@@ -72,7 +72,7 @@ class WeaponPreviewTests(unittest.TestCase):
         from weapon import reuse_textures
         self.calls['weapon'] += 1
         self.assertEqual(Path(glb), self.glb)
-        self.assertEqual(settings.original_weapon, self.current)
+        self.assertEqual(settings.original_weapons, [{**self.current, 'stats': {}, 'enchantment': 'keep'}])
         nif = f'meshes/{settings.asset_dir}/weapon.nif'
         (output / 'mod' / nif).parent.mkdir(parents=True)
         (output / 'mod' / nif).write_bytes(b'nif')
@@ -109,7 +109,7 @@ class WeaponPreviewTests(unittest.TestCase):
 
     def run_preview(self, **changes):
         self.current = original(self.sha, **changes)
-        settings = FollowerSettings(weapon_mode='original', original_weapon=self.current)
+        settings = FollowerSettings(weapon_mode='original', original_weapons=[self.current])
         return weapon_preview.preview(self.root / 'cache', self.source, self.glb, self.game, self.blender,
                                       settings, SimpleNamespace(), lambda stage: None)
 
@@ -149,10 +149,11 @@ class WeaponPreviewTests(unittest.TestCase):
     def test_different_glb_and_official_mode_are_refused(self):
         with self.assertRaisesRegex(ValueError, '別のGLB'):
             self.run_preview(sha256='f' * 64)
-        settings = FollowerSettings()
-        with self.assertRaisesRegex(ValueError, 'オリジナル武器'):
-            weapon_preview.preview(self.root / 'cache', self.source, self.glb, self.game, self.blender, settings,
-                                   SimpleNamespace(), lambda stage: None)
+        two = FollowerSettings(weapon_mode='original', original_weapons=[original(self.sha)] * 2)
+        for settings in (FollowerSettings(), two):  # one weapon card per preview
+            with self.assertRaisesRegex(ValueError, 'オリジナル武器'):
+                weapon_preview.preview(self.root / 'cache', self.source, self.glb, self.game, self.blender, settings,
+                                       SimpleNamespace(), lambda stage: None)
         self.assertEqual(self.calls['avatar'], 0)
 
     def test_base_dimensions_accept_only_candidates_and_cache_the_measurement(self):

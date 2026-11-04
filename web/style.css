@@ -1023,13 +1023,36 @@ code {
   margin: 6px 8px 6px 0;
 }
 
-#weapon-glb-mismatch button {
+.weapon-glb-mismatch button {
   display: block;
   margin-top: 10px;
 }
 
-#weapon-preview-images {
+#weapon-cards .weapon-preview-images {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.weapon-card {
+  margin: 14px 0;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.weapon-card h4 {
+  margin: 16px 0 8px;
+}
+
+.weapon-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.weapon-card-heading h4 {
+  margin: 0;
 }
 
 [hidden] {
@@ -1146,7 +1169,7 @@ code {
     flex-wrap: wrap;
   }
   .preview-grid,
-  #weapon-preview-images {
+  #weapon-cards .weapon-preview-images {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .review dl {

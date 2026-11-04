@@ -5,6 +5,7 @@ import json
 import math
 from pathlib import Path
 import re
+import struct
 
 VERSION = "0.13.0"
 
@@ -48,8 +49,8 @@ class FollowerSettings:
     sitting_auto: bool = True
     sitting_offset: float = 0.0
     weapon: str = "SteelSword"
-    weapon_mode: str = 'official'  # 'original' replaces settings.weapon with original_weapon
-    original_weapon: dict = field(default_factory=dict)
+    weapon_mode: str = 'official'  # 'original' replaces settings.weapon with original_weapons
+    original_weapons: list = field(default_factory=list)  # weapon i: WEAP 0x8D0 + 2i, STAT 0x8D1 + 2i
     ammunition: str = ""
     perks: list = field(default_factory=list)  # {editor_id, rank}; rank is CK's zero-based rank
     spells: list = field(default_factory=list)
@@ -110,7 +111,7 @@ class FollowerSettings:
             value = getattr(self, name)
             if not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
                 raise ValueError(f"{name} must be in {low}–{high}")
-        validate_original_weapon(self.weapon_mode, self.original_weapon)
+        self.original_weapons = validate_original_weapons(self.weapon_mode, self.original_weapons)
         if not isinstance(self.skills, dict) or not isinstance(self.perks, list) or not isinstance(self.spells, list):
             raise ValueError("skills must be an object; perks and spells must be lists")
         if self.auto_calculate and self.skills:
@@ -216,6 +217,15 @@ class FollowerSettings:
     def from_dict(cls, value):
         # Older JSON has no evidence of the originally chosen starting preset.
         value = {"combat_preset": "custom", **value}
+        if 'original_weapon' in value:
+            # Older settings held one original weapon dict; it is now original_weapons[0].
+            value = dict(value)
+            legacy = value.pop('original_weapon')
+            if 'original_weapons' in value:
+                if legacy:
+                    raise ValueError('Use original_weapons, not both original_weapon and original_weapons')
+            else:
+                value['original_weapons'] = [legacy] if legacy else []
         if value.get('armor_support') and 'wardrobe_policy' not in value:
             from wardrobe import migrate_legacy_parts
             value = {**value, 'appearance_parts': migrate_legacy_parts(value['appearance_parts']),
@@ -234,18 +244,48 @@ class FollowerSettings:
 
 
 WEAPON_KINDS = ('sword', 'dagger', 'waraxe', 'mace', 'greatsword', 'battleaxe', 'warhammer', 'staff')
-ORIGINAL_WEAPON_KEYS = {'sha256', 'filename', 'kind', 'base', 'name', 'grip', 'length', 'flip', 'roll'}
+ORIGINAL_WEAPON_KEYS = {'sha256', 'filename', 'kind', 'base', 'name', 'grip', 'length', 'flip', 'roll',
+                        'stats', 'enchantment'}
+# Absent from settings written before stat overrides and enchantment choice; both mean "as the base weapon".
+ORIGINAL_WEAPON_DEFAULTS = {'stats': {}, 'enchantment': 'keep'}
+MAX_ORIGINAL_WEAPONS = 8  # WEAP/STAT pairs 0x8D0-0x8DF
+# Optional stat overrides: (lowest, highest, integer). Field widths: xEdit TES5 WEAP DATA Value
+# uint32, Weight float, Damage uint16; DNAM Speed and Reach float (weapon.STAT_FIELDS).
+WEAPON_STATS = {'damage': (0, 0xFFFF, True), 'weight': (0, None, False), 'value': (0, 0xFFFFFFFF, True),
+                'speed': (0, None, False), 'reach': (0, None, False)}
+POSITIVE_STATS = {'speed', 'reach'}
+ENCHANTMENT_CHOICES = ('keep', 'none')  # or a Skyrim.esm weapon-enchantment ENCH Editor ID
 
 
-def validate_original_weapon(mode, weapon):
+def float32(value):
+    """value as stored in a 4-byte float field; ValueError when it does not fit."""
+    try:
+        return struct.unpack('<f', struct.pack('<f', value))[0]
+    except OverflowError:
+        raise ValueError(f'{value} does not fit a 4-byte float') from None
+
+
+def validate_original_weapons(mode, weapons):
+    """The normalized original_weapons list (each with stats and enchantment), or ValueError."""
     if mode not in ('official', 'original'):
         raise ValueError('Invalid weapon mode')
-    if not isinstance(weapon, dict):
-        raise ValueError('Invalid original weapon')
-    if not weapon:
-        if mode == 'original':
-            raise ValueError('Original weapon mode requires original_weapon')
-        return
+    if not isinstance(weapons, list):
+        raise ValueError('original_weapons must be a list')
+    if mode == 'original' and not weapons:
+        raise ValueError('Original weapon mode requires original_weapons')
+    if len(weapons) > MAX_ORIGINAL_WEAPONS:
+        raise ValueError(f'A follower can carry up to {MAX_ORIGINAL_WEAPONS} original weapons')
+    result = []
+    for weapon in weapons:
+        if not isinstance(weapon, dict):
+            raise ValueError('Invalid original weapon')
+        weapon = {**ORIGINAL_WEAPON_DEFAULTS, **weapon}
+        validate_original_weapon(weapon)
+        result.append(weapon)
+    return result
+
+
+def validate_original_weapon(weapon):
     if set(weapon) != ORIGINAL_WEAPON_KEYS:
         raise ValueError('Original weapon requires ' + ', '.join(sorted(ORIGINAL_WEAPON_KEYS)))
     if not isinstance(weapon['sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', weapon['sha256']):
@@ -266,6 +306,26 @@ def validate_original_weapon(mode, weapon):
         raise ValueError('Original weapon flip must be true or false')
     if type(weapon['roll']) not in (int, float) or not math.isfinite(weapon['roll']) or not 0 <= weapon['roll'] < 360:
         raise ValueError('Original weapon roll must be in 0-360 degrees')
+    stats = weapon['stats']
+    if not isinstance(stats, dict) or not set(stats) <= set(WEAPON_STATS):
+        raise ValueError('Original weapon stats may only set ' + ', '.join(WEAPON_STATS))
+    for name, value in stats.items():
+        low, high, integer = WEAPON_STATS[name]
+        if integer:
+            if type(value) is not int or not low <= value <= high:
+                raise ValueError(f'Original weapon {name} must be an integer in {low}-{high}')
+            continue
+        if type(value) not in (int, float) or not math.isfinite(value) or value < low or (
+                name in POSITIVE_STATS and float32(value) <= 0):
+            raise ValueError(f"Original weapon {name} must be a {'positive' if name in POSITIVE_STATS else 'nonnegative'} "
+                             'finite number')
+        float32(value)
+    enchantment = weapon['enchantment']
+    if not isinstance(enchantment, str) or not (enchantment in ENCHANTMENT_CHOICES
+                                                or re.fullmatch(r'[A-Za-z0-9_]{1,128}', enchantment)):
+        raise ValueError('Original weapon enchantment must be keep, none or an enchantment Editor ID')
+    if weapon['kind'] == 'staff' and enchantment != 'keep':
+        raise ValueError("A staff keeps its base staff's enchantment (its spell)")
 
 
 SKILLS = ("OneHanded", "TwoHanded", "Marksman", "Block", "Smithing", "HeavyArmor", "LightArmor",

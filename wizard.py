@@ -188,16 +188,26 @@ class WizardApplication:
         return {'weapon_id': weapon_id, 'filename': Path(name).name, **{k: report[k] for k in (
             'sha256', 'triangles', 'vertices', 'materials', 'extensions')}}
 
-    def weapon_source(self, request, settings):
-        """Uploaded GLB for an original-weapon settings; None in official mode."""
+    def weapon_sources(self, request, settings):
+        """Uploaded GLBs of original-weapon settings: request weapon_ids, one per original_weapons
+        entry in its order; None in official mode."""
         if settings.weapon_mode != 'original':
             return None
-        weapon = self.weapons.get(request.get('weapon_id'))
-        if weapon is None:
-            raise ValueError('オリジナル武器のGLBを選んでください')
-        if weapon['report']['sha256'] != settings.original_weapon['sha256']:
-            raise ValueError('選んだGLBは、設定に保存したオリジナル武器と別のファイルです。設定したときと同じGLBを選んでください')
-        return weapon['path']
+        ids = request.get('weapon_ids')
+        if not isinstance(ids, list):
+            ids = []
+        paths = []
+        for index, original in enumerate(settings.original_weapons):
+            weapon = self.weapons.get(ids[index]) if index < len(ids) and isinstance(ids[index], str) else None
+            if weapon is None:
+                raise ValueError(f'オリジナル武器 {index + 1} のGLBを選んでください')
+            if weapon['report']['sha256'] != original['sha256']:
+                raise ValueError(f'オリジナル武器 {index + 1} に選んだGLBは、設定に保存したものと別のファイルです。'
+                                 '設定したときと同じGLBを選んでください')
+            paths.append(weapon['path'])
+        if len(ids) != len(paths):
+            raise ValueError('Send one weapon_ids entry per original weapon')
+        return paths
 
     def weapon_base(self, game, base):
         data = Path(game).resolve() / 'Data'
@@ -216,7 +226,7 @@ class WizardApplication:
         validate_physics(settings, self.source_reports[request["source_id"]])
         game, blender = Path(request["game"]), Path(request["blender"])
         self.catalog(game).validate_settings(settings)
-        weapon_glb = self.weapon_source(request, settings)
+        weapon_glbs = self.weapon_sources(request, settings)
         checks = doctor(game, blender)
         if not all(checks.values()):
             raise ValueError("必要な環境が未設定です: " + ", ".join(key for key, value in checks.items() if not value))
@@ -236,7 +246,7 @@ class WizardApplication:
             job["weapon_mode"] = settings.weapon_mode
             job["toon_enabled"] = settings.toon_enabled
             self.jobs[job_id] = job
-        self.executor.submit(self._run, job, source, game, blender, output, settings, weapon_glb)
+        self.executor.submit(self._run, job, source, game, blender, output, settings, weapon_glbs)
         return {"job_id": job_id}
 
     def start_weapon_preview(self, request):
@@ -246,11 +256,14 @@ class WizardApplication:
         settings = FollowerSettings.from_dict(request['settings'])
         if settings.weapon_mode != 'original':
             raise ValueError('オリジナル武器を選んでください')
+        # The wizard previews one weapon card at a time: settings carry that weapon alone.
+        if len(settings.original_weapons) != 1:
+            raise ValueError('Preview one original weapon at a time')
         validate_source(settings, self.source_reports[source_id])
-        glb = self.weapon_source(request, settings)
+        glb = self.weapon_sources(request, settings)[0]
         game, blender = Path(request['game']), Path(request['blender'])
         catalog = self.catalog(game)
-        weapon = settings.original_weapon
+        weapon = settings.original_weapons[0]
         if catalog.original_weapon_kind(catalog.require(weapon['base'], b'WEAP')) != weapon['kind']:
             raise ValueError(f"Original weapon base {weapon['base']} is not a playable Skyrim.esm {weapon['kind']}")
         with self.lock:
@@ -404,7 +417,7 @@ class WizardApplication:
             with self.lock:
                 job.update(status="failed", error=str(error))
 
-    def _run(self, job, source, game, blender, output, settings, weapon_glb=None):
+    def _run(self, job, source, game, blender, output, settings, weapon_glbs=None):
         job["status"] = "running"
 
         def progress(name):
@@ -413,7 +426,7 @@ class WizardApplication:
                 job["events"].append(name)
 
         try:
-            archive = convert(source, game, blender, output, settings, progress, weapon_glb=weapon_glb)
+            archive = convert(source, game, blender, output, settings, progress, weapon_glbs=weapon_glbs)
             with self.lock:
                 job.update(status="complete", archive=archive.name,
                            previews=sorted(path.relative_to(output).as_posix() for path in (output / "previews").glob("*.png")),
@@ -564,8 +577,8 @@ def handler_for(app):
                             validate_source(settings, app.source_reports[source_id])
                         validate_physics(settings, app.source_reports[source_id])
                     app.catalog(request["game"]).validate_settings(settings)
-                    if request.get('check_weapon', True):  # the GLB is chosen in STEP 03
-                        app.weapon_source(request, settings)
+                    if request.get('check_weapon', True):  # the GLBs are chosen in STEP 03
+                        app.weapon_sources(request, settings)
                     return self.reply({"settings": asdict(settings)})
                 if self.path == '/api/weapon-base':
                     return self.reply(app.weapon_base(request['game'], request['base']))

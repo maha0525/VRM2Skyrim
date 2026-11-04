@@ -30,8 +30,8 @@
 | `0x870` | `FLST` | 着席高さ補正の対象となる椅子・ベンチのリスト (`seating.SEATS_ID`) |
 | `0x880` | `CSTY` | フォロワー専用の戦闘スタイル (`combat_style.CUSTOM_STYLE_ID`) |
 | `0x880`–`0x8BF` | `ARMA` | 旧仕様の体型合わせアドオン領域（過去のプロファイル読み込み時のみ認識, `armor_patch.py`） |
-| `0x8D0` | `WEAP` | オリジナル武器レコード (`weapon.WEAPON_ID`) |
-| `0x8D1` | `STAT` | オリジナル武器の 1 人称モデルレコード (`weapon.FIRST_PERSON_ID`) |
+| `0x8D0`–`0x8DF` | `WEAP` / `STAT` | オリジナル武器（最大 8 本：WEAP `0x8D0 + 2n`, 1 人称モデルの STAT `0x8D1 + 2n`, `weapon.weapon_id` / `weapon.first_person_id`, `settings.MAX_ORIGINAL_WEAPONS`）。1 本目は `0x8D0` / `0x8D1` |
+| `0x8E0`–`0x8FF` | （予約領域） | 未使用 |
 | `0x1000` 以降 | `ARMA` | 体型合わせ済みの公式装備アドオン（元アドオンごとに 1 件, `armor_fitting.py`） |
 
 ---
@@ -97,10 +97,18 @@ STEP 01 で「衣服・防具の分離（`armor_support=True`）」を有効に�
 
 ## 6. オリジナル武器（GLB）の変換仕様
 
-`weapon_mode="original"` を選んだ場合、アップロードされた `.glb` から専用武器レコード（`WEAP` `0x8D0`）と 1 人称モデル（`STAT` `0x8D1`）を生成し、初期所持品に登録します。
+`weapon_mode="original"` を選んだ場合、`original_weapons` の武器ごとに、アップロードされた `.glb` から専用武器レコード（`WEAP` `0x8D0 + 2n`）と 1 人称モデル（`STAT` `0x8D1 + 2n`）を生成し、すべてを 1 本ずつ初期所持品に登録します（最大 8 本）。どれを手に持つかはゲームの AI が決め、二刀流は戦闘スタイルにもよります。
+
+- **武器ごとの名前**
+  - 1 本目は単独の武器だった頃と同じ名前を使います：Editor ID `<prefix>OriginalWeapon` / `<prefix>OriginalWeapon1stPerson`、`meshes/<asset_dir>/weapon.nif`、`textures/<asset_dir>/weapon*.dds`。
+  - n 本目（2〜8）は `<prefix>OriginalWeapon<n>` / `<prefix>OriginalWeapon<n>_1stPerson`、`weapon<n>.nif`、`weapon<n>.dds`・`weapon<n>_n.dds`（材質が複数なら `weapon<n>_<材質番号>.dds`）。1 本目の材質別の名前 `weapon_<材質番号>` とは衝突しません。
 
 - **ベース武器の継承**
   - 8 種類の武器カテゴリ（片手剣 `SteelSword`、ダガー `SteelDagger`、片手斧 `SteelWarAxe`、メイス `SteelMace`、両手剣 `SteelGreatsword`、両手斧 `SteelBattleaxe`、戦槌 `SteelWarhammer`、杖 `StaffFlames` 等）から選ばれた `Skyrim.esm`（および `Update.esm`）の武器レコードを複製し、攻撃力・重量・モーション種別・サウンドを引き継ぎます。
+- **性能の上書き (`stats`)**
+  - 武器ごとに `damage`・`weight`・`value`・`speed`・`reach` を任意で指定できます。指定しない項目はベース武器の値のままです。書き込む位置は xEdit の TES5 `WEAP` 定義に従います：`DATA` の Value (uint32, 0 バイト目)・Weight (float, 4)・Damage (uint16, 8)、`DNAM` の Speed (float, 4)・Reach (float, 8)（`weapon.STAT_FIELDS`）。それ以外のバイトはコピーしたままです。
+- **付呪 (`enchantment`)**
+  - `keep`（ベース武器の `EITM`/`EAMT` のまま）、`none`（両方を外す）、または `Skyrim.esm` の武器用付呪の Editor ID。武器用付呪は `ENCH` の `ENIT` が Cast Type = Fire and Forget (1)・Target Type = Touch (1)・Enchant Type = Enchantment (6) で、名前を持ち、公式の武器が実際に付けているものです（`game_catalog.is_weapon_enchantment`, `GameCatalog.weapon_enchantments`）。充填量 `EAMT` はその付呪を付けた公式の武器で最も多い値（同数なら大きい方）、ベース武器が同じ付呪を付けていればベース武器の値です。杖は付呪で魔法を撃つので `keep` だけを受け付けます。
 - **座標系・グリップ位置・コリジョン生成 (`weapon.py`, `weapon_nif.py`)**
   - GLB の最長バウンディングボックス軸を `+Y`（刃先・先端方向）に揃え、`length`（全長）と `grip`（下端からの把持位置の割合）、`flip`（前後反転）、`roll`（軸回転）を適用します。
   - 最大 48 頂点の凸包（`bhkConvexVerticesShape`）から重心・慣性テンソル・`bhkRigidBody` を計算し、`meshes/<asset_dir>/weapon.nif` として出力します。

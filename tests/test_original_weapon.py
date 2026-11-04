@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import struct
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -59,17 +60,66 @@ def stat():
                                         (b'MODT', bytes(12)), (b'DNAM', bytes(8))])
 
 
+def copy_with(record, tag, value):
+    import copy
+    result = copy.deepcopy(record)
+    result.replace(tag, value)
+    return result
+
+
 class SettingsTests(unittest.TestCase):
     def test_old_settings_load_as_official_and_original_roundtrips(self):
-        legacy = {k: v for k, v in asdict(FollowerSettings()).items() if k not in ('weapon_mode', 'original_weapon')}
+        legacy = {k: v for k, v in asdict(FollowerSettings()).items() if k not in ('weapon_mode', 'original_weapons')}
         loaded = FollowerSettings.from_dict(legacy)
-        self.assertEqual((loaded.weapon_mode, loaded.original_weapon), ('official', {}))
-        settings = FollowerSettings(weapon_mode='original', original_weapon=original())
+        self.assertEqual((loaded.weapon_mode, loaded.original_weapons), ('official', []))
+        settings = FollowerSettings(weapon_mode='original', original_weapons=[original(), original(
+            kind='sword', base='SteelSword', stats={'damage': 12, 'speed': 1.25}, enchantment='EnchWeaponFireDamage02')])
         with tempfile.TemporaryDirectory() as directory:
             settings.save(Path(directory) / 'settings.json')
             self.assertEqual(FollowerSettings.load(Path(directory) / 'settings.json'), settings)
         # Switching back keeps both selections; only the mode decides what is given.
-        self.assertEqual(FollowerSettings(weapon_mode='official', original_weapon=original()).weapon, 'SteelSword')
+        self.assertEqual(FollowerSettings(weapon_mode='official', original_weapons=[original()]).weapon, 'SteelSword')
+
+    def test_single_original_weapon_settings_load_as_the_first_of_the_list(self):
+        """Saved settings, imported settings and saved results written with original_weapon (one dict)."""
+        values = {k: v for k, v in asdict(FollowerSettings()).items() if k != 'original_weapons'}
+        loaded = FollowerSettings.from_dict({**values, 'weapon_mode': 'original', 'original_weapon': original()})
+        self.assertEqual(loaded.original_weapons, [{**original(), 'stats': {}, 'enchantment': 'keep'}])
+        self.assertNotIn('original_weapon', asdict(loaded))
+        self.assertEqual(FollowerSettings.from_dict({**values, 'original_weapon': {}}).original_weapons, [])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'settings.json'
+            path.write_text(json.dumps({**values, 'weapon_mode': 'original', 'original_weapon': original()}), encoding='utf8')
+            self.assertEqual(FollowerSettings.load(path), loaded)
+        with self.assertRaisesRegex(ValueError, 'not both'):
+            FollowerSettings.from_dict({**values, 'original_weapon': original(), 'original_weapons': [original()]})
+
+    def test_stats_enchantment_staff_rule_and_count(self):
+        sword = dict(kind='sword', base='SteelSword')
+        valid = FollowerSettings(weapon_mode='original', original_weapons=[original(**sword, stats={
+            'damage': 0xFFFF, 'weight': 0, 'value': 0xFFFFFFFF, 'speed': .5, 'reach': 1e30}, enchantment='none')])
+        self.assertEqual(valid.original_weapons[0]['stats']['value'], 0xFFFFFFFF)
+        FollowerSettings(weapon_mode='original', original_weapons=[original(**sword, enchantment='EnchWeaponFireDamage02')])
+        invalid = [{'damage': -1}, {'damage': 0x10000}, {'damage': 8.5}, {'damage': True}, {'value': -1},
+                   {'value': 1 << 32}, {'weight': -.1}, {'weight': 1e39}, {'weight': float('nan')}, {'speed': 0},
+                   {'speed': -1}, {'speed': 1e-50}, {'reach': float('inf')}, {'reach': 1e39}, {'reach': '1'},
+                   {'stagger': 1}]
+        for stats in invalid:
+            with self.subTest(stats=stats), self.assertRaises(ValueError):
+                FollowerSettings(weapon_mode='original', original_weapons=[original(**sword, stats=stats)])
+        for choice in ('', 'Ench Fire', 7, None):
+            with self.subTest(enchantment=choice), self.assertRaisesRegex(ValueError, 'enchantment'):
+                FollowerSettings(weapon_mode='original', original_weapons=[original(**sword, enchantment=choice)])
+        for choice in ('none', 'EnchWeaponFireDamage02'):
+            with self.subTest(staff=choice), self.assertRaisesRegex(ValueError, 'staff'):
+                FollowerSettings(weapon_mode='original', original_weapons=[original(enchantment=choice)])
+        FollowerSettings(weapon_mode='original', original_weapons=[original(enchantment='keep', stats={'damage': 20})])
+        self.assertEqual(len(FollowerSettings(weapon_mode='original', original_weapons=[original()] * 8).original_weapons), 8)
+        with self.assertRaisesRegex(ValueError, 'up to 8'):
+            FollowerSettings(weapon_mode='original', original_weapons=[original()] * 9)
+        for value in ({}, original()):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'list'):
+                FollowerSettings(weapon_mode='original', original_weapons=value)
 
     def test_invalid_original_weapon_is_rejected(self):
         invalid = [original(grip=0), original(grip=1), original(length=0), original(length=float('inf')),
@@ -78,10 +128,10 @@ class SettingsTests(unittest.TestCase):
                    {k: v for k, v in original().items() if k != 'roll'}, {**original(), 'extra': 1}]
         for value in invalid:
             with self.subTest(value=value), self.assertRaises(ValueError):
-                FollowerSettings(weapon_mode='original', original_weapon=value)
+                FollowerSettings(weapon_mode='original', original_weapons=[value])
         for mode, value in (('original', {}), ('custom', original()), ('official', [])):
             with self.subTest(mode=mode), self.assertRaises(ValueError):
-                FollowerSettings(weapon_mode=mode, original_weapon=value)
+                FollowerSettings(weapon_mode=mode, original_weapons=[value])
 
 
 class KindTests(unittest.TestCase):
@@ -141,7 +191,6 @@ class CatalogTests(unittest.TestCase):
                 update_overrides(path, base)
 
     def test_refused_overrides_are_not_bases_and_missing_defaults_fall_back(self):
-        from types import SimpleNamespace
         from game_catalog import GameCatalog
         static = stat()
         catalog = SimpleNamespace(update_refused=set(), first_person_static=lambda record: static,
@@ -153,13 +202,47 @@ class CatalogTests(unittest.TestCase):
         self.assertIsNone(GameCatalog.original_weapon_kind(catalog, weap()))
         # A missing default base (here StaffFlames) keeps the kind with its first candidate.
         other = weap()
-        catalog = SimpleNamespace(choices=lambda kind: [other], label=lambda record: 'Staff',
+        catalog = SimpleNamespace(choices=lambda kind: [other], label=lambda record: 'Staff', by_form_id={},
                                   localized=lambda record: {'ja': 'Staff', 'en': 'Staff'},
                                   original_weapon_kind=lambda record: 'staff')
         with self.assertLogs(level='WARNING') as logs:
             choices = GameCatalog.original_weapon_choices(catalog)
         self.assertEqual([(c['id'], c['default']) for c in choices], [('staff', 'BaseStaff')])
         self.assertTrue(any('StaffFlames' in line for line in logs.output))
+        self.assertEqual(choices[0]['candidates'][0]['stats'], {'damage': 0, 'weight': 8., 'value': 5, 'speed': 0., 'reach': 0.})
+        self.assertIsNone(choices[0]['candidates'][0]['enchantment'])
+
+    def test_weapon_enchantments_by_enit_fields_with_the_common_charge(self):
+        from game_catalog import GameCatalog, is_weapon_enchantment
+
+        def ench(form_id, editor_id, cast=1, target=1, kind=6, named=True):
+            fields = [(b'EDID', text(editor_id))] + ([(b'FULL', struct.pack('<I', 1))] if named else [])
+            return Record(b'ENCH', form_id, 0, fields + [(b'ENIT', struct.pack('<iIIiIIfII', 0, 0, cast, 0, target, kind, 0, 0, 0))])
+
+        def carrier(form_id, eitm, eamt):
+            record = weap()
+            record.form_id = form_id
+            record.replace(b'EITM', struct.pack('<I', eitm))
+            record.replace(b'EAMT', struct.pack('<H', eamt))
+            return record
+        enchantments = [ench(0x45C2A, 'EnchWeaponFireDamage02'), ench(0x10, 'StaffEnchFire', target=2, kind=12),
+                        ench(0x11, 'EnchArmorFortify', cast=0, target=0), ench(0x12, 'Unnamed', named=False),
+                        ench(0x13, 'Unused'), ench(0x01000014, 'Private')]
+        self.assertEqual([is_weapon_enchantment(r) for r in enchantments], [True, False, False, True, True, True])
+        weapons = [carrier(0x100 + i, 0x45C2A, n) for i, n in enumerate((300, 1000, 1000, 300, 500))]
+        weapons += [carrier(0x200, 0x10, 100), carrier(0x201, 0x11, 100), carrier(0x202, 0x12, 100),
+                    carrier(0x203, 0x01000014, 100), carrier(0x204, 0x99, 1)]
+        catalog = GameCatalog.__new__(GameCatalog)  # records only; no Skyrim.esm
+        catalog.by_form_id, catalog._weapon_enchantments = {r.form_id: r for r in enchantments + weapons}, None
+        catalog.label, catalog.localized = lambda record: 'Fire Damage', lambda record: {'ja': '炎', 'en': 'Fire Damage'}
+        # 300 and 1000 are both on two weapons: the larger charge wins the tie.
+        self.assertEqual(catalog.weapon_enchantments(), {'EnchWeaponFireDamage02': (0x45C2A, 1000)})
+        self.assertEqual(catalog.weapon_enchantment('EnchWeaponFireDamage02'), (0x45C2A, 1000))
+        for name in ('StaffEnchFire', 'EnchArmorFortify', 'Unnamed', 'Unused', 'Private', 'Nothing'):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'weapon enchantment'):
+                catalog.weapon_enchantment(name)
+        self.assertEqual(catalog.weapon_enchantment_choices(), [
+            {'id': 'EnchWeaponFireDamage02', 'label': 'Fire Damage', 'labels': {'ja': '炎', 'en': 'Fire Damage'}, 'charge': 1000}])
 
 
 class GeometryTests(unittest.TestCase):
@@ -395,7 +478,7 @@ class TextureTests(unittest.TestCase):
 
 class RecordTests(unittest.TestCase):
     def setUp(self):
-        self.settings = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapon=original())
+        self.settings = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapons=[original()])
 
     def records(self):
         return weapon.weapon_records(self.settings, weap(), stat(), 'A plain staff.', [[-3.2, -53.1, -2], [3.9, 67.6, 2.5]])
@@ -436,7 +519,7 @@ class RecordTests(unittest.TestCase):
             self.assertEqual(raw[b'WEAP'].values(b'MODL'), [text('vrm2skyrim\\probe\\weapon.nif')])
             generated = follower_records(path)
         report = {'description': 'A plain staff.', 'official_weapon_form_id': 0x12EB7}
-        self.assertEqual(weapon.validate_weapon_records(generated, self.settings, report)['first_person'], '0x10008d1')
+        self.assertEqual(weapon.validate_weapon_records(generated, self.settings, report)[0]['first_person'], '0x10008d1')
 
     def test_record_contract_rejections(self):
         npc = Record(b'NPC_', 0x01000800, 0, [(b'CNTO', struct.pack('<Ii', 0x010008D0, 1))])
@@ -491,13 +574,213 @@ class RecordTests(unittest.TestCase):
                     self.assertEqual('ShinyDull_e.dds' in text_, expected)
 
 
+def sword(enchanted=False):
+    """SteelSword-like WEAP (Skyrim.esm values: value 45, weight 10, damage 8, speed 1, reach 1)."""
+    data = bytearray(dnam(1))
+    struct.pack_into('<ff', data, 4, 1., 1.)
+    struct.pack_into('<H', data, 12, 0x0001)  # a flag byte after the overridable stats
+    fields = [(b'EDID', text('SteelSword')), (b'OBND', bytes(12)), (b'FULL', struct.pack('<I', 0x4321)),
+              (b'MODL', text('Weapons\\Steel\\SteelSword.nif')), (b'MODT', bytes(12))]
+    if enchanted:
+        fields += [(b'EITM', struct.pack('<I', 0x45C36)), (b'EAMT', struct.pack('<H', 500))]
+    fields += [(b'ETYP', struct.pack('<I', 0x13F42)), (b'KSIZ', struct.pack('<I', 1)), (b'KWDA', struct.pack('<I', 0x1E711)),
+               (b'DESC', struct.pack('<I', 0)), (b'WNAM', struct.pack('<I', 0x12EB8)), (b'DATA', struct.pack('<IfH', 45, 10., 8)),
+               (b'DNAM', bytes(data)), (b'CRDT', bytes(24)), (b'VNAM', struct.pack('<I', 1))]
+    return Record(b'WEAP', 0x12EB7, 0, fields)
+
+
+class MultipleWeaponTests(unittest.TestCase):
+    FIRE = (0x45C2A, 1000)  # EnchWeaponFireDamage02 and the charge most official weapons give it
+
+    def setUp(self):
+        self.staff = original()
+        self.blade = original(kind='sword', base='SteelSword', name='月光の剣', filename='blade.glb',
+                              stats={'damage': 12, 'weight': 7.3, 'value': 1200, 'speed': 1.3, 'reach': .8},
+                              enchantment='EnchWeaponFireDamage02')
+        self.settings = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapons=[self.staff, self.blade])
+
+    def built(self, settings=None, base=None, chosen=FIRE):
+        settings = settings or self.settings
+        result = []
+        for index, item in enumerate(settings.original_weapons):
+            source = weap() if item['kind'] == 'staff' else (base or sword())
+            choice = chosen if item['enchantment'] not in ('keep', 'none') else None
+            result.append({'index': index, 'base': source, 'static': stat(), 'description': 'Text.',
+                           'enchantment': weapon.expected_enchantment(item, source, choice),
+                           'records': weapon.weapon_records(settings, source, stat(), 'Text.', [[0, 0, 0], [1, 1, 1]],
+                                                            index, choice)})
+        return result
+
+    def plugin(self, built, inventory=None):
+        ids = [weapon.weapon_id(item['index']) for item in built] if inventory is None else inventory
+        npc = Record(b'NPC_', 0x01000800, 0, [(b'CNTO', struct.pack('<Ii', form_id, 1)) for form_id in ids])
+        return [npc, *[record for item in built for record in item['records']]]
+
+    def test_second_weapon_ids_names_and_files(self):
+        self.assertEqual([weapon.weapon_id(i) for i in range(8)][-1], 0x010008DE)
+        self.assertEqual(weapon.first_person_id(7), 0x010008DF)
+        self.assertEqual([weapon.stem(i) for i in (0, 1, 7)], ['weapon', 'weapon2', 'weapon8'])
+        built = self.built()
+        staff, staff_static = built[0]['records']
+        blade, blade_static = built[1]['records']
+        self.assertEqual([r.form_id for r in (staff, staff_static, blade, blade_static)],
+                         [0x010008D0, 0x010008D1, 0x010008D2, 0x010008D3])
+        self.assertEqual([r.editor_id for r in (staff, staff_static, blade, blade_static)],
+                         ['V2S_ProbeOriginalWeapon', 'V2S_ProbeOriginalWeapon1stPerson',
+                          'V2S_ProbeOriginalWeapon2', 'V2S_ProbeOriginalWeapon2_1stPerson'])
+        self.assertEqual(staff.values(b'MODL'), [text('vrm2skyrim\\probe\\weapon.nif')])
+        self.assertEqual(blade.values(b'MODL'), blade_static.values(b'MODL'))
+        self.assertEqual(blade.values(b'MODL'), [text('vrm2skyrim\\probe\\weapon2.nif')])
+        self.assertEqual(blade.values(b'WNAM'), [struct.pack('<I', 0x010008D3)])
+        self.assertEqual(blade.values(b'FULL'), [text('月光の剣')])
+
+    def test_textures_of_the_second_weapon_never_collide_with_the_first(self):
+        materials = [{'pbrMetallicRoughness': {'metallicFactor': 0}}, {'pbrMetallicRoughness': {'metallicFactor': 0}}]
+        document, binary = glb_document(materials, [])
+        with tempfile.TemporaryDirectory() as directory:
+            names = {}
+            for index in (0, 1):
+                manifest = weapon.prepare_textures(document, binary, Path(directory), self.settings, index)[0]
+                names[index] = {Path(e['relative']).name for e in manifest}
+                self.assertTrue((Path(directory) / f'{weapon.stem(index)}-textures.json').is_file())
+            single = weapon.prepare_textures(*glb_document([{}], []), Path(directory), self.settings, 1)[0]
+        self.assertEqual(names[1], {'weapon2_0.dds', 'weapon2_0_n.dds', 'weapon2_1.dds', 'weapon2_1_n.dds'})
+        self.assertFalse(names[0] & names[1])
+        self.assertEqual({Path(e['relative']).name for e in single}, {'weapon2.dds', 'weapon2_n.dds', 'weapon2_m.dds'})
+
+    def test_stats_are_written_at_their_offsets_and_nothing_else_changes(self):
+        blade = self.built()[1]['records'][0]
+        data, dnam_ = blade.values(b'DATA')[0], blade.values(b'DNAM')[0]
+        self.assertEqual(struct.unpack_from('<IfH', data), (1200, struct.unpack('<f', struct.pack('<f', 7.3))[0], 12))
+        self.assertEqual(struct.unpack_from('<ff', dnam_, 4), struct.unpack('<ff', struct.pack('<ff', 1.3, .8)))
+        source = sword()
+        self.assertEqual(len(data), len(source.values(b'DATA')[0]))
+        self.assertEqual(dnam_[:4] + dnam_[12:], source.values(b'DNAM')[0][:4] + source.values(b'DNAM')[0][12:])
+        self.assertEqual(weapon.read_stats(blade), {**weapon.read_stats(source), **{
+            name: weapon.expected_stat(name, value) for name, value in self.blade['stats'].items()}})
+        partial = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapons=[
+            original(kind='sword', base='SteelSword', stats={'reach': 1.5})])
+        record = weapon.weapon_records(partial, sword(), stat(), '', [[0, 0, 0], [1, 1, 1]])[0]
+        self.assertEqual(record.values(b'DATA'), sword().values(b'DATA'))
+        self.assertEqual(record.values(b'DNAM')[0], sword().values(b'DNAM')[0][:8] + struct.pack('<f', 1.5)
+                         + sword().values(b'DNAM')[0][12:])
+        weapon.check_copied(self.plugin(self.built()), weap(), stat(), self.settings, 0)
+        weapon.check_copied(self.plugin(self.built()), sword(), stat(), self.settings, 1)
+        flags = self.built()
+        changed = bytearray(flags[1]['records'][0].values(b'DNAM')[0])
+        changed[12] ^= 0x80  # Non-playable: not an overridable stat
+        flags[1]['records'][0].replace(b'DNAM', bytes(changed))
+        with self.assertRaisesRegex(ValueError, 'differs from its official source'):
+            weapon.check_copied(self.plugin(flags), sword(), stat(), self.settings, 1)
+        with self.assertRaisesRegex(ValueError, 'differs from its official source'):
+            weapon.check_copied(self.plugin(self.built()), sword(), stat())  # the stats only differ with settings
+
+    def test_enchantment_keep_none_and_chosen(self):
+        def blade(choice, base):
+            settings = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapons=[
+                original(kind='sword', base='SteelSword', enchantment=choice)])
+            chosen = self.FIRE if choice not in ('keep', 'none') else None
+            return settings, weapon.weapon_records(settings, base, stat(), '', [[0, 0, 0], [1, 1, 1]], 0, chosen)[0]
+        _, kept = blade('keep', sword(enchanted=True))
+        self.assertEqual(weapon.enchantment_values(kept), (0x45C36, 500))
+        _, plain = blade('keep', sword())
+        self.assertEqual(weapon.enchantment_values(plain), (None, None))
+        _, removed = blade('none', sword(enchanted=True))
+        self.assertEqual(weapon.enchantment_values(removed), (None, None))
+        for base in (sword(), sword(enchanted=True)):
+            settings, chosen = blade('EnchWeaponFireDamage02', base)
+            self.assertEqual(weapon.enchantment_values(chosen), self.FIRE)
+            tags = [tag for tag, _ in chosen.fields]
+            self.assertEqual(tags[tags.index(b'MODL') + 1:tags.index(b'MODL') + 3], [b'EITM', b'EAMT'])
+            self.assertEqual(tags.count(b'EITM'), 1)
+            weapon.check_copied([chosen, weapon.weapon_records(settings, base, stat(), '', [[0, 0, 0], [1, 1, 1]], 0,
+                                                               self.FIRE)[1]], base, stat(), settings, 0)
+        with self.assertRaisesRegex(ValueError, 'not resolved'):
+            weapon.weapon_records(settings, sword(), stat(), '', [[0, 0, 0], [1, 1, 1]])
+        self.assertEqual(weapon.expected_enchantment({'enchantment': 'keep'}, sword(enchanted=True), None), (0x45C36, 500))
+        self.assertEqual(weapon.expected_enchantment({'enchantment': 'none'}, sword(enchanted=True), None), (None, None))
+
+    def test_both_weapons_are_in_the_inventory_and_dlc_masters_remap_each_first_person_model(self):
+        from follower_plugin import follower_records, write_follower
+        built = self.built()
+        report = weapon.npc_report(self.settings, SimpleNamespace(by_editor_id={}), built)
+        self.assertEqual([w['local_form_id'] for w in report['weapons']], ['0008D0', '0008D2'])
+        self.assertEqual(report['weapons'][1]['enchantment'], {'choice': 'EnchWeaponFireDamage02', 'form_id': 0x45C2A,
+                                                               'amount': 1000})
+        self.assertEqual(report['weapons'][1]['base_stats'], {'damage': 8, 'weight': 10., 'value': 45, 'speed': 1., 'reach': 1.})
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'Probe.esp'
+            cell = Record(b'CELL', 0x165A7, 0, [(b'EDID', text('Temple'))], ((b'\0' * 4, 0), (b'\0' * 4, 2), (b'\0' * 4, 3)))
+            actor = Record(b'ACHR', 0x01000806, 0x400, [(b'NAME', struct.pack('<I', 0x01000800))])
+            write_follower(path, self.plugin(built), author='test', placement=(cell, actor), extra_masters=['Dawnguard.esm'])
+            raw = {r.form_id: r for r in records(path) if r.kind == b'WEAP'}
+            self.assertEqual({k: v.values(b'WNAM') for k, v in raw.items()},
+                             {0x020008D0: [struct.pack('<I', 0x020008D1)], 0x020008D2: [struct.pack('<I', 0x020008D3)]})
+            self.assertEqual(raw[0x020008D2].values(b'EITM'), [struct.pack('<I', 0x45C2A)])  # Skyrim.esm stays 00
+            generated = follower_records(path)
+        result = weapon.validate_weapon_records(generated, self.settings, json.loads(json.dumps(report)))
+        self.assertEqual([r['weapon'] for r in result], ['0x10008d0', '0x10008d2'])
+
+    def test_output_validator_rejects_tampered_stats_enchantment_and_missing_weapons(self):
+        built = self.built()
+        report = json.loads(json.dumps(weapon.npc_report(self.settings, SimpleNamespace(by_editor_id={}), built)))
+        weapon.validate_weapon_records(self.plugin(built), self.settings, report)
+
+        def tampered(change):
+            items = self.built()
+            change(items[1]['records'][0])
+            return self.plugin(items)
+
+        def data(record, offset, layout, value):
+            payload = bytearray(record.values(b'DATA')[0])
+            struct.pack_into(layout, payload, offset, value)
+            record.replace(b'DATA', bytes(payload))
+
+        def speed(record):
+            payload = bytearray(record.values(b'DNAM')[0])
+            struct.pack_into('<f', payload, 4, 1.)
+            record.replace(b'DNAM', bytes(payload))
+        cases = {'damage': tampered(lambda r: data(r, 8, '<H', 8)), 'value': tampered(lambda r: data(r, 0, '<I', 45)),
+                 'speed': tampered(speed),
+                 'enchantment': tampered(lambda r: r.replace(b'EITM', struct.pack('<I', 0x45C36))),
+                 'charge': tampered(lambda r: r.replace(b'EAMT', struct.pack('<H', 999))),
+                 'lacks the chosen': tampered(lambda r: r.remove(b'EITM', b'EAMT')),
+                 'missing': self.plugin(built[:1], inventory=[0x010008D0, 0x010008D2]),
+                 'not in the follower inventory': self.plugin(built, inventory=[0x010008D0]),
+                 'Unexpected': self.plugin(built) + [Record(b'WEAP', 0x010008D4, 0, [])]}
+        for expected, generated in cases.items():
+            with self.subTest(case=expected), self.assertRaisesRegex(ValueError, expected if expected in (
+                    'missing', 'not in the follower inventory', 'Unexpected', 'lacks the chosen') else 'differs from the settings'):
+                weapon.validate_weapon_records(generated, self.settings, report)
+        # Without npc.json the settings' own stats and enchantment choice are still checked.
+        for name in ('damage', 'lacks the chosen'):
+            with self.subTest(without_report=name), self.assertRaises(ValueError):
+                weapon.validate_weapon_records(cases[name], self.settings)
+        none = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapons=[{**self.blade, 'enchantment': 'none'}])
+        kept = self.built(none, base=sword(enchanted=True))
+        kept[0]['records'][0].replace(b'EITM', struct.pack('<I', 0x45C36))
+        kept[0]['records'][0].replace(b'EAMT', struct.pack('<H', 500))
+        with self.assertRaisesRegex(ValueError, 'keeps an enchantment'):
+            weapon.validate_weapon_records(self.plugin(kept), none)
+        with self.assertRaisesRegex(ValueError, 'reports 2 original weapons'):
+            weapon.validate_weapon_records(self.plugin(kept), none, report)
+
+    def test_readme_lists_every_weapon_with_its_changes(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(weapon, 'validate_shared', return_value={}):
+            readme = weapon.readme_text(directory, self.settings)
+        self.assertIn('V2S_ProbeOriginalWeapon2, local FormID 0008D2', readme)
+        self.assertIn('except damage 12, weight 7.3, value 1200, speed 1.3, reach 0.8, enchantment EnchWeaponFireDamage02',
+                      readme)
+        self.assertIn('dual wielding also depends on the combat style', readme)
+
+
 class SourceTests(unittest.TestCase):
     def test_glb_fingerprint_must_match_settings(self):
         document, binary = glb_document([{}], [])
         with tempfile.TemporaryDirectory() as directory:
             glb = Path(directory) / 'staff.glb'
             write_glb(glb, document, binary)
-            settings = FollowerSettings(weapon_mode='original', original_weapon=original())
+            settings = FollowerSettings(weapon_mode='original', original_weapons=[original()])
             with self.assertRaisesRegex(ValueError, 'GLB'):
                 weapon.convert_weapon(glb, directory, None, Path(directory) / 'out', settings, None)
             summary = weapon.inspect_glb(glb)
@@ -527,7 +810,18 @@ class SourceTests(unittest.TestCase):
             with mock.patch.object(converter, 'doctor', return_value={'ready': True}), \
                     self.assertRaisesRegex(ValueError, '--weapon-glb'):
                 converter.convert(source, directory, directory, Path(directory) / 'out', FollowerSettings(),
-                                  weapon_glb=Path(directory) / 'staff.glb')
+                                  weapon_glbs=[Path(directory) / 'staff.glb'])
+            self.assertFalse((Path(directory) / 'out').exists())
+
+    def test_one_weapon_glb_per_original_weapon(self):
+        import converter
+        settings = FollowerSettings(weapon_mode='original', original_weapons=[original(), original()])
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'a.vrm'
+            source.write_bytes(b'vrm')
+            for glbs, message in (([], 'GLBを指定'), ([source], '同じ数だけ'), ([source] * 3, '同じ数だけ')):
+                with self.subTest(count=len(glbs)), mock.patch.object(converter, 'doctor', return_value={'ready': True}),                         self.assertRaisesRegex(ValueError, message):
+                    converter.convert(source, directory, directory, Path(directory) / 'out', settings, weapon_glbs=glbs)
             self.assertFalse((Path(directory) / 'out').exists())
 
 
@@ -579,7 +873,7 @@ class NifTests(unittest.TestCase):
         from weapon_nif import base_dimensions, read_weapon, write_weapon_nif
         rng = np.random.default_rng(5)
         points = rng.normal(size=(300, 3)) * [.02, .5, .04]
-        settings = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapon=original(grip=.3, length=90))
+        settings = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapons=[original(grip=.3, length=90)])
         placed = points @ placement(points, .3, 90)[:3, :3].T + placement(points, .3, 90)[:3, 3]
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
@@ -609,11 +903,11 @@ class NifTests(unittest.TestCase):
             self.assertAlmostEqual(report['length'], 90, places=3)
             self.assertAlmostEqual(report['grip'], .3, places=4)
             self.assertEqual(len(textures), 2)
-            bad = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapon=original(grip=.5, length=90))
+            bad = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapons=[original(grip=.5, length=90)])
             with self.assertRaisesRegex(ValueError, 'origin'):
                 weapon.validate_weapon_model(output, bad)
             sword = FollowerSettings(mod_name='Probe', weapon_mode='original',
-                                     original_weapon=original(grip=.3, length=90, kind='sword', base='SteelSword'))
+                                     original_weapons=[original(grip=.3, length=90, kind='sword', base='SteelSword')])
             with self.assertRaisesRegex(ValueError, 'sheathes at'):
                 weapon.validate_weapon_model(output, sword)
             (texture_dir / 'weapon_n.dds').unlink()
@@ -664,7 +958,7 @@ class NifTests(unittest.TestCase):
         from pyn.nifconstants import HAVOC_SCALE_FACTOR
         from pyn.nifdefs import PynBufferTypes, bhkConvexVerticesShapeProps, bhkRigidBodyProps
         from pyn.pynifly import BSTriShape, NifFile, NiStringExtraData
-        settings = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapon=original(grip=.25, length=80))
+        settings = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapons=[original(grip=.25, length=80)])
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             path = output / 'mod/meshes' / settings.asset_dir / 'weapon.nif'
@@ -761,11 +1055,11 @@ class GameTests(unittest.TestCase):
         for kind, (_, _, default) in ORIGINAL_WEAPON_KINDS.items():
             self.assertEqual(choices[kind]['default'], default)
         self.assertNotIn('HuntingBow', {c['id'] for kind in choices.values() for c in kind['candidates']})
-        self.catalog.validate_settings(FollowerSettings(weapon_mode='original', original_weapon=original(), weapon='NoSuchWeapon'))
+        self.catalog.validate_settings(FollowerSettings(weapon_mode='original', original_weapons=[original()], weapon='NoSuchWeapon'))
         with self.assertRaises(ValueError):
             self.catalog.validate_settings(FollowerSettings(weapon='NoSuchWeapon'))
         with self.assertRaisesRegex(ValueError, 'not a playable'):
-            self.catalog.validate_settings(FollowerSettings(weapon_mode='original', original_weapon=original(base='SteelSword')))
+            self.catalog.validate_settings(FollowerSettings(weapon_mode='original', original_weapons=[original(base='SteelSword')]))
 
     def test_follower_plugin_with_and_without_original_weapon(self):
         from build_npc import build_npc
@@ -774,7 +1068,7 @@ class GameTests(unittest.TestCase):
         for mode in ('official', 'original'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory(dir=ROOT / 'build') as directory:
                 output = Path(directory)
-                settings = FollowerSettings(mod_name='Probe', weapon_mode=mode, original_weapon=original(),
+                settings = FollowerSettings(mod_name='Probe', weapon_mode=mode, original_weapons=[original()],
                                             sitting_enabled=False)
                 (output / 'weapon.json').write_text(json.dumps({'base': 'StaffFlames', 'source': {'sha256': SHA},
                                                                 'bounds': [[-10.5, -53.1, -11.9], [9.6, 67.6, 11.5]]}))
@@ -794,6 +1088,63 @@ class GameTests(unittest.TestCase):
                     self.assertEqual(self.catalog.require('StaffFlames').values(b'MODL'),
                                      [text('Weapons\\DragonPriest\\DragonPriestStaff3rd.nif')])
 
+    def test_stat_offsets_read_the_values_the_game_shows(self):
+        """xEdit DATA/DNAM offsets against SteelSword: damage 8, weight 10, value 45, speed 1, reach 1."""
+        self.assertEqual(weapon.read_stats(self.catalog.require('SteelSword')),
+                         {'damage': 8, 'weight': 10., 'value': 45, 'speed': 1., 'reach': 1.})
+
+    def test_weapon_enchantments_from_skyrim_esm(self):
+        from game_catalog import is_weapon_enchantment
+        found = self.catalog.weapon_enchantments()
+        self.assertEqual(found['EnchWeaponFireDamage02'], (0x45C2A, 1000))
+        self.assertEqual(found['EnchWeaponFrostDamage01'], (0x45C36, 500))
+        self.assertEqual(found['EnchWeaponShockDamage06'], (0x45F9E, 3000))
+        self.assertNotIn('EnchWeaponFireDamageBase', found)  # no official weapon carries the learnable base
+        records_ = [r for r in self.catalog.by_form_id.values() if r.kind == b'ENCH']
+        self.assertTrue(all(is_weapon_enchantment(self.catalog.by_form_id[f]) for f, _ in found.values()))
+        staffs = {struct.unpack('<I', r.values(b'EITM')[0])[0] for r in self.catalog.by_form_id.values()
+                  if r.kind == b'WEAP' and r.values(b'EITM') and r.values(b'DNAM')[0][0] == 8}
+        self.assertTrue(staffs and not any(is_weapon_enchantment(self.catalog.by_form_id[f]) for f in staffs))
+        others = {struct.unpack('<I', r.values(b'EITM')[0])[0] for r in self.catalog.by_form_id.values()
+                  if r.kind == b'WEAP' and r.values(b'EITM') and r.values(b'DNAM')[0][0] != 8}
+        self.assertTrue(all(is_weapon_enchantment(self.catalog.by_form_id[f]) for f in others))
+        self.assertLess(len(found), sum(map(is_weapon_enchantment, records_)))
+        with self.assertRaisesRegex(ValueError, 'weapon enchantment'):
+            self.catalog.validate_settings(FollowerSettings(weapon_mode='original', original_weapons=[
+                original(kind='sword', base='SteelSword', enchantment='StaffEnchFlames')]))
+
+    def test_follower_plugin_with_two_original_weapons(self):
+        from build_npc import build_npc
+        from follower_plugin import follower_records
+        from plugin_validation import validate_private_records
+        blade = original(kind='sword', base='SteelSword', name='月光の剣', stats={'damage': 12, 'reach': 1.2},
+                         enchantment='EnchWeaponFireDamage02')
+        settings = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapons=[original(), blade],
+                                    sitting_enabled=False)
+        with tempfile.TemporaryDirectory(dir=ROOT / 'build') as directory:
+            output = Path(directory)
+            for name, base in (('weapon', 'StaffFlames'), ('weapon2', 'SteelSword')):
+                (output / f'{name}.json').write_text(json.dumps({'base': base, 'source': {'sha256': SHA},
+                                                                 'bounds': [[-1.5, -12, -3], [1.5, 70, 3]]}))
+            plugin = build_npc(self.data, output, settings, self.catalog)
+            generated = follower_records(plugin)
+            local = validate_private_records(generated, settings, output)
+            self.assertEqual(len(local), 9 + 4)
+            npc = next(r for r in generated if r.kind == b'NPC_')
+            self.assertEqual([struct.unpack_from('<I', v)[0] for v in npc.values(b'CNTO')], [0x010008D0, 0x010008D2])
+            item = next(r for r in generated if r.form_id == 0x010008D2)
+            self.assertEqual(weapon.read_stats(item), {'damage': 12, 'weight': 10., 'value': 45, 'speed': 1.,
+                                                       'reach': weapon.expected_stat('reach', 1.2)})
+            self.assertEqual(weapon.enchantment_values(item), (0x45C2A, 1000))
+            steel = self.catalog.require('SteelSword')
+            weapon.check_copied(generated, steel, self.catalog.first_person_static(steel), settings, 1)
+            report = json.loads((output / 'npc.json').read_text(encoding='utf8'))['original_weapon']
+            self.assertEqual([w['editor_id'] for w in report['weapons']], ['V2S_ProbeOriginalWeapon', 'V2S_ProbeOriginalWeapon2'])
+            tampered = [r for r in generated]
+            tampered[tampered.index(item)] = copy_with(item, b'EAMT', struct.pack('<H', 3000))
+            with self.assertRaisesRegex(ValueError, 'enchantment differs'):
+                validate_private_records(tampered, settings, output)
+
     def test_update_esm_values_are_copied(self):
         update = {r.form_id: r for r in records(self.data / 'Update.esm', {b'WEAP'})}
         dagger = self.catalog.require('SteelDagger', b'WEAP')
@@ -801,7 +1152,7 @@ class GameTests(unittest.TestCase):
             self.assertEqual(dagger.values(tag), update[dagger.form_id].values(tag))
         raw = next(r for r in records(self.data / 'Skyrim.esm', {b'WEAP'}) if r.form_id == dagger.form_id)
         self.assertNotEqual(raw.values(b'NAM8'), dagger.values(b'NAM8'))
-        settings = FollowerSettings(weapon_mode='original', original_weapon=original(base='SteelDagger', kind='dagger'))
+        settings = FollowerSettings(weapon_mode='original', original_weapons=[original(base='SteelDagger', kind='dagger')])
         static = self.catalog.first_person_static(dagger)
         generated = weapon.weapon_records(settings, dagger, static, self.catalog.label(dagger, b'DESC'), [[0, 0, 0], [1, 1, 1]])
         weapon.check_copied(generated, dagger, static)
@@ -844,8 +1195,8 @@ class GameTests(unittest.TestCase):
                 directory = Path(directory)
                 glb = directory / 'two.glb'
                 two_material_glb(glb, nodes, mirror)
-                settings = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapon=original(
-                    sha256=weapon.sha256(glb), kind='mace', base='SteelMace', grip=.2, length=60))
+                settings = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapons=[original(
+                    sha256=weapon.sha256(glb), kind='mace', base='SteelMace', grip=.2, length=60)])
                 output = directory / 'out'
                 output.mkdir()
                 report = weapon.convert_weapon(glb, self.data, find_blender(), output, settings, self.catalog)
@@ -865,11 +1216,42 @@ class GameTests(unittest.TestCase):
                              '--base-nif', plan['base_nif'], '--output', output / 'compare.png'], output, 'Weapon comparison')
                 self.assertTrue((output / 'compare.png').is_file())
 
+    def test_second_weapon_through_blender_beside_the_first(self):
+        """Weapon 2 uses its own plan, NIF, textures and reports in the same output as weapon 1."""
+        from environment import find_blender
+        from weapon_nif import read_weapon
+        if not NIFLY or not find_blender():
+            self.skipTest('Requires local NiflyDLL and Blender')
+        with tempfile.TemporaryDirectory(dir=ROOT / 'build') as directory:
+            directory = Path(directory)
+            glb = directory / 'two.glb'
+            two_material_glb(glb)
+            item = original(sha256=weapon.sha256(glb), kind='mace', base='SteelMace', grip=.2, length=60)
+            settings = FollowerSettings(mod_name='Probe', weapon_mode='original',
+                                        original_weapons=[item, {**item, 'kind': 'sword', 'base': 'SteelSword', 'length': 80}])
+            output = directory / 'out'
+            output.mkdir()
+            reports = [weapon.convert_weapon(glb, self.data, find_blender(), output, settings, self.catalog, index=i)
+                       for i in (0, 1)]
+            self.assertEqual([r['nif'] for r in reports], ['meshes/vrm2skyrim/probe/weapon.nif',
+                                                            'meshes/vrm2skyrim/probe/weapon2.nif'])
+            textures = {t.rsplit('\\', 1)[-1] for s in read_weapon(output / 'mod' / reports[1]['nif'])['shapes']
+                        for t in s['textures'].values() if t and 'cubemaps' not in t}
+            self.assertEqual(textures, {'weapon2_0.dds', 'weapon2_0_n.dds', 'weapon2_1.dds', 'weapon2_1_n.dds'})
+            for name in ('weapon.json', 'weapon2.json', 'weapon-plan.json', 'weapon2-plan.json', 'weapon2-nif.json'):
+                self.assertTrue((output / name).is_file(), name)
+            for index, length in ((0, 60), (1, 80)):
+                self.assertAlmostEqual(weapon.validate_weapon_model(output, settings, index)[0]['length'], length, places=2)
+            # Weapon 2's settings never validate weapon 1's NIF in its place.
+            swapped = FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapons=settings.original_weapons[::-1])
+            with self.assertRaises(ValueError):
+                weapon.validate_weapon_model(output, swapped, 1)
+
     def test_localized_description_becomes_inline_text(self):
         base = self.catalog.require('SteelSword')
         static = self.catalog.first_person_static(base)
         description = self.catalog.label(base, b'DESC')
-        records_ = weapon.weapon_records(FollowerSettings(weapon_mode='original', original_weapon=original(base='SteelSword', kind='sword')),
+        records_ = weapon.weapon_records(FollowerSettings(weapon_mode='original', original_weapons=[original(base='SteelSword', kind='sword')]),
                                          base, static, description, [[0, 0, 0], [1, 1, 1]])
         self.assertEqual(records_[0].values(b'DESC'), [text(description)])
         self.assertEqual(len(base.values(b'DESC')[0]), 4)
