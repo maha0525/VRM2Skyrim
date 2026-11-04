@@ -345,6 +345,11 @@ input[type="checkbox"] {
   padding: 16px 20px;
 }
 
+.dropzone:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .dropzone.compact strong {
   margin-top: 0;
 }
