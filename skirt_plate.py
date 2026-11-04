@@ -164,7 +164,6 @@ def skirt_plate(bones, touching, samples, sample_weights, legs, margin, cloth_tr
         cloth_angle = np.arctan2(cloth[:, 0], cloth[:, 1])
         faces = np.asarray([corners for corners, owners in cloth_triangles
                             if all(set(o) & ring_bones for o in owners)]).reshape(-1, 3, 3)
-        face_angle = np.arctan2(faces[:, :, 0], faces[:, :, 1])
         radius = np.hypot(cloth[:, 0], cloth[:, 1])
         for column in columns:
             for k, entry in enumerate(column):
@@ -196,10 +195,27 @@ def skirt_plate(bones, touching, samples, sample_weights, legs, margin, cloth_tr
             middle = (a+b)/2
             towards = np.arctan2(middle[0], middle[1])
             near = (abs(cloth[:, 2]-middle[2]) < 3) & (_angle_gap(cloth_angle, towards) < np.radians(5))
-            side = (face_angle-towards+np.pi) % (2*np.pi)-np.pi
-            across = (side.min(1) < 0) & (side.max(1) > 0) & (side.max(1)-side.min(1) < np.pi/2) & \
-                (faces[:, :, 2].min(1) < middle[2]+3) & (faces[:, :, 2].max(1) > middle[2]-3)
-            return bool(near.any() or across.any())
+            return bool(near.any() or crosses(towards, middle[2]))
+
+        def crosses(towards, height):
+            """Whether a cloth triangle meets the half-plane at that direction within 3 of that height.
+
+            The triangle is cut by the plane itself, so a diagonal slit's edge triangle that spans
+            the direction only above the height does not count.
+            """
+            along = np.array([np.sin(towards), np.cos(towards), 0.])
+            side = faces @ np.array([np.cos(towards), -np.sin(towards), 0.])
+            low = np.full(len(faces), np.inf)
+            high = np.full(len(faces), -np.inf)
+            for i, j in ((0, 1), (1, 2), (2, 0)):
+                a, b = side[:, i], side[:, j]
+                cut = (a*b <= 0) & (a != b)
+                t = np.where(cut, a/np.where(a != b, a-b, 1), 0)
+                point = faces[:, i] + t[:, None]*(faces[:, j]-faces[:, i])
+                cut &= point @ along > 0  # the half-plane, not the opposite side of the actor
+                low = np.where(cut, np.minimum(low, point[:, 2]), low)
+                high = np.where(cut, np.maximum(high, point[:, 2]), high)
+            return bool(((low < height+3) & (high > height-3)).any())
         joined = set()  # (column, neighbour, band); an open cloak front or a robe's slit stays apart
         for c in range(count):
             d = (c+1) % count

@@ -1228,6 +1228,27 @@ class SkirtPlateTests(unittest.TestCase):
         self.assertEqual(slit['rings'][0]['joined'], 2*(self.CHAINS-1))
         self.assertNotIn({'c0', 'c1'}, {frozenset((a.split('_')[1], b.split('_')[1])) for a, b, _ in slit['links']})
 
+    def test_a_triangle_counts_only_where_it_meets_the_direction_at_that_height(self):
+        # Codex's diagonal slit: a triangle spanning 0 degrees, but at 0 degrees only from height 45 to 60.
+        def at(angle, height):
+            return [12*np.sin(np.radians(angle)), 12*np.cos(np.radians(angle)), height]
+        bones, samples = self.ring(slit=False)
+        diagonal = (np.asarray([at(-20, 60), at(20, 60), at(20, 30)]), [['V2SP_c0_1']]*3)
+        for height, joined in ((35, False), (52, True)):
+            # A ring of chains at -20, 20 and 180 degrees whose band is centred on height.
+            ring = {}
+            for c, angle in enumerate((-20, 20, 180)):
+                for k, z in enumerate((height+15, height+5)):  # one band, from height+5 to height-5
+                    ring[f'V2SP_d{c}_{k}'] = {'name': f'V2SP_d{c}_{k}', 'dynamic': True,
+                                              'parent': f'V2SP_d{c}_{k-1}' if k else self.PELVIS,
+                                              'matrix': translation(at(angle, z)).tolist(),
+                                              'spring_tail': at(angle, height-5) if k else None}
+            cloth = {n: [at(-20 if '_d0_' in n else 20 if '_d1_' in n else 180, height)] for n in ring}
+            plate = skirt_plate(ring, list(ring), cloth, {n: [1.] for n in cloth}, self.legs(), TRIANGLE_MARGIN,
+                                [(diagonal[0], [list(ring)]*3)])
+            pairs = {frozenset((a[:8], b[:8])) for a, b, _ in (plate or {'links': []})['links']}
+            self.assertEqual(frozenset(('V2SP_d0_', 'V2SP_d1_')) in pairs, joined, height)
+
     def test_no_ring_without_three_chains(self):
         bones, samples = self.ring(slit=False)
         weights = {n: [1.]*len(v) for n, v in samples.items()}
