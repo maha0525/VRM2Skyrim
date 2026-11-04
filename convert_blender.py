@@ -289,12 +289,18 @@ def main():
         influences = {}
         mesh_components = {}
         fixed_bones = set()
+        # A body mesh outside physics hands its cloth-bone weights to their humanoid ancestor,
+        # so it never follows a cloth chain anyway. VRM bodies often carry a little skirt weight
+        # under the skirt front (Lucia's), which must not pin the skirt.
+        body_nodes = set(settings.appearance_parts.get('body', ()))
         for obj in meshes:
             component = obj['v2s_part']
             if not settings.armor_support:
                 component = ('appearance_hair' if 'hair' in original_names[obj['v2s_source_node']].lower()
                              else 'appearance_cloth')
             mesh_components[obj['v2s_source_node']] = component
+            if obj['v2s_source_node'] not in selected_nodes and obj['v2s_source_node'] in body_nodes:
+                continue
             weights = (influences.setdefault(component, set())
                        if obj['v2s_source_node'] in selected_nodes else fixed_bones)
             for vertex in obj.data.vertices:
