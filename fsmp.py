@@ -259,6 +259,23 @@ def skin_samples(nif):
     return points, weights
 
 
+def skin_triangles(nif, minimum_weight=.3):
+    """Each visible triangle's world corners and, per corner, the bones weighted over minimum_weight."""
+    result = []
+    for shape in nif.shapes:
+        if shape.name.startswith(('V2SCollision_', 'V2SOutline_')):
+            continue
+        value = matrix(shape.transform)
+        vertices = np.asarray(shape.verts) @ value[:3, :3].T + value[:3, 3]
+        owners = [[] for _ in vertices]
+        for name, pairs in shape.bone_weights.items():
+            for vertex, weight in pairs:
+                if weight > minimum_weight:
+                    owners[vertex].append(name)
+        result.extend((vertices[list(t)], [owners[i] for i in t]) for t in shape.tris)
+    return result
+
+
 def arm_cloth_bones(bones, cloth_components, co_influences=()):
     """Identify sleeve movers from humanoid ancestry and ownership, not names."""
     result = set()
@@ -830,7 +847,7 @@ def load_collider_groups(output):
     return collider_groups(json.loads(path.read_text(encoding='utf8'))) if path.is_file() else {}
 
 
-def skirt_plate_for(bones, samples, sample_weights, groups, used_groups, targets):
+def skirt_plate_for(bones, samples, sample_weights, triangles, groups, used_groups, targets):
     """(plate geometry, its XML values) for the skirt chains of one system, or (None, None).
 
     The plate only meets the leg collider surfaces this system builds anyway.
@@ -841,7 +858,7 @@ def skirt_plate_for(bones, samples, sample_weights, groups, used_groups, targets
     if not legs or not touching:
         return None, None
     colliders = [c for g in legs for c in groups[g]]
-    plate = skirt_plate(bones, touching, samples, sample_weights, colliders, TRIANGLE_MARGIN)
+    plate = skirt_plate(bones, touching, samples, sample_weights, colliders, TRIANGLE_MARGIN, triangles)
     if not plate:
         return None, None
     links = [(a, b, (np.linalg.inv(targets[b]) @ np.r_[point, 1])[:3]) for a, b, point in plate['links']]
@@ -874,6 +891,7 @@ def build_physics(output):
     for path in sorted(set(paths)):
         with NifFile(str(path)) as nif:
             samples, sample_weights = skin_samples(nif)
+            triangles = skin_triangles(nif)
             used = set(samples) & set(all_bones)
             if not any(all_bones[n]['dynamic'] for n in used):
                 continue
@@ -898,7 +916,7 @@ def build_physics(output):
                 centres[name] = centre
                 info.update(centred_node=True, node_centre=centre.tolist())
             contacts = contact_surface_points(bones, samples, sample_weights, hulls, globals_, arm_contacts)
-            prepared.append((path, samples, sample_weights, bones, protected, arm_contacts, contacts))
+            prepared.append((path, samples, sample_weights, triangles, bones, protected, arm_contacts, contacts))
     targets = {n: np.asarray(i['matrix']) @ translation(centres.get(n, [0, 0, 0])) for n, i in all_bones.items()}
     for path in sorted(set(paths) | {mesh_dir/'skeleton.nif'}):
         shift_frames(path, targets)
@@ -907,7 +925,7 @@ def build_physics(output):
                     'rest_frames': {n: m.tolist() for n, m in targets.items()}}
     (output/'physics-frames.json').write_text(json.dumps(frame_report, indent=2), encoding='utf8')
     systems = []
-    for path, samples, sample_weights, bones, protected, arm_contacts, contacts in prepared:
+    for path, samples, sample_weights, triangles, bones, protected, arm_contacts, contacts in prepared:
         with NifFile(str(path)) as nif:
             relative = f'SKSE/Plugins/hdtSkinnedMeshConfigs/{settings.asset_dir}/{path.stem}.xml'
             xml_path = output / 'mod' / relative
@@ -924,7 +942,8 @@ def build_physics(output):
             reachable = set(contact_groups) | (set(bones) - set(body_inside) if hulls else set())
             arm_contacts = arm_contacts & reachable
             secondary_contacts = secondary_contacts & reachable
-            plate, plate_xml = skirt_plate_for(bones, samples, sample_weights, groups, used_groups, targets)
+            plate, plate_xml = skirt_plate_for(bones, samples, sample_weights, triangles, groups, used_groups,
+                                               targets)
             if hulls or used_groups:
                 with NifFile(str(mesh_dir / 'skeleton.nif')) as skeleton:
                     if hulls:

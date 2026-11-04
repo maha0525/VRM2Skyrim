@@ -1194,6 +1194,40 @@ class SkirtPlateTests(unittest.TestCase):
         distance = min(segment_distance(v, leg['head'], leg['tail'])-leg['radius'] for v in vertices for leg in wide)
         self.assertGreaterEqual(distance, 2*TRIANGLE_MARGIN)
 
+    def test_a_skirt_hung_half_from_each_thigh_is_one_ring(self):
+        bones, samples = self.ring(slit=False)
+        for c in range(self.CHAINS):  # Air's VRM hangs each half of her skirt from its thigh
+            bones[f'V2SP_c{c}_0']['parent'] = 'NPC L Thigh [LThg]' if c < 4 else 'NPC R Thigh [RThg]'
+        weights = {n: [1.]*len(v) for n, v in samples.items()}
+        plate = skirt_plate(bones, list(bones), samples, weights, self.legs(), TRIANGLE_MARGIN)
+        self.assertEqual([(r['anchor'], r['chains']) for r in plate['rings']], [('NPC Pelvis [Pelv]', self.CHAINS)])
+        self.assertEqual(plate['left_out'], 0)
+        self.assertEqual(len(plate['links']), 3*self.CHAINS)  # across both seams too
+
+    def test_triangles_across_a_gap_join_a_low_poly_skirt_but_not_a_slit(self):
+        bones, samples = self.ring(slit=False)
+        # Cloth vertices only on the chains: none in the direction halfway between two of them.
+        samples = {n: [p for p in points if abs(np.degrees(np.arctan2(p[0], p[1])) % 45) < 1e-6
+                       or abs(np.degrees(np.arctan2(p[0], p[1])) % 45 - 45) < 1e-6] for n, points in samples.items()}
+        weights = {n: [1.]*len(v) for n, v in samples.items()}
+
+        def strip(c, top, bottom):
+            """Two triangles of cloth between chain c and the next one, owned by their bones."""
+            a, b = np.radians(45*c), np.radians(45*(c+1))
+            corners = [[12*np.sin(t), 12*np.cos(t), z] for t, z in ((a, top), (b, top), (b, bottom), (a, bottom))]
+            owners = [[f'V2SP_c{c}_1'], [f'V2SP_c{(c+1) % self.CHAINS}_1'], [f'V2SP_c{(c+1) % self.CHAINS}_2'],
+                      [f'V2SP_c{c}_2']]
+            return [(np.asarray([corners[i] for i in t]), [owners[i] for i in t]) for t in ((0, 1, 2), (0, 2, 3))]
+        whole = [t for c in range(self.CHAINS) for t in strip(c, 48, 32)]
+        bare = skirt_plate(bones, list(bones), samples, weights, self.legs(), TRIANGLE_MARGIN)
+        self.assertIsNone(bare)  # no vertex between any two chains: every band looked open
+        joined = skirt_plate(bones, list(bones), samples, weights, self.legs(), TRIANGLE_MARGIN, whole)
+        self.assertEqual(joined['rings'][0]['joined'], 2*self.CHAINS)
+        slit = skirt_plate(bones, list(bones), samples, weights, self.legs(), TRIANGLE_MARGIN,
+                           [t for c in range(1, self.CHAINS) for t in strip(c, 48, 32)])
+        self.assertEqual(slit['rings'][0]['joined'], 2*(self.CHAINS-1))
+        self.assertNotIn({'c0', 'c1'}, {frozenset((a.split('_')[1], b.split('_')[1])) for a, b, _ in slit['links']})
+
     def test_no_ring_without_three_chains(self):
         bones, samples = self.ring(slit=False)
         weights = {n: [1.]*len(v) for n, v in samples.items()}
