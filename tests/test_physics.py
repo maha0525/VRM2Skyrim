@@ -15,7 +15,8 @@ from fsmp import (ARM_PROXY, SECONDARY_PROXY, SPRING_PROXY, TRIANGLE_MARGIN, GRA
                   add_collision_proxy, arm_cloth_bones, attach, build_physics, capsule_mesh, collider_depth,
                   contact_classes, contact_collider_groups, collider_groups, is_contact_patch, joint_profile, read_system,
                   local_points, protect_attachments, rest_spring, skin_samples, spring_joint, spring_mesh, system_xml,
-                  contact_surface_points, validate_physics)
+                  body_mesh, contact_surface_points, rest_inside_body, starts_inside, validate_physics)
+from skirt_plate import CLOTH_GAP, LINK_SLACK, PLATE, leg_groups, segment_distance, skirt_plate
 from custom_skeleton import NifFile, create_skeleton, matrix, rigid_buffer
 from physics_rig import (blender_point, inertia_sphere_radius, inherited_spring, node_local_matrix, posed_point,
                          spring_tails,
@@ -1114,6 +1115,218 @@ class SpringBuildTests(unittest.TestCase):
                              {'1'})
             with NifFile(str(mesh_dir/'avatar.nif')) as nif:
                 self.assertEqual(sum(s.name.startswith('V2SCollision_') for s in nif.shapes), 2)
+
+
+class SkirtPlateTests(unittest.TestCase):
+    """Body rest contacts and the skirt plate: a ring of eight chains around the hips, one open slit."""
+    PELVIS, THIGH = 'NPC Pelvis [Pelv]', 'NPC L Thigh [LThg]'
+    TEXTURE = 'textures/spring/flat_n.dds'
+    CHAINS = 8
+
+    def ring(self, slit=True):
+        """{bone: info} and {bone: cloth samples}; chain c hangs at angle 45c degrees, radius 12, z 60..30."""
+        bones, samples = {}, {}
+        for c in range(self.CHAINS):
+            angle = np.radians(45*c)
+            for k in range(3):
+                name = f'V2SP_c{c}_{k}'
+                top = 60-10*k
+                bones[name] = {'name': name, 'parent': f'V2SP_c{c}_{k-1}' if k else self.PELVIS, 'dynamic': True,
+                               'components': ['appearance_cloth'],
+                               'matrix': translation([12*np.sin(angle), 12*np.cos(angle), top]).tolist(),
+                               'spring': {'stiffness': 1., 'gravity': 0., 'hit_radius': .025, 'groups': [3]}}
+                if k == 2:
+                    bones[name]['spring_tail'] = [12*np.sin(angle), 12*np.cos(angle), 30.]
+                spread = range(-2, 3)
+                if slit and c == 0:
+                    spread = range(-2, 1)  # no cloth between chains 0 and 1
+                if slit and c == 1:
+                    spread = range(0, 3)
+                samples[name] = [[12*np.sin(angle+np.radians(9*s)), 12*np.cos(angle+np.radians(9*s)), top-d]
+                                 for s in spread for d in (2, 5, 8)]
+        return bones, samples
+
+    def legs(self):
+        return [{'group': 3, 'bone': self.THIGH, 'head': [x, 0, 55], 'tail': [x, 0, 20], 'radius': 5.}
+                for x in (-5, 5)]
+
+    def plate(self, slit=True):
+        bones, samples = self.ring(slit)
+        weights = {n: [1.]*len(v) for n, v in samples.items()}
+        return skirt_plate(bones, list(bones), samples, weights, self.legs(), TRIANGLE_MARGIN)
+
+    def test_plate_triangles_have_one_owner_and_face_the_legs(self):
+        plate = self.plate()
+        owner = {v: b for b, pairs in plate['weights'].items() for v, w in pairs}
+        self.assertTrue(all(w == 1. for pairs in plate['weights'].values() for _, w in pairs))
+        self.assertEqual(len(owner), len(plate['vertices']))
+        vertices = np.asarray(plate['vertices'])
+        for tri in plate['triangles']:
+            self.assertEqual(len({owner[v] for v in tri}), 1)
+            a, b, c = vertices[list(tri)]
+            self.assertLess(np.dot(np.cross(b-a, c-a)[:2], ((a+b+c)/3)[:2]), 0)  # faces the actor's axis
+        # Two bands per chain carried by its lower two bones; strips toward both neighbours except across the slit.
+        self.assertEqual(sorted(plate['weights']), sorted(f'V2SP_c{c}_{k}' for c in range(self.CHAINS) for k in (1, 2)))
+        self.assertEqual(len(plate['triangles']), 2*2*(2*self.CHAINS-2))
+        self.assertEqual(plate['left_out'], 0)
+        np.testing.assert_allclose(np.hypot(vertices[:, 0], vertices[:, 1]).max(), 12-CLOTH_GAP, atol=1e-6)
+        self.assertEqual(plate['rings'], [{'anchor': self.PELVIS, 'chains': 8, 'heights': [50., 40., 30.],
+                                           'bands': 16, 'joined': 14}])
+
+    def test_side_links_join_neighbours_at_every_height_except_across_a_slit(self):
+        links = self.plate()['links']
+        self.assertEqual(len(links), 3*(self.CHAINS-1))
+        pairs = {frozenset((a.split('_')[1], b.split('_')[1])) for a, b, _ in links}
+        self.assertNotIn({'c0', 'c1'}, pairs)
+        self.assertIn({'c0', 'c7'}, pairs)
+        self.assertEqual(len(self.plate(slit=False)['links']), 3*self.CHAINS)
+        for a, b, point in links:
+            self.assertEqual(a[-1], b[-1])  # the bones carrying the same height
+            self.assertAlmostEqual(point[2], {'0': 50., '1': 40., '2': 30.}[a[-1]])
+
+    def test_a_plate_grazing_a_leg_at_rest_moves_out_instead_of_leaving_the_band_bare(self):
+        bones, samples = self.ring(slit=False)
+        weights = {n: [1.]*len(v) for n, v in samples.items()}
+        wide = [dict(leg, radius=6.4) for leg in self.legs()]  # the cloth radius 11.5 would sit .1 off the thigh
+        plate = skirt_plate(bones, list(bones), samples, weights, wide, TRIANGLE_MARGIN)
+        self.assertEqual(plate['left_out'], 0)
+        vertices = np.asarray(plate['vertices'])
+        distance = min(segment_distance(v, leg['head'], leg['tail'])-leg['radius'] for v in vertices for leg in wide)
+        self.assertGreaterEqual(distance, 2*TRIANGLE_MARGIN)
+
+    def test_no_ring_without_three_chains(self):
+        bones, samples = self.ring(slit=False)
+        weights = {n: [1.]*len(v) for n, v in samples.items()}
+        two = [n for n in bones if n.split('_')[1] in ('c0', 'c4')]
+        self.assertIsNone(skirt_plate({n: bones[n] for n in two}, two, samples, weights, self.legs(), TRIANGLE_MARGIN))
+
+    def test_leg_groups_are_the_groups_on_thighs_or_calves(self):
+        groups = collider_groups([{'group': 1, 'bone': 'NPC Spine', 'head': [0, 0, 0], 'tail': None, 'radius': 1},
+                                  {'group': 2, 'bone': 'NPC R Calf [RClf]', 'head': [0, 0, 0], 'tail': None, 'radius': 1},
+                                  {'group': 3, 'bone': self.THIGH, 'head': [0, 0, 0], 'tail': None, 'radius': 1},
+                                  {'group': 3, 'bone': 'NPC Pelvis', 'head': [0, 0, 0], 'tail': None, 'radius': 1}])
+        self.assertEqual(leg_groups(groups), [2, 3])
+
+    def test_body_rest_contact_follows_fsmp_reach_and_depth(self):
+        cube, triangles, _ = body_mesh({'NPC Pelvis': [[x, y, z] for x in (-3, 3) for y in (-3, 3) for z in (-3, 3)]},
+                                       {'NPC Pelvis': np.eye(4)})
+        def inside(x):
+            return starts_inside([x, 0, 0], .75, cube, triangles)
+        self.assertTrue(inside(3.7))  # within .4+.35 in front of the face
+        self.assertFalse(inside(3.8))
+        self.assertTrue(inside(2.1))  # .9 behind the face
+        self.assertFalse(inside(0))  # deeper than FSMP's default penetration of 1 behind every face
+        bones = {'near': {}, 'far': {'spring': {'hit_radius': .025, 'groups': []}}}
+        self.assertEqual(rest_inside_body(bones, {'near': [5., 0, 0], 'far': [5., 0, 0]}, cube, triangles), ['far'])
+
+    def test_contact_classes_keep_body_skipping_owners_apart(self):
+        bones = {'a': {}, 'b': {}, 'c': {'spring': {'hit_radius': .025, 'groups': [3]}},
+                 'd': {'spring': {'hit_radius': .025, 'groups': [3]}}}
+        classes = contact_classes(SECONDARY_PROXY, bones, bones, {'c': [3], 'd': [3]}, (), ['b', 'd'])
+        self.assertEqual([(c[0], c[3]) for c in classes],
+                         [(SECONDARY_PROXY, ['a']), (SECONDARY_PROXY+'_S1', ['b']), (SECONDARY_PROXY+'_S2', ['d']),
+                          (SECONDARY_PROXY+'_S3', ['c'])])
+
+    def fixture(self, output):
+        settings = FollowerSettings(physics_enabled=True, mod_id='SkirtTest')
+        settings.save(output/'settings.json')
+        mesh_dir = output/'mod/meshes'/settings.asset_dir
+        mesh_dir.mkdir(parents=True)
+        (output/'mod'/self.TEXTURE).parent.mkdir(parents=True)
+        (output/'mod'/self.TEXTURE).write_bytes(b'')
+        bones, samples = self.ring()
+        # Two short chains whose cloth starts .5 inside the body box: one only meets the body, one also a VRM collider.
+        for side, groups in ((1, []), (-1, [5])):
+            name = f'V2SP_in_{0 if side > 0 else 1}'
+            bones[name] = {'name': name, 'parent': self.PELVIS, 'dynamic': True, 'components': ['appearance_cloth'],
+                           'matrix': translation([5.5*side, 0, 50]).tolist(),
+                           **({'spring': {'stiffness': 1., 'gravity': 0., 'hit_radius': .025, 'groups': groups}}
+                              if groups else {})}
+            samples[name] = [[5.5*side, y, z] for y in (-1, 0, 1) for z in (48, 46)]
+        poses = {self.PELVIS: np.eye(4), self.THIGH: translation([5, 0, 55]),
+                 **{n: np.asarray(i['matrix']) for n, i in bones.items()}}
+        parents = {self.THIGH: self.PELVIS, **{n: i['parent'] for n, i in bones.items()}}
+        for path in (mesh_dir/'skeleton.nif', mesh_dir/'avatar.nif'):
+            with NifFile() as nif:
+                nif.initialize('SKYRIMSE', str(path))
+                nodes = {}
+                for name in [self.PELVIS, self.THIGH, *bones]:
+                    parent = parents.get(name)
+                    local = np.linalg.inv(poses[parent]) @ poses[name] if parent else poses[name]
+                    nodes[name] = nif.add_node(name, rigid_buffer(local), nodes[parent] if parent else nif.rootNode)
+                if path.name == 'avatar.nif':
+                    body = [(float(x), float(y), float(z)) for x in (-6, 6) for y in (-6, 6) for z in (30, 60)]
+                    SpringBuildTests.skinned(self, nif, 'VRMNode_00001', body,
+                                             [(0, 1, 2), (1, 3, 2), (4, 6, 5), (5, 6, 7), (0, 4, 1), (1, 4, 5),
+                                              (2, 3, 6), (3, 7, 6), (0, 2, 4), (2, 6, 4), (1, 5, 3), (3, 5, 7)],
+                                             {self.PELVIS: range(8)}, poses, parents)
+                    cloth, weights = [], {}
+                    for name, points in samples.items():
+                        weights[name] = range(len(cloth), len(cloth)+len(points))
+                        cloth += [tuple(map(float, p)) for p in points]
+                    SpringBuildTests.skinned(self, nif, 'VRMNode_00002', cloth,
+                                             [(i, i+1, i+2) for i in range(0, len(cloth)-2, 3)], weights, poses, parents)
+                nif.save()
+        colliders = self.legs() + [{'group': 5, 'bone': self.PELVIS, 'head': [0, 0, 90], 'tail': None, 'radius': 1.}]
+        for name, value in (('skeleton.json', {'physics_bones': bones}),
+                            ('appearance.json', {'components': [{'id': 'appearance', 'role': 'body', 'file': 'avatar.nif'}]}),
+                            ('source.json', {'parts': [{'node': 1, 'name': 'Body', 'suggested_role': 'body'}]}),
+                            ('spring-colliders.json', colliders)):
+            (output/name).write_text(json.dumps(value), encoding='utf8')
+        return mesh_dir
+
+    def test_plate_and_body_rest_contacts_build_validate_and_rebuild(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            mesh_dir = self.fixture(output)
+            build_physics(output)
+            system = json.loads((output/'physics.json').read_text(encoding='utf8'))['systems'][0]
+            self.assertEqual(system['rest_inside_body'], ['V2SP_in_0', 'V2SP_in_1'])
+            self.assertNotIn('V2SP_in_0', system['secondary_contact_bones'])  # nothing else to touch
+            self.assertIn('V2SP_in_1', system['secondary_contact_bones'])
+            plate = system['skirt_plate']
+            self.assertEqual((plate['leg_groups'], plate['triangles'], plate['left_out'], len(plate['links'])),
+                             ([3], 2*2*(2*self.CHAINS-2), 0, 3*(self.CHAINS-1)))
+            root = read_system(output/'mod'/system['xml'])
+            tag = root.findtext(f"per-triangle-shape[@name='{PROXY}']/tag")
+            element = root.find(f"per-triangle-shape[@name='{PLATE}']")
+            self.assertEqual([e.text for e in element.findall('can-collide-with-tag')], [tag+'_g3'])
+            self.assertEqual(element.findtext('penetration'), str(collider_depth(self.legs())))
+            patches = {s.attrib['name']: {e.text for e in s.findall('can-collide-with-tag')}
+                       for s in root.findall('per-vertex-shape')}
+            owners = {}
+            with NifFile(str(mesh_dir/'avatar.nif')) as nif:
+                for shape in nif.shapes:
+                    owners.update((b, shape.name) for b in shape.bone_names if shape.name in patches)
+                self.assertTrue(next(s for s in nif.shapes if s.name == PLATE).properties.flags & 1)
+            self.assertEqual(patches[owners['V2SP_in_1']], {tag+'_g5'})
+            self.assertEqual(patches[owners['V2SP_c3_1']], {tag, tag+'_g3'})
+            links = [j for j in root.findall('generic-constraint') if j.attrib['bodyA'].endswith(j.attrib['bodyB'][-2:])
+                     and j.attrib['bodyA'] != j.attrib['bodyB'] and j.attrib['bodyA'].startswith('V2SP_c')]
+            self.assertEqual(len(links), 3*(self.CHAINS-1))
+            self.assertEqual(links[0].find('linearUpperLimit').attrib['x'], f'{LINK_SLACK:.7f}')
+            build_physics(output)  # idempotent on rebuild, and validated by build_physics itself
+
+            def refused(edit, message):
+                path = output/'physics.json'
+                original = path.read_text(encoding='utf8')
+                report = json.loads(original)
+                edit(report['systems'][0])
+                path.write_text(json.dumps(report), encoding='utf8')
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_physics(output)
+                path.write_text(original, encoding='utf8')
+
+            refused(lambda s: s['rest_inside_body'].pop(), 'starting inside the body do not match')
+            refused(lambda s: s['skirt_plate'].update(triangles=1), 'Skirt plate must be present')
+            refused(lambda s: s['skirt_plate']['links'].pop(), 'Skirt side links differ')
+            refused(lambda s: s.update(skirt_plate=None), 'Skirt plate present without')
+            xml = output/'mod'/system['xml']
+            text = xml.read_text(encoding='utf8')
+            at = text.index('_g3</can-collide-with-tag>', text.index(f'name="{PLATE}"'))
+            xml.write_text(text[:at]+'_g5'+text[at+3:], encoding='utf8')
+            with self.assertRaisesRegex(ValueError, 'Skirt plate collision values'):
+                validate_physics(output)
 
 
 class BonePartitionTests(unittest.TestCase):
