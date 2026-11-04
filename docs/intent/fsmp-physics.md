@@ -359,7 +359,10 @@ collider group left has no contact patch.
 
 Plate rule. Skirt chains are the movers whose VRM groups (their own or
 borrowed) include a group with a collider on a thigh or calf. Chains under the
-same torso bone form one ring, ordered by angle around the actor's origin, which
+same torso bone form one ring; chains hung from a thigh join the hips' ring, because
+Air's VRM hangs the left half of her skirt from the left thigh and the right half
+from the right, and each half closed on itself made strips across her legs. A ring
+is ordered by angle around the actor's origin, which
 the hips stand over. Every chain is sampled at the ring's common heights (the
 median joint heights of its longest chains), and each band between two heights
 belongs to the bone carrying the lower point. That bone carries a hidden strip
@@ -370,7 +373,9 @@ the hem jump. Plate points sit 0.5 inside the real cloth, not on the bones,
 because Lucia's front chains curl between her legs at knee height while her
 cloth hangs in front. A strip grazing a leg at rest moves outward until it
 clears it. Neighbouring chains get plate only in bands where the ring's cloth
-reaches halfway between them, so a slit or an open cloak front stays open. The
+reaches halfway between them: a cloth vertex near that direction or a cloth
+triangle across it, since Air's low-poly skirt has no vertex between chains 45
+degrees apart. A slit or an open cloak front has neither and stays open. The
 plate `V2SCollision_SkirtPlate` is a per-triangle shape that only the used leg
 groups' tags may touch, with their `collider_depth`, internal to the actor.
 

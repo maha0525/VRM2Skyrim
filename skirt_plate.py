@@ -22,6 +22,9 @@ CLOTH_GAP = .5
 # Plate points must be this much further from a leg surface at rest than its contact margins.
 REST_CLEARANCE = .3
 LEG_BONES = ('Thigh', 'Calf')
+# A VRM may hang each half of a skirt from its own thigh (Air's); both halves still form the
+# one ring around the hips.
+HIPS = 'NPC Pelvis [Pelv]'
 
 
 def segment_distance(point, head, tail):
@@ -110,12 +113,14 @@ def _angle_gap(angles, towards):
     return abs((angles-towards+np.pi) % (2*np.pi)-np.pi)
 
 
-def skirt_plate(bones, touching, samples, sample_weights, legs, margin):
+def skirt_plate(bones, touching, samples, sample_weights, legs, margin, cloth_triangles=()):
     """Plate and side links for every ring of skirt chains, or None without a ring.
 
     bones: the system's physics bones; touching: movers the VRM lets touch a leg;
     samples/sample_weights: the garment's skinned vertices per bone (world, rest);
-    legs: the leg colliders (world, rest); margin: the triangle margin of the plate and legs.
+    legs: the leg colliders (world, rest); margin: the triangle margin of the plate and legs;
+    cloth_triangles: the garment's triangles as (3x3 world corners, the bones weighted over .3 at
+    each corner), so cloth whose few vertices all sit near the chains still counts between them.
     Angles are taken around the actor's origin, which the converter stands the hips over.
     Returns {'vertices', 'triangles', 'weights': {bone: [(vertex, 1.)]}, 'links': [(a, b, point)],
     'rings': [{'anchor', 'chains', 'heights', 'bands', 'joined'}], 'left_out': triangles touching a leg}.
@@ -133,7 +138,8 @@ def skirt_plate(bones, touching, samples, sample_weights, legs, margin):
 
     rings = {}
     for path in _chains(bones, touching):
-        rings.setdefault(bones[path[0]]['parent'], []).append(path)
+        anchor = bones[path[0]]['parent']
+        rings.setdefault(HIPS if any(part in anchor for part in LEG_BONES) else anchor, []).append(path)
     vertices, weights, triangles, links, summary, left_out = [], {}, [], [], [], 0
     for anchor, ring_paths in sorted(rings.items()):
         lines = [line for line in (_polyline(bones, p) for p in ring_paths) if len(line[1])]
@@ -156,6 +162,8 @@ def skirt_plate(bones, touching, samples, sample_weights, legs, margin):
         cloth = np.concatenate([np.asarray(samples[n])[np.asarray(sample_weights[n]) > .3]
                                 for n in sorted(ring_bones) if n in samples])
         cloth_angle = np.arctan2(cloth[:, 0], cloth[:, 1])
+        faces = np.asarray([corners for corners, owners in cloth_triangles
+                            if all(set(o) & ring_bones for o in owners)]).reshape(-1, 3, 3)
         radius = np.hypot(cloth[:, 0], cloth[:, 1])
         for column in columns:
             for k, entry in enumerate(column):
@@ -179,11 +187,35 @@ def skirt_plate(bones, touching, samples, sample_weights, legs, margin):
                 column[k] = (np.array([r*np.sin(towards), r*np.cos(towards), point[2]]), owner)
 
         def cloth_between(a, b):
-            """Whether the ring's cloth reaches the direction halfway between two chain points."""
+            """Whether the ring's cloth reaches the direction halfway between two chain points.
+
+            A cloth vertex near that direction, or a cloth triangle across it: a low-poly skirt
+            (Air's) has no vertex there, but its triangles span the gap a slit leaves open.
+            """
             middle = (a+b)/2
-            near = (abs(cloth[:, 2]-middle[2]) < 3) & \
-                (_angle_gap(cloth_angle, np.arctan2(middle[0], middle[1])) < np.radians(5))
-            return bool(near.any())
+            towards = np.arctan2(middle[0], middle[1])
+            near = (abs(cloth[:, 2]-middle[2]) < 3) & (_angle_gap(cloth_angle, towards) < np.radians(5))
+            return bool(near.any() or crosses(towards, middle[2]))
+
+        def crosses(towards, height):
+            """Whether a cloth triangle meets the half-plane at that direction within 3 of that height.
+
+            The triangle is cut by the plane itself, so a diagonal slit's edge triangle that spans
+            the direction only above the height does not count.
+            """
+            along = np.array([np.sin(towards), np.cos(towards), 0.])
+            side = faces @ np.array([np.cos(towards), -np.sin(towards), 0.])
+            low = np.full(len(faces), np.inf)
+            high = np.full(len(faces), -np.inf)
+            for i, j in ((0, 1), (1, 2), (2, 0)):
+                a, b = side[:, i], side[:, j]
+                cut = (a*b <= 0) & (a != b)
+                t = np.where(cut, a/np.where(a != b, a-b, 1), 0)
+                point = faces[:, i] + t[:, None]*(faces[:, j]-faces[:, i])
+                cut &= point @ along > 0  # the half-plane, not the opposite side of the actor
+                low = np.where(cut, np.minimum(low, point[:, 2]), low)
+                high = np.where(cut, np.maximum(high, point[:, 2]), high)
+            return bool(((low < height+3) & (high > height-3)).any())
         joined = set()  # (column, neighbour, band); an open cloak front or a robe's slit stays apart
         for c in range(count):
             d = (c+1) % count
