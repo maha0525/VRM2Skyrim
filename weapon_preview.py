@@ -84,7 +84,7 @@ def prepare_avatar(source, game, blender, settings, root, key, progress):
     """The follower's converted appearance without NPC, weapon or MOD packaging."""
     values = {**asdict(settings), 'mod_id': 'Preview_'+key, 'fit_mode': 'selected', 'fit_armors': [],
               'physics_enabled': False, 'sitting_enabled': False, 'toon_enabled': False, 'render_previews': False,
-              'weapon_mode': 'official', 'original_weapon': {}}
+              'weapon_mode': 'official', 'original_weapons': []}
     prepared = FollowerSettings.from_dict(values)
     progress('プレビューを準備しています…')
     base = new_output(root/'avatars', key)
@@ -145,9 +145,10 @@ def preview(workspace, source, glb, game, blender, settings, catalog, progress):
     checks = doctor(game, blender)
     if not all(checks.values()):
         raise ValueError('Missing preview prerequisites: '+', '.join(k for k, v in checks.items() if not v))
-    weapon = settings.original_weapon
-    if settings.weapon_mode != 'original' or not weapon:
+    # One weapon per preview (the wizard sends the previewed card alone): built as weapon 0, weapon.nif.
+    if settings.weapon_mode != 'original' or len(settings.original_weapons) != 1:
         raise ValueError('オリジナル武器を選んでください')
+    weapon = settings.original_weapons[0]
     glb_hash = sha256(glb)
     if glb_hash != weapon['sha256']:
         raise ValueError('オリジナル武器の設定は別のGLB用です。設定したときと同じGLBを選び直してください')

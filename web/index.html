@@ -244,33 +244,10 @@
         <section id="original-weapon-panel" class="original-weapon-panel" hidden>
           <h3>オリジナル武器</h3>
           <p class="hint">手元の GLB ファイル（.glb）を変換して、このフォロワー専用の初期武器として持たせます。攻撃力・効果音・モーション・付呪は「元にする公式の武器」から引き継がれます。</p>
-          <label class="dropzone compact" id="weapon-glb-drop" for="weapon-glb" tabindex="0" role="button">
-            <strong>武器のGLBファイルを選ぶ</strong>
-            <span>クリック、またはここへドラッグ</span>
-          </label>
-          <input id="weapon-glb" type="file" accept=".glb" hidden>
-          <p id="weapon-glb-status" class="source-status" aria-live="polite">まだ選択されていません</p>
-          <div id="weapon-glb-mismatch" class="note" role="alert" hidden>
-            <span id="weapon-glb-mismatch-text"></span>
-            <button type="button" id="weapon-glb-forget" class="secondary">設定のGLBを使わず、別のGLBにする</button>
-          </div>
           <p class="hint">※Skyrim公式武器のポリゴン数は約366〜2,066三角形です。ポリゴン数の自動削減は行わないため、極端に高精細なモデルを入れるとゲーム内の負荷が高くなることがあります。</p>
-          <div class="grid">
-            <label>武器の種類<select id="weapon-kind"></select></label>
-            <label>元にする公式の武器<select id="weapon-base"></select><small>この武器の性能を受け継ぎます。</small></label>
-            <label>ゲームでの表示名<input id="weapon-name" maxlength="128"></label>
-            <label>握る位置（下端からの割合、%）<input id="weapon-grip" type="number" min="0" max="100" step="any"></label>
-            <label>全長<input id="weapon-length" type="number" min="0" max="1000" step="any"><small>Skyrimの長さの単位。1単位は約1.43cmです。</small></label>
-            <label>回転（度）<input id="weapon-roll" type="number" min="0" max="360" step="any"><small>長い向きを軸に回します。刃の向きを変えるときに使います。</small></label>
-            <label class="checkbox"><input id="weapon-flip" type="checkbox">上下を反転する</label>
-          </div>
-          <p id="weapon-base-status" class="hint" role="status"></p>
-          <button type="button" id="weapon-reset-size" class="secondary">握る位置と全長を元の武器に合わせる</button>
-          <h3>プレビュー</h3>
-          <p class="hint">値を変えたら、プレビューを描き直してください。初回はアバターの準備に数分かかる場合があります。</p>
-          <button type="button" id="weapon-preview" class="secondary">武器を持たせてプレビュー</button>
-          <p id="weapon-preview-status" class="hint" role="status" aria-live="polite"></p>
-          <div id="weapon-preview-images" class="preview-grid"></div>
+          <p class="hint">武器は8本まで持たせられます。オリジナル武器はすべて所持品に入り、どれを手に持つかはゲームのAIが決めます。片手武器2本で二刀流になるかは、戦闘スタイルにもよります。</p>
+          <div id="weapon-cards"></div>
+          <button type="button" id="add-weapon" class="secondary">武器を追加</button>
         </section>
 
         <div id="class-details" class="note" aria-live="polite"></div>

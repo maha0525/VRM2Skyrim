@@ -58,7 +58,8 @@ async function refreshToonShader(){
   try{value=await api('/api/toon-shader-status?game='+encodeURIComponent(game));}catch(e){value={error:e.message};}
   if($('game').value!==game)return;state.toonShader=value;renderToonShader();
 }
-function collect() {
+// options.weaponCard: settings for previewing that original weapon card alone (weapon.js).
+function collect(options={}) {
   const settings={};
   for(const [key,value] of Object.entries(state.defaults)) {
     const input=$(key); if(!input)continue;
@@ -75,9 +76,10 @@ function collect() {
   if(settings.fit_mode==='all_official')settings.fit_armors=[];
   settings.physics_nodes=[...(state.physicsNodes||[])];
   settings.physics_source_sha256=state.physicsHash||'';
-  // The original weapon is chosen in STEP 03; earlier steps send it only when complete (as check_weapon).
-  settings.original_weapon=originalWeaponSettings(settings.weapon_mode==='original'&&state.step>=2);
-  if(settings.weapon_mode==='original'&&!Object.keys(settings.original_weapon).length)settings.weapon_mode='official';
+  // Original weapons are chosen in STEP 03; earlier steps send them only when complete (as check_weapon).
+  settings.original_weapons=originalWeaponSettings(settings.weapon_mode==='original'&&(state.step>=2||!!options.weaponCard),
+    options.weaponCard?[options.weaponCard]:undefined);
+  if(settings.weapon_mode==='original'&&!settings.original_weapons.length)settings.weapon_mode='official';
   if(settings.armor_support&&$('fit-enabled').checked&&settings.fit_mode==='selected'&&!settings.fit_armors.length)throw new Error(tr("体型合わせする装備を選んでください")); return settings;
 }
 async function updateId() {
@@ -352,7 +354,7 @@ async function next() {
   state.navigationLoading=true;$('next').disabled=true;
   try {
     if(state.step===0){if(!state.source)throw new Error(tr("VRMファイルを選択してください"));const result=await loadCatalog();$('checks').replaceChildren();for(const [key,value]of Object.entries(result.checks)){const badge=document.createElement('span');badge.textContent=key+(value?' ✓':tr(" 未準備"));badge.className=value?'':'missing';$('checks').append(badge);}if(Object.values(result.checks).some(value=>!value))throw new Error(tr("環境が未準備です。パスを確認し、初回はSetup.cmdを実行してください。"));}
-    const result=await api('/api/validate',{source_id:state.source.source_id,game:$('game').value,settings:collect(),weapon_id:state.weaponGlb?.weapon_id,check_weapon:state.step>=2,check_shouts:state.step>=3});if(state.step===3)summarize(result.settings);
+    const result=await api('/api/validate',{source_id:state.source.source_id,game:$('game').value,settings:collect(),weapon_ids:weaponIds(),check_weapon:state.step>=2,check_shouts:state.step>=3});if(state.step===3)summarize(result.settings);
     if(state.step===0&&$('armor_support').value==='true'&&!wardrobeHasHair()&&!window.confirm(tr("「髪」に分類したメッシュがありません。身体や衣服に髪が含まれていると、鎧で髪が消えたり、兜を髪が突き抜けたりします。このまま進みますか？")))return;
     showStep(state.step+1);
   }catch(e){error(e.message);}finally{state.navigationLoading=false;renderCatalogStatus();}
@@ -382,7 +384,7 @@ async function poll() {
 }
 async function create() {
   error();$('create').disabled=true;
-  try {const result=await api('/api/jobs',{source_id:state.source.source_id,game:$('game').value,blender:$('blender').value,settings:collect(),weapon_id:state.weaponGlb?.weapon_id});state.job=result.job_id;$('wizard').hidden=true;$('progress').hidden=false;$('failure').hidden=true;$('progress').querySelector('.progress-bar').hidden=false;poll();}
+  try {const result=await api('/api/jobs',{source_id:state.source.source_id,game:$('game').value,blender:$('blender').value,settings:collect(),weapon_ids:weaponIds()});state.job=result.job_id;$('wizard').hidden=true;$('progress').hidden=false;$('failure').hidden=true;$('progress').querySelector('.progress-bar').hidden=false;poll();}
   catch(e){error(e.message);}finally{$('create').disabled=false;}
 }
 function preset() {
@@ -440,7 +442,7 @@ document.addEventListener('languagechange',()=>{
     setupChoices(state.choices,true);
   }
   renderWardrobe();renderPhysics();updateLevel();renderCatalogStatus();renderToonShader();
-  renderWeaponGlb();renderWeaponBaseStatus();if(state.weaponPreview&&!state.weaponPreviewLoading)renderWeaponPreview();
+  renderWeaponCards();
   if(state.source)$('source-status').textContent=tr('{0} · {1}メッシュ · {2}三角形',state.source.filename,state.source.mesh_count,state.source.triangles.toLocaleString(i18n.language));
   if(state.step===4&&state.reviewSettings)summarize(state.reviewSettings);
   if(state.completedJob&&!$('result').hidden)renderResultAppearance(state.completedJob);

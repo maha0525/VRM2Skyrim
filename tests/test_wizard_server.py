@@ -254,7 +254,7 @@ class WeaponServerTests(unittest.TestCase):
     def settings(self, uploaded, **changes):
         weapon = {'sha256': uploaded['sha256'], 'filename': uploaded['filename'], 'kind': 'staff',
                   'base': 'StaffFlames', 'name': '三日月の杖', 'grip': .44, 'length': 120.7, 'flip': False, 'roll': 0}
-        return {**asdict(FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapon=weapon)), **changes}
+        return {**asdict(FollowerSettings(mod_name='Probe', weapon_mode='original', original_weapons=[weapon])), **changes}
 
     def test_glb_upload_reports_counts_and_rejects_other_files(self):
         status, uploaded = self.upload()
@@ -302,14 +302,14 @@ class WeaponServerTests(unittest.TestCase):
             release.wait(10)
             return {'output': str(self.root), 'previews': [], 'views': []}
 
-        def fake_convert(source, game, blender, output, settings, progress=None, weapon_glb=None):
+        def fake_convert(source, game, blender, output, settings, progress=None, weapon_glbs=None):
             release.wait(10)
             output.mkdir(parents=True)
             (output / 'Probe.zip').write_bytes(b'zip')
             return output / 'Probe.zip'
 
         request = {'source_id': 'avatar', 'game': str(self.root), 'blender': str(self.root),
-                   'settings': self.settings(uploaded), 'weapon_id': uploaded['weapon_id']}
+                   'settings': self.settings(uploaded), 'weapon_ids': [uploaded['weapon_id']]}
         with patch.object(self.app, 'catalog', return_value=self.catalog), patch('weapon_preview.preview', slow), \
                 patch('wizard.doctor', return_value={'ready': True}), patch('wizard.convert', fake_convert):
             self.assertEqual(self.post('/api/weapon-preview', request)[0], 202)
@@ -331,12 +331,12 @@ class WeaponServerTests(unittest.TestCase):
             request = {'source_id': 'avatar', 'game': str(self.root), 'settings': settings}
             self.assertEqual(self.post('/api/validate', {**request, 'check_weapon': False})[0], 200)
             status, result = self.post('/api/validate', request)
-            self.assertEqual((status, result['error']), (400, 'オリジナル武器のGLBを選んでください'))
-            status, result = self.post('/api/validate', {**request, 'weapon_id': uploaded['weapon_id']})
+            self.assertEqual((status, result['error']), (400, 'オリジナル武器 1 のGLBを選んでください'))
+            status, result = self.post('/api/validate', {**request, 'weapon_ids': [uploaded['weapon_id']]})
             self.assertEqual(status, 200)
-            self.assertEqual(result['settings']['original_weapon'], settings['original_weapon'])
+            self.assertEqual(result['settings']['original_weapons'], settings['original_weapons'])
             other = self.settings({**uploaded, 'sha256': '0' * 64})
-            status, result = self.post('/api/validate', {**request, 'settings': other, 'weapon_id': uploaded['weapon_id']})
+            status, result = self.post('/api/validate', {**request, 'settings': other, 'weapon_ids': [uploaded['weapon_id']]})
             self.assertEqual(status, 400)
             self.assertIn('別のファイル', result['error'])
             official = {**settings, 'weapon_mode': 'official'}
@@ -374,7 +374,7 @@ class WeaponServerTests(unittest.TestCase):
         error = '物理演算のメッシュ選択は別のVRM用です。対象を選び直してください。'
         converted = []
 
-        def fake_convert(source, game, blender, output, settings, progress=None, weapon_glb=None):
+        def fake_convert(source, game, blender, output, settings, progress=None, weapon_glbs=None):
             converted.append(settings)
             output.mkdir(parents=True)
             (output / 'Probe.zip').write_bytes(b'zip')
@@ -417,8 +417,8 @@ class WeaponServerTests(unittest.TestCase):
         _, uploaded = self.upload()
         captured = {}
 
-        def fake_convert(source, game, blender, output, settings, progress=None, weapon_glb=None):
-            captured.update(weapon_glb=weapon_glb, settings=asdict(settings))
+        def fake_convert(source, game, blender, output, settings, progress=None, weapon_glbs=None):
+            captured.update(weapon_glbs=weapon_glbs, settings=asdict(settings))
             output.mkdir(parents=True)
             archive = output / 'Probe.zip'
             archive.write_bytes(b'zip')
@@ -429,17 +429,17 @@ class WeaponServerTests(unittest.TestCase):
             request = {'source_id': 'avatar', 'game': str(self.root), 'blender': str(self.root),
                        'settings': self.settings(uploaded)}
             status, result = self.post('/api/jobs', request)
-            self.assertEqual((status, result['error']), (400, 'オリジナル武器のGLBを選んでください'))
-            status, result = self.post('/api/jobs', {**request, 'weapon_id': uploaded['weapon_id']})
+            self.assertEqual((status, result['error']), (400, 'オリジナル武器 1 のGLBを選んでください'))
+            status, result = self.post('/api/jobs', {**request, 'weapon_ids': [uploaded['weapon_id']]})
             self.assertEqual(status, 202)
             self.app.executor.submit(lambda: None).result(timeout=10)
         job = self.app.snapshot(result['job_id'])
         self.assertEqual((job['status'], job['weapon_mode']), ('complete', 'original'), job.get('error'))
-        self.assertEqual(captured['weapon_glb'], self.app.weapons[uploaded['weapon_id']]['path'])
+        self.assertEqual(captured['weapon_glbs'], [self.app.weapons[uploaded['weapon_id']]['path']])
         saved = json.dumps(captured['settings'], ensure_ascii=False)
         self.assertNotIn(str(self.app.workspace), saved)
         self.assertNotIn(uploaded['weapon_id'], saved)
-        self.assertEqual(captured['settings']['original_weapon']['sha256'], uploaded['sha256'])
+        self.assertEqual(captured['settings']['original_weapons'][0]['sha256'], uploaded['sha256'])
 
     def test_base_size_is_measured_once_per_game(self):
         game = self.root / 'game'
@@ -463,17 +463,17 @@ class WeaponServerTests(unittest.TestCase):
 
         def fake_preview(workspace, source, glb, game, blender, settings, catalog, progress):
             progress('武器を持たせて描画しています…')
-            calls.append((glb, settings.original_weapon))
+            calls.append((glb, settings.original_weapons))
             return {'output': str(workspace), 'previews': ['previews/weapon-x-drawn.png'], 'views': ['drawn']}
 
         with patch.object(self.app, 'catalog', return_value=self.catalog), patch('weapon_preview.preview', fake_preview):
             request = {'source_id': 'avatar', 'game': str(self.root), 'blender': str(self.root),
-                       'settings': self.settings(uploaded), 'weapon_id': uploaded['weapon_id']}
+                       'settings': self.settings(uploaded), 'weapon_ids': [uploaded['weapon_id']]}
             official = self.settings(uploaded, weapon_mode='official')
             status, result = self.post('/api/weapon-preview', {**request, 'settings': official})
             self.assertEqual((status, result['error']), (400, 'オリジナル武器を選んでください'))
             wrong = self.settings(uploaded)
-            wrong['original_weapon'] = {**wrong['original_weapon'], 'base': 'Torch'}
+            wrong['original_weapons'] = [{**wrong['original_weapons'][0], 'base': 'Torch'}]
             self.assertEqual(self.post('/api/weapon-preview', {**request, 'settings': wrong})[0], 400)
             status, result = self.post('/api/weapon-preview', request)
             self.assertEqual(status, 202)
@@ -481,7 +481,7 @@ class WeaponServerTests(unittest.TestCase):
         job = self.app.snapshot(result['job_id'])
         self.assertEqual((job['kind'], job['status'], job['stage']),
                          ('weapon_preview', 'complete', '武器のプレビューを更新しました'))
-        self.assertEqual(calls, [(self.app.weapons[uploaded['weapon_id']]['path'], self.settings(uploaded)['original_weapon'])])
+        self.assertEqual(calls, [(self.app.weapons[uploaded['weapon_id']]['path'], self.settings(uploaded)['original_weapons'])])
         self.assertEqual(job['previews'], ['previews/weapon-x-drawn.png'])
 
 

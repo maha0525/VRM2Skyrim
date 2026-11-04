@@ -536,3 +536,33 @@ Object.assign(englishUI, {
   "プレビューまたは装備の編集を処理中です。完了してから変換してください": "A preview or equipment edit is running. Wait for it to finish before converting",
   "Skyrim.esmが見つかりません。Skyrim Special Editionのフォルダを確認してください: ": "Skyrim.esm was not found. Check the Skyrim Special Edition folder: "
 });
+
+// Several original weapons, their stats and enchantment (STEP 03 cards and server messages).
+Object.assign(englishUI, {
+  "武器は8本まで持たせられます。オリジナル武器はすべて所持品に入り、どれを手に持つかはゲームのAIが決めます。片手武器2本で二刀流になるかは、戦闘スタイルにもよります。": "A follower can carry up to 8 weapons. Every original weapon goes into the inventory, and the game AI decides which one to wield. Whether two one-handed weapons are dual wielded also depends on the combat style.",
+  "武器を追加": "Add a weapon",
+  "オリジナル武器 {0}": "Original weapon {0}",
+  "オリジナル武器 {0}: {1}": "Original weapon {0}: {1}",
+  "この武器を外す": "Remove this weapon",
+  "性能と付呪": "Stats and enchantment",
+  "空欄の項目は、元にする公式の武器の値をそのまま使います。": "Blank fields keep the values of the official base weapon.",
+  "攻撃力": "Damage",
+  "重さ": "Weight",
+  "価値（ゴールド）": "Value (gold)",
+  "速さ": "Speed",
+  "届く距離": "Reach",
+  "攻撃力は0〜65535の整数で指定してください": "Enter the damage as a whole number from 0 to 65535",
+  "重さは0以上の数で指定してください": "Enter a weight of 0 or more",
+  "価値は0〜4294967295の整数で指定してください": "Enter the value as a whole number from 0 to 4294967295",
+  "速さは0より大きい数で指定してください": "Enter a speed above 0",
+  "届く距離は0より大きい数で指定してください": "Enter a reach above 0",
+  "武器の付呪": "Enchantment",
+  "元の武器のまま（{0}）": "Same as the base weapon ({0})",
+  "元の武器のまま（付呪なし）": "Same as the base weapon (no enchantment)",
+  "付呪なし": "No enchantment",
+  "杖の魔法（付呪）は、元にする杖のものをそのまま使います。": "A staff casts the spell (enchantment) of its official base staff.",
+  "性能と付呪を元の武器に戻す": "Reset stats and enchantment to the base weapon",
+  "オリジナル武器 {0} のGLBを選んでください": "Choose the GLB of original weapon {0}",
+  "オリジナル武器 {0} に選んだGLBは、設定に保存したものと別のファイルです。設定したときと同じGLBを選んでください": "The GLB chosen for original weapon {0} is a different file from the one saved in the settings. Choose the same GLB that was used for the settings",
+  "オリジナル武器 {0} のモデル": "Building the model of original weapon {0}"
+});

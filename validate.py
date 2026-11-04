@@ -299,9 +299,12 @@ def validate(output, skeleton=None, game_data=None):
     weapon_report = None
     if settings.weapon_mode == 'original':
         from weapon import check_bounds, validate_weapon_model
-        weapon_report, weapon_textures = validate_weapon_model(output, settings)
-        check_bounds(generated, weapon_report['bounds'])
-        textures |= weapon_textures
+        weapon_report = []
+        for index in range(len(settings.original_weapons)):
+            model_report, weapon_textures = validate_weapon_model(output, settings, index)
+            check_bounds(generated, model_report['bounds'], index)
+            textures |= weapon_textures
+            weapon_report.append(model_report)
     preview = output / "dds-preview"
     preview.mkdir(exist_ok=True)
     texture_reports = []
@@ -321,7 +324,7 @@ def validate(output, skeleton=None, game_data=None):
         "head_visibility": head_visibility,
         'head_models': validate_head_models(output, settings),
         'clothing_skin': validate_clothing_skin(output, settings),
-        'original_weapon': weapon_report,
+        'original_weapons': weapon_report,
     }
     (output / "validation.json").write_text(
         json.dumps(report, indent=2), encoding="utf-8"

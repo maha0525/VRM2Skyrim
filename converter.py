@@ -309,7 +309,8 @@ def convert_appearance(source, game, blender, output, settings, progress):
     convert_textures(output)
 
 
-def convert(source, game, blender, output, settings, progress=None, weapon_glb=None):
+def convert(source, game, blender, output, settings, progress=None, weapon_glbs=None):
+    """weapon_glbs: one GLB per settings.original_weapons entry, in its order (weapon_mode 'original' only)."""
     def stage(name):
         logging.info("Stage: %s", name)
         run['stage'] = name
@@ -326,9 +327,13 @@ def convert(source, game, blender, output, settings, progress=None, weapon_glb=N
         raise ValueError("Output cannot contain the original input VRM")
     if output.exists() and any(output.iterdir()):
         raise ValueError("Use an empty output folder; previous builds are retained")
-    if settings.weapon_mode == 'original' and weapon_glb is None:
-        raise ValueError("オリジナル武器のGLBを指定してください")
-    if settings.weapon_mode != 'original' and weapon_glb is not None:
+    weapon_glbs = list(weapon_glbs or [])
+    if settings.weapon_mode == 'original' and len(weapon_glbs) != len(settings.original_weapons):
+        if not weapon_glbs:
+            raise ValueError("オリジナル武器のGLBを指定してください")
+        raise ValueError(f'オリジナル武器のGLB (--weapon-glb) を、設定の武器の数 ({len(settings.original_weapons)}) と同じ数だけ、'
+                         f'同じ順に指定してください (指定は {len(weapon_glbs)} 個)')
+    if settings.weapon_mode != 'original' and weapon_glbs:
         raise ValueError('オリジナル武器のGLB (--weapon-glb) は、weapon_mode が "original" の設定でだけ使います')
     output.mkdir(parents=True, exist_ok=True)
     run = {"version": VERSION, "state": "converting", "game_verified": False}
@@ -363,10 +368,12 @@ def convert(source, game, blender, output, settings, progress=None, weapon_glb=N
             from seating import prepare
             prepare(output, Path(game) / 'Data', settings)
         if settings.weapon_mode == 'original':
-            stage("オリジナル武器のモデル")
             from weapon import convert_weapon
-            run["weapon_sha256"] = convert_weapon(weapon_glb, Path(game) / "Data", blender, output, settings,
-                                                  catalog)["source"]["sha256"]
+            run["weapon_sha256"] = []
+            for index, glb in enumerate(weapon_glbs):
+                stage("オリジナル武器のモデル" if len(weapon_glbs) == 1 else f"オリジナル武器 {index + 1} のモデル")
+                run["weapon_sha256"].append(convert_weapon(glb, Path(game) / "Data", blender, output, settings,
+                                                           catalog, index=index)["source"]["sha256"])
         stage("フォロワーと初期配置の作成")
         build_npc(Path(game) / "Data", output, settings, catalog)
         from head_visibility import write_head_assets
@@ -414,7 +421,7 @@ def convert(source, game, blender, output, settings, progress=None, weapon_glb=N
         archive = package(output, settings)
         if hashlib.sha256(source.read_bytes()).hexdigest() != report["sha256"]:
             raise RuntimeError("Original VRM changed")
-        if weapon_glb is not None and hashlib.sha256(Path(weapon_glb).read_bytes()).hexdigest() != run.get("weapon_sha256"):
+        if [hashlib.sha256(Path(glb).read_bytes()).hexdigest() for glb in weapon_glbs] != run.get("weapon_sha256", []):
             raise RuntimeError("Original weapon GLB changed")
         run.update(state="offline_verified", zip=str(archive), zip_sha256=hashlib.sha256(archive.read_bytes()).hexdigest())
         stage("変換完了")
@@ -439,7 +446,8 @@ def main():
     parser.add_argument("--blender", type=Path, default=find_blender())
     parser.add_argument("--output", type=Path)
     parser.add_argument("--settings", type=Path)
-    parser.add_argument("--weapon-glb", type=Path, help="GLB for settings with weapon_mode=original")
+    parser.add_argument("--weapon-glb", type=Path, action="append",
+                        help="GLB for settings with weapon_mode=original; once per original_weapons entry, in order")
     parser.add_argument("--doctor", action="store_true")
     args = parser.parse_args()
     if args.doctor:
@@ -451,7 +459,7 @@ def main():
     settings = FollowerSettings.load(args.settings) if args.settings else FollowerSettings(
         npc_name=args.source.stem, mod_name=args.source.stem + "Follower")
     output = args.output or ROOT / "build" / (settings.mod_id + "_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
-    archive = convert(args.source, args.game, args.blender, output, settings, weapon_glb=args.weapon_glb)
+    archive = convert(args.source, args.game, args.blender, output, settings, weapon_glbs=args.weapon_glb)
     print(f"ZIP: {archive}")
     return 0
 

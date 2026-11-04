@@ -19,7 +19,7 @@ Guided by a 5-step browser wizard, you can convert your 3D model, set up removab
 - **Anime-Style Toon Shading (Community Shaders)**
   Reads the source VRM's MToon material properties (shade color, shading boundary, rim lighting, MatCap, and outlines) and reproduces anime-style shading in Skyrim via a dedicated Community Shaders package.
 - **Custom Weapons from GLB**
-  Upload a `.glb` weapon model, adjust its scale and grip orientation with live previews, and bundle it as your follower's signature weapon.
+  Upload `.glb` weapon models (up to 8, e.g. two one-handed weapons or a sword and a staff), adjust their scale and grip orientation with live previews, optionally change damage, weight, value, speed, reach and the enchantment, and bundle them as your follower's signature weapons.
 - **Automatic Sitting Height Adjustment**
   Compensates for your avatar's leg length and proportions so they sit at a natural height on chairs and benches.
 
@@ -97,6 +97,8 @@ This starts the local server and opens the wizard in your default web browser.
 - **Combat Preset**: Pick a role preset (such as One-Handed Warrior, Ranger, or Destruction Mage) to automatically populate matching class, weapon, and stat defaults.
 - **Starting Weapon & Custom GLB Weapon**:
   - Choose an existing weapon from your game, or select **Original weapon** to upload a `.glb` model and tune its length, grip position, and orientation with live previews.
+  - Add up to 8 original weapons; all go into the follower's inventory, and the game AI chooses which to wield (dual wielding also depends on the combat style).
+  - Each weapon copies the stats of an official base weapon; damage, weight, value, speed and reach can be overridden, and the enchantment can be kept, removed, or replaced by an official weapon enchantment (staffs keep their spell).
 - **Protection & Morality**: Set whether the follower is Essential, Protected, or Mortal, and how they react to crimes.
 - **Stats, Skills & Sitting Height**: Let Skyrim auto-calculate skills by class, manually set all 18 skill values and base Health / Magicka / Stamina, or fine-tune chair/bench sitting height.
 

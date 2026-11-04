@@ -175,8 +175,9 @@ def configure_actor(npc, settings, catalog, base_stats, shouts=()):
                        + struct.pack("<B3x", item["rank"])) for item in settings.perks]
     inventory = []
     if settings.weapon_mode == 'original':
-        from weapon import WEAPON_ID
-        inventory.append((b"CNTO", uint(WEAPON_ID) + struct.pack("<i", 1)))
+        # Every original weapon, one each; the game AI chooses what to wield (and dual wields per combat style).
+        from weapon import weapon_id
+        inventory += [(b"CNTO", uint(weapon_id(i)) + struct.pack("<i", 1)) for i in range(len(settings.original_weapons))]
     elif settings.weapon:
         inventory.append((b"CNTO", uint(catalog.require(settings.weapon, b"WEAP").form_id) + struct.pack("<i", 1)))
     if settings.ammunition:
@@ -284,9 +285,9 @@ def build_npc(game_data, output, settings=None, catalog=None):
     weapon_report = None
     if settings.weapon_mode == 'original':
         from weapon import catalog_records, npc_report
-        weapon_base, weapon_static, description, weapon_items = catalog_records(settings, catalog, output)
-        items += weapon_items
-        weapon_report = npc_report(settings, catalog, weapon_base, description)
+        weapons = catalog_records(settings, catalog, output)
+        items += [record for item in weapons for record in item['records']]
+        weapon_report = npc_report(settings, catalog, weapons)
     write_follower(plugin_path, items, author=settings.author or "VRM2Skyrim",
                    placement=(cell, actor), extra_masters=extra_masters)
     write_runtime(output, settings)
@@ -300,7 +301,8 @@ def build_npc(game_data, output, settings=None, catalog=None):
         raise RuntimeError("Placed follower is not in the temple's persistent reference group")
     if weapon_report:
         from weapon import check_copied, validate_weapon_records
-        check_copied(generated, weapon_base, weapon_static)
+        for item in weapons:
+            check_copied(generated, item['base'], item['static'], settings, item['index'])
         validate_weapon_records(generated, settings, weapon_report)
     report = {"plugin": str(plugin_path), "npc_editor_id": settings.prefix + "NPC", "npc_local_form_id": "000800",
               "reference_editor_id": settings.prefix + "FollowerREF", "reference_local_form_id": "000806",

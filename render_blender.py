@@ -157,8 +157,9 @@ def main():
         original_weapon = {'nif': args.weapon_nif.resolve(), 'textures': args.weapon_textures.resolve(),
                            'kind': args.weapon_kind}
     elif settings.weapon_mode == 'original':
+        # Conversion previews show original weapon 1 (weapon.nif); the others are in the inventory only.
         original_weapon = {'nif': output / 'mod/meshes' / settings.asset_dir / 'weapon.nif',
-                           'textures': output / 'dds-preview', 'kind': settings.original_weapon['kind']}
+                           'textures': output / 'dds-preview', 'kind': settings.original_weapons[0]['kind']}
     if (args.animation == 'sheathed' or args.weapon_preview) and original_weapon is None:
         raise ValueError('Sheathed and weapon previews need an original weapon')
     if args.weapon_preview and (args.animation != 'rest' or args.wardrobe != 'initial'):

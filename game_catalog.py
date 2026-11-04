@@ -9,7 +9,7 @@ from settings import SKILLS
 
 KINDS = {b"NPC_", b"ARMO", b"ARMA", b"RACE", b"FACT", b"VTYP", b"WEAP", b"PACK",
          b"CLAS", b"CSTY", b"PERK", b"SPEL", b"FLST", b"CELL", b"REFR", b"AMMO", b"KYWD", b'BOOK',
-         b'AVIF', b'MGEF', b'STAT'}
+         b'AVIF', b'MGEF', b'STAT', b'ENCH'}
 # Original weapon kinds: WEAP DNAM animation type (first byte) and WeapType keyword, with the default base.
 ORIGINAL_WEAPON_KINDS = {
     'sword': (1, 'WeapTypeSword', 'SteelSword'), 'dagger': (2, 'WeapTypeDagger', 'SteelDagger'),
@@ -115,6 +115,17 @@ def weapon_kind(record, keyword_names):
                  if dnam[0][0] == animation and types[0] == keyword), None)
 
 
+def is_weapon_enchantment(record):
+    """xEdit TES5 ENCH ENIT: Cast Type uint32 at 8, Target Type uint32 at 16, Enchant Type uint32 at 20.
+
+    Every ENCH on a Skyrim.esm non-staff WEAP is Fire and Forget (1), Touch (1), Enchantment (6);
+    staff enchantments are Staff Enchantment (12) (Skyrim.esm, 2026-11-04)."""
+    values = record.values(b'ENIT')
+    return (record.kind == b'ENCH' and bool(values) and len(values[0]) >= 24
+            and struct.unpack_from('<I', values[0], 8)[0] == 1 and struct.unpack_from('<I', values[0], 16)[0] == 1
+            and struct.unpack_from('<I', values[0], 20)[0] == 6)
+
+
 def effect_ranks(record):
     """PRKE ranks that actually have effects; DATA Num Ranks alone is not enough."""
     return sorted({value[1] for value in record.values(b'PRKE') if len(value) >= 3}) or [0]
@@ -136,6 +147,7 @@ class GameCatalog:
         self.by_form_id = {r.form_id: r for r in records(self.path, KINDS)}
         # WEAP/STAT values the game uses: Update.esm overrides 20 candidate weapons, 19 with other values (2026-10-25).
         self.update_refused = set()
+        self._weapon_enchantments = None  # weapon_enchantments() on first use
         if (self.path.parent / 'Update.esm').is_file():
             overrides, self.update_refused = update_overrides(self.path.parent / 'Update.esm', self.by_form_id)
             self.by_form_id.update(overrides)
@@ -247,14 +259,51 @@ class GameCatalog:
             return None
         return weapon_kind(record, self.keyword_names(record))
 
+    def weapon_enchantments(self):
+        """{ENCH Editor ID: (FormID, EAMT)} of the named Skyrim.esm weapon enchantments (is_weapon_enchantment)
+        that official weapons carry. EAMT: the charge most of those weapons have (the larger on a tie)."""
+        if self._weapon_enchantments is None:
+            charges = {}
+            for record in self.by_form_id.values():
+                if record.kind == b'WEAP' and not record.form_id >> 24 and record.values(b'EITM') and record.values(b'EAMT'):
+                    eitm = struct.unpack('<I', record.values(b'EITM')[0])[0]
+                    eamt = struct.unpack('<H', record.values(b'EAMT')[0])[0]
+                    counts = charges.setdefault(eitm, {})
+                    counts[eamt] = counts.get(eamt, 0) + 1
+            self._weapon_enchantments = {}
+            for form_id, counts in charges.items():
+                record = self.by_form_id.get(form_id)
+                if record and not form_id >> 24 and is_weapon_enchantment(record) and record.values(b'FULL'):
+                    self._weapon_enchantments[record.editor_id] = (form_id, max(counts, key=lambda n: (counts[n], n)))
+        return self._weapon_enchantments
+
+    def weapon_enchantment(self, editor_id):
+        """(FormID, EAMT) of a selectable weapon enchantment, or ValueError."""
+        result = self.weapon_enchantments().get(editor_id)
+        if result is None:
+            raise ValueError(f'Not a Skyrim.esm weapon enchantment: {editor_id}')
+        return result
+
+    def weapon_enchantment_choices(self):
+        enchantments = self.weapon_enchantments()
+        return [{'id': editor_id, 'label': self.label(self.by_form_id[form_id]),
+                 'labels': self.localized(self.by_form_id[form_id]), 'charge': amount}
+                for editor_id, (form_id, amount) in sorted(enchantments.items(), key=lambda item: item[0].lower())]
+
     def original_weapon_choices(self):
+        from weapon import read_stats
         candidates = {kind: [] for kind in ORIGINAL_WEAPON_KINDS}
         for record in self.choices(b'WEAP'):
             kind = self.original_weapon_kind(record)
             if kind:
+                eitm = record.values(b'EITM')
+                enchantment = self.by_form_id.get(struct.unpack('<I', eitm[0])[0]) if eitm else None
                 candidates[kind].append({
                     'id': record.editor_id, 'label': self.label(record), 'labels': self.localized(record),
-                    'model': 'meshes/' + record.values(b'MODL')[0].rstrip(b'\0').decode('utf8').replace('\\', '/').lower()})
+                    'model': 'meshes/' + record.values(b'MODL')[0].rstrip(b'\0').decode('utf8').replace('\\', '/').lower(),
+                    'stats': read_stats(record),
+                    'enchantment': {'id': enchantment.editor_id, 'labels': self.localized(enchantment)}
+                    if enchantment else None})
         result = []
         for kind, (_, _, default) in ORIGINAL_WEAPON_KINDS.items():
             if not candidates[kind]:
@@ -282,9 +331,11 @@ class GameCatalog:
         if settings.weapon_mode == 'official' and settings.weapon:
             self.require(settings.weapon, b"WEAP")
         if settings.weapon_mode == 'original':
-            weapon = settings.original_weapon
-            if self.original_weapon_kind(self.require(weapon['base'], b'WEAP')) != weapon['kind']:
-                raise ValueError(f"Original weapon base {weapon['base']} is not a playable Skyrim.esm {weapon['kind']}")
+            for weapon in settings.original_weapons:
+                if self.original_weapon_kind(self.require(weapon['base'], b'WEAP')) != weapon['kind']:
+                    raise ValueError(f"Original weapon base {weapon['base']} is not a playable Skyrim.esm {weapon['kind']}")
+                if weapon['enchantment'] not in ('keep', 'none'):
+                    self.weapon_enchantment(weapon['enchantment'])
         if settings.ammunition:
             self.require(settings.ammunition, b"AMMO")
         for perk in settings.perks:
@@ -391,6 +442,7 @@ class GameCatalog:
         logging.debug('Wizard catalog: %d classes, %d combat styles (%d with character-skeleton NPC usage)',
                       len(result['classes']), len(result['styles']), sum(s['humanoid'] for s in result['styles']))
         result['original_weapons'] = self.original_weapon_choices()
+        result['weapon_enchantments'] = self.weapon_enchantment_choices()
         result["marriage_voices"] = [r.editor_id for r in self.choices(b"VTYP") if r.form_id in self.marriage_voice_ids]
         result['english_strings_available'] = bool(self.english_strings)
         from combat_style import FIELDS

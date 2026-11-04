@@ -29,7 +29,8 @@ def validate_private_records(generated, settings, output, game_data=None):
         + ((5 + sum(bool(p['nodes']) for p in head_variants(settings))) if settings.head_switch_enabled else 0)
     )
     expected_records += int(settings.sitting_enabled) + int(settings.combat_style_mode == 'custom')
-    expected_records += 2 * (settings.weapon_mode == 'original')  # private WEAP + first-person STAT
+    # A private WEAP + first-person STAT per original weapon
+    expected_records += 2 * len(settings.original_weapons) * (settings.weapon_mode == 'original')
     if len(local_ids) != expected_records:
         raise ValueError(f"Expected {expected_records} private follower records, found {len(local_ids)} "
                          f"(combat style: {settings.combat_style_mode})")
@@ -40,7 +41,7 @@ def validate_private_records(generated, settings, output, game_data=None):
             reference_tags = {b"ARMO": {b"MODL", b"RNAM"}, b"ARMA": {b"RNAM", b"MODL"},
                               b"NPC_": {b"DOFT", b"RNAM", b"WNAM", b"CNTO", b"ZNAM"},
                                 b"RACE": {b"WNAM", b"HEAD"}, b"OTFT": {b"INAM"},
-                                b"HDPT": {b"RNAM"}, b"FLST": {b"LNAM"}, b"WEAP": {b"WNAM"}}
+                                b"HDPT": {b"RNAM"}, b"FLST": {b"LNAM"}, b"WEAP": {b"WNAM", b"EITM"}}
             if tag in reference_tags.get(record.kind, set()):
                 if (tag == b"CNTO" and len(payload) != 8) or (tag != b"CNTO" and len(payload) % 4):
                     raise ValueError("Malformed plugin reference field")

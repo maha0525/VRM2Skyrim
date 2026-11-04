@@ -13,12 +13,23 @@ import numpy as np
 from PIL import Image
 
 from inspect_vrm import primitive_triangles, read_glb, write_glb
+from settings import MAX_ORIGINAL_WEAPONS
 
+# Weapon 0; weapon i uses WEAP 0x8D0 + 2i and STAT 0x8D1 + 2i (settings.MAX_ORIGINAL_WEAPONS pairs).
 WEAPON_ID = 0x010008D0
 FIRST_PERSON_ID = 0x010008D1
-# Fields replaced or removed on the copied base WEAP; every other field is copied unchanged.
+# Fields replaced or removed on the copied base WEAP; every other field is copied unchanged
+# except the overridden stats (STAT_FIELDS) and a changed enchantment (ENCHANTMENT_FIELDS).
 CHANGED_FIELDS = {b'EDID', b'FULL', b'MODL', b'WNAM', b'OBND', b'MODT', b'DESC', b'CNAM'}
 STATIC_CHANGED_FIELDS = {b'EDID', b'MODL', b'OBND', b'MODT'}
+# xEdit wbDefinitionsTES5 WEAP: DATA = Value uint32, Weight float, Damage uint16;
+# DNAM = Animation Type uint8, 3 unused bytes, Speed float, Reach float, Flags uint16, ...
+STAT_FIELDS = {'damage': (b'DATA', 8, '<H'), 'weight': (b'DATA', 4, '<f'), 'value': (b'DATA', 0, '<I'),
+               'speed': (b'DNAM', 4, '<f'), 'reach': (b'DNAM', 8, '<f')}
+# EITM: Object Effect (ENCH) FormID; EAMT: Enchantment Amount uint16 (the charge).
+ENCHANTMENT_FIELDS = (b'EITM', b'EAMT')
+# WEAP fields xEdit orders before EITM/EAMT; an added enchantment goes after the last of these.
+BEFORE_ENCHANTMENT = {b'EDID', b'VMAD', b'OBND', b'FULL', b'MODL', b'MODT', b'MODS', b'ICON', b'MICO'}
 ENVIRONMENT_MAP = 'textures/cubemaps/shinydull_e.dds'
 ENVIRONMENT_MAP_NIF = 'textures\\cubemaps\\ShinyDull_e.dds'
 METAL_THRESHOLD = .5
@@ -30,6 +41,73 @@ FLIP_NORMAL_GREEN = False
 
 def text(value):
     return value.encode('utf8') + b'\0'
+
+
+def weapon_id(index):
+    return WEAPON_ID + 2 * index
+
+
+def first_person_id(index):
+    return FIRST_PERSON_ID + 2 * index
+
+
+def stem(index):
+    """File stem of weapon index: its NIF, DDS and work files. Weapon 0 keeps the single-weapon names;
+    'weapon2'... never collide with weapon 0's multi-material 'weapon_<n>' textures."""
+    return 'weapon' if index == 0 else f'weapon{index + 1}'
+
+
+def editor_ids(settings, index):
+    """(WEAP, STAT) Editor IDs; weapon 0 keeps the single-weapon IDs."""
+    name = settings.prefix + ('OriginalWeapon' if index == 0 else f'OriginalWeapon{index + 1}')
+    return name, name + ('1stPerson' if index == 0 else '_1stPerson')
+
+
+def model_path(settings, index):
+    return text(settings.asset_dir.replace('/', '\\') + f'\\{stem(index)}.nif')
+
+
+def read_stats(record):
+    """The five overridable stats of a WEAP as the game reads them."""
+    result = {}
+    for name, (tag, offset, layout) in STAT_FIELDS.items():
+        values = record.values(tag)
+        if not values or len(values[0]) < offset + struct.calcsize(layout):
+            raise ValueError(f'{record.editor_id} has no {tag.decode()} {name}')
+        result[name] = struct.unpack_from(layout, values[0], offset)[0]
+    return result
+
+
+def expected_stat(name, value):
+    """A settings stat as its field stores it (floats round to 4 bytes)."""
+    return struct.unpack(STAT_FIELDS[name][2], struct.pack(STAT_FIELDS[name][2], value))[0]
+
+
+def write_stats(record, stats):
+    for name, value in stats.items():
+        tag, offset, layout = STAT_FIELDS[name]
+        values = record.values(tag)
+        if not values or len(values[0]) < offset + struct.calcsize(layout):
+            raise ValueError(f'{record.editor_id} has no {tag.decode()} {name}')
+        data = bytearray(values[0])
+        struct.pack_into(layout, data, offset, value)
+        record.replace(tag, bytes(data))
+
+
+def write_enchantment(record, enchantment):
+    """enchantment: None removes EITM/EAMT, else (ENCH FormID, charge) replaces or adds them in xEdit order."""
+    record.remove(*ENCHANTMENT_FIELDS)
+    if enchantment is None:
+        return
+    form_id, amount = enchantment
+    index = max(i for i, (tag, _) in enumerate(record.fields) if tag in BEFORE_ENCHANTMENT) + 1
+    record.fields[index:index] = [(b'EITM', struct.pack('<I', form_id)), (b'EAMT', struct.pack('<H', amount))]
+
+
+def enchantment_values(record):
+    """(EITM FormID, EAMT) of a WEAP; None for either it lacks."""
+    eitm, eamt = record.values(b'EITM'), record.values(b'EAMT')
+    return (struct.unpack('<I', eitm[0])[0] if eitm else None, struct.unpack('<H', eamt[0])[0] if eamt else None)
 
 
 def sha256(path):
@@ -225,19 +303,20 @@ def material_key(index):
     return 'default' if index is None else f'V2SWeaponMaterial_{index:05}'
 
 
-def prepare_textures(document, binary, output, settings):
+def prepare_textures(document, binary, output, settings, weapon_index=0):
     used = used_materials(document)
-    source_dir = Path(output) / 'weapon-texture-sources'
+    name = stem(weapon_index)
+    source_dir = Path(output) / f'{name}-texture-sources'
     source_dir.mkdir(parents=True, exist_ok=True)
     manifest, materials, policies, coverage = [], {}, {}, {}
     for index in used:
-        stem = 'weapon' if len(used) == 1 else 'weapon_' + ('default' if index is None else str(index))
+        texture_stem = name if len(used) == 1 else f'{name}_' + ('default' if index is None else str(index))
         sources, shader, policy, metal = material_textures(
-            document, binary, index, stem, source_dir, f'textures/{settings.asset_dir}')
+            document, binary, index, texture_stem, source_dir, f'textures/{settings.asset_dir}')
         manifest += sources
         materials[material_key(index)], policies[material_key(index)] = shader, policy
         coverage[material_key(index)] = metal
-    (Path(output) / 'weapon-textures.json').write_text(json.dumps(manifest, indent=2), encoding='utf8')
+    (Path(output) / f'{name}-textures.json').write_text(json.dumps(manifest, indent=2), encoding='utf8')
     return manifest, materials, policies, coverage
 
 
@@ -256,10 +335,10 @@ def shared_environment(game_data, output):
             'overridden': overridden}
 
 
-def validate_shared(output):
-    """Verify the recorded official textures still exist with the recorded bytes."""
+def validate_shared(output, index=0):
+    """Verify the recorded official textures of weapon index still exist with the recorded bytes."""
     from game_assets import GameAssets, asset_name
-    report = json.loads((Path(output) / 'weapon.json').read_text(encoding='utf8'))
+    report = json.loads((Path(output) / f'{stem(index)}.json').read_text(encoding='utf8'))
     result = {}
     if not report['shared_textures']:
         return result
@@ -276,21 +355,31 @@ def validate_shared(output):
 
 
 def readme_text(output, settings):
-    """README lines for the original weapon; the environment map line only when a metal mask uses it."""
-    shared = validate_shared(output)
-    weapon = settings.original_weapon
-    text = (f"Original weapon: {weapon['name']} ({settings.prefix}OriginalWeapon, local FormID 0008D0),\n"
-            f"converted from {weapon['filename']} with the stats, sounds and enchantment of {weapon['base']}.\n")
+    """README lines for the original weapons; the environment map line only when a metal mask uses it."""
+    lines, shared = [], False
+    for index, weapon in enumerate(settings.original_weapons):
+        shared |= bool(validate_shared(output, index))
+        changes = [f'{name} {value}' for name, value in weapon['stats'].items()]
+        if weapon['enchantment'] != 'keep':
+            changes.append('enchantment ' + weapon['enchantment'])
+        lines.append(f"Original weapon: {weapon['name']} ({editor_ids(settings, index)[0]}, local FormID "
+                     f"{weapon_id(index) & 0xFFFFFF:06X}),\nconverted from {weapon['filename']} with the stats, sounds "
+                     f"and enchantment of {weapon['base']}" + (f" except {', '.join(changes)}" if changes else '') + '.\n')
+    text = ''.join(lines)
+    if len(lines) > 1:
+        text += ('All original weapons are in the follower inventory. The game AI chooses which to wield;\n'
+                 'dual wielding also depends on the combat style.\n')
     if shared:
-        text += "Its environment map uses the game's textures\\cubemaps\\ShinyDull_e.dds.\n"
+        text += "Environment maps use the game's textures\\cubemaps\\ShinyDull_e.dds.\n"
     return text
 
 
-def reuse_textures(source, output, digest, settings):
-    """Texture results of an earlier convert_weapon output for the same GLB and asset_dir."""
+def reuse_textures(source, output, digest, settings, index=0):
+    """Texture results of an earlier convert_weapon output for the same GLB, asset_dir and file stem."""
     source = Path(source)
-    report = json.loads((source / 'weapon-textures-report.json').read_text(encoding='utf8'))
-    if report['glb'] != digest or report['asset_dir'] != settings.asset_dir:
+    report = json.loads((source / f'{stem(index)}-textures-report.json').read_text(encoding='utf8'))
+    if (report['glb'] != digest or report['asset_dir'] != settings.asset_dir
+            or report.get('stem', 'weapon') != stem(index)):
         raise ValueError('Reused weapon textures were converted from another GLB or folder')
     for relative in report['textures']:
         target = Path(output) / 'mod' / relative
@@ -299,15 +388,16 @@ def reuse_textures(source, output, digest, settings):
     return report
 
 
-def convert_weapon(glb, game_data, blender, output, settings, catalog, textures=None):
-    """Build the weapon NIF and DDS into output. textures: an earlier output of this function
-    for the same GLB and asset_dir whose DDS are copied instead of converted (wizard previews)."""
+def convert_weapon(glb, game_data, blender, output, settings, catalog, textures=None, index=0):
+    """Build the NIF and DDS of original weapon index into output. textures: an earlier output of this
+    function for the same GLB, asset_dir and index whose DDS are copied instead of converted (wizard previews)."""
     from converter import run_blender
     from game_assets import GameAssets
     from textures import convert_textures
     from weapon_nif import SHEATH_NODES, base_dimensions, read_weapon
     output, game_data = Path(output).resolve(), Path(game_data).resolve()
-    weapon = settings.original_weapon
+    weapon = settings.original_weapons[index]
+    name = stem(index)
     glb = Path(glb).resolve()
     if not glb.is_file() or glb.suffix.lower() != '.glb':
         raise ValueError('Select a local .glb weapon file')
@@ -318,45 +408,48 @@ def convert_weapon(glb, game_data, blender, output, settings, catalog, textures=
         raise ValueError('オリジナル武器の設定は別のGLB用です。設定したときと同じGLBを選び直してください')
     summary = inspect_glb(glb)
     document, binary = read_glb(glb)
-    for index, material in enumerate(document.get('materials', [])):
-        material['name'] = material_key(index)
-    work = output / 'weapon-source.glb'
+    for number, material in enumerate(document.get('materials', [])):
+        material['name'] = material_key(number)
+    work = output / f'{name}-source.glb'
     write_glb(work, document, binary)
     base = catalog.require(weapon['base'], b'WEAP')
     model = base.values(b'MODL')[0].rstrip(b'\0').decode('utf8')
     base_nif = GameAssets(game_data, [], output / 'weapon-reference').extract(model)
     dimensions = base_dimensions(base_nif)
     if textures is None:
-        manifest, materials, policies, coverage = prepare_textures(document, binary, output, settings)
+        manifest, materials, policies, coverage = prepare_textures(document, binary, output, settings, index)
         shared = [shared_environment(game_data, output)] if any(m['metal'] for m in materials.values()) else []
-        texture_report = {'glb': digest, 'asset_dir': settings.asset_dir, 'materials': materials, 'policies': policies,
-                          'coverage': coverage, 'shared': shared, 'textures': [e['relative'] for e in manifest]}
+        texture_report = {'glb': digest, 'asset_dir': settings.asset_dir, 'stem': name, 'materials': materials,
+                          'policies': policies, 'coverage': coverage, 'shared': shared,
+                          'textures': [e['relative'] for e in manifest]}
     else:
-        texture_report = reuse_textures(textures, output, digest, settings)
-    nif = f'meshes/{settings.asset_dir}/weapon.nif'
+        texture_report = reuse_textures(textures, output, digest, settings, index)
+    nif = f'meshes/{settings.asset_dir}/{name}.nif'
     plan = {'glb': str(work), 'nif': nif, 'base_nif': str(base_nif), 'grip': weapon['grip'], 'length': weapon['length'],
             'flip': weapon['flip'], 'roll': weapon['roll'], 'prn': SHEATH_NODES[weapon['kind']],
-            'materials': texture_report['materials'], 'policies': texture_report['policies']}
-    (output / 'weapon-plan.json').write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding='utf8')
-    run_blender(blender, 'weapon_blender.py', ['--output', output], output, 'Original weapon')
+            'materials': texture_report['materials'], 'policies': texture_report['policies'],
+            'report': f'{name}-nif.json'}
+    (output / f'{name}-plan.json').write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding='utf8')
+    run_blender(blender, 'weapon_blender.py', ['--output', output, '--plan', f'{name}-plan.json'], output,
+                'Original weapon' if index == 0 else f'Original weapon {index + 1}')
     if textures is None:
-        convert_textures(output, 'weapon-textures.json')
-    (output / 'weapon-textures-report.json').write_text(json.dumps(texture_report, indent=2), encoding='utf8')
-    built = json.loads((output / 'weapon-nif.json').read_text(encoding='utf8'))
+        convert_textures(output, f'{name}-textures.json')
+    (output / f'{name}-textures-report.json').write_text(json.dumps(texture_report, indent=2), encoding='utf8')
+    built = json.loads((output / plan['report']).read_text(encoding='utf8'))
     points = np.concatenate([s['points'] for s in read_weapon(output / 'mod' / nif)['shapes']])
-    report = {'schema': 1, 'source': summary, 'filename': weapon['filename'], 'kind': weapon['kind'],
+    report = {'schema': 1, 'index': index, 'source': summary, 'filename': weapon['filename'], 'kind': weapon['kind'],
               'base': weapon['base'], 'base_model': model, 'base_dimensions': dimensions,
               'grip': weapon['grip'], 'length': weapon['length'], 'flip': weapon['flip'], 'roll': weapon['roll'],
               'nif': nif, 'bounds': [points.min(0).tolist(), points.max(0).tolist()],
               'placement': built['placement'], 'shapes': built['shapes'], 'collision': built['collision'],
               'metal_coverage': texture_report['coverage'], 'textures': texture_report['textures'],
               'shared_textures': texture_report['shared'], 'game_data': str(game_data), 'game_verified': False}
-    (output / 'weapon.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf8')
-    validate_weapon_model(output, settings)
+    (output / f'{name}.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf8')
+    validate_weapon_model(output, settings, index)
     if sha256(glb) != digest:
         raise RuntimeError('Original weapon GLB changed during conversion')
-    logging.info('Original weapon %s from %s: %s triangles in %s shapes', weapon['name'], weapon['base'],
-                 summary['triangles'], len(built['shapes']))
+    logging.info('Original weapon %s (%s) from %s: %s triangles in %s shapes', index + 1, weapon['name'],
+                 weapon['base'], summary['triangles'], len(built['shapes']))
     return report
 
 
@@ -366,100 +459,185 @@ def object_bounds(bounds):
     return [max(-32768, min(32767, v)) for v in values]
 
 
-def weapon_records(settings, base, static, description, bounds):
-    """Private copies of the base WEAP and its first-person STAT with the original model."""
-    path = text(settings.asset_dir.replace('/', '\\') + '\\weapon.nif')
+def weapon_records(settings, base, static, description, bounds, index=0, enchantment=None):
+    """Private copies of the base WEAP and its first-person STAT with the original model, stats and enchantment.
+
+    enchantment: (ENCH FormID, EAMT) for an enchantment chosen by Editor ID (catalog.weapon_enchantment);
+    'keep' leaves the base's EITM/EAMT and 'none' removes them."""
+    original = settings.original_weapons[index]
+    path = model_path(settings, index)
     obnd = struct.pack('<6h', *object_bounds(bounds))
+    weapon_editor_id, static_editor_id = editor_ids(settings, index)
     weapon = copy.deepcopy(base)
-    weapon.form_id = WEAPON_ID
-    weapon.replace(b'EDID', text(settings.prefix + 'OriginalWeapon'))
+    weapon.form_id = weapon_id(index)
+    weapon.replace(b'EDID', text(weapon_editor_id))
     weapon.replace(b'OBND', obnd)
-    weapon.replace(b'FULL', text(settings.original_weapon['name']))
+    weapon.replace(b'FULL', text(original['name']))
     weapon.replace(b'MODL', path)
-    weapon.replace(b'WNAM', struct.pack('<I', FIRST_PERSON_ID))
+    weapon.replace(b'WNAM', struct.pack('<I', first_person_id(index)))
     if weapon.values(b'DESC'):
         weapon.replace(b'DESC', text(description))
     weapon.remove(b'MODT', b'CNAM')
+    write_stats(weapon, original['stats'])
+    if original['enchantment'] == 'none':
+        write_enchantment(weapon, None)
+    elif original['enchantment'] != 'keep':
+        if enchantment is None:
+            raise ValueError('Enchantment was not resolved: ' + original['enchantment'])
+        write_enchantment(weapon, enchantment)
     first_person = copy.deepcopy(static)
-    first_person.form_id = FIRST_PERSON_ID
-    first_person.replace(b'EDID', text(settings.prefix + 'OriginalWeapon1stPerson'))
+    first_person.form_id = first_person_id(index)
+    first_person.replace(b'EDID', text(static_editor_id))
     first_person.replace(b'OBND', obnd)
     first_person.replace(b'MODL', path)
     first_person.remove(b'MODT')
     return [weapon, first_person]
 
 
+def expected_enchantment(original, base, chosen):
+    """(EITM FormID, EAMT) the copy must carry; (None, None) without an enchantment."""
+    if original['enchantment'] == 'keep':
+        return enchantment_values(base)
+    return (None, None) if original['enchantment'] == 'none' else tuple(chosen)
+
+
 def catalog_records(settings, catalog, output):
-    base = catalog.require(settings.original_weapon['base'], b'WEAP')
-    static = catalog.first_person_static(base)
-    if static is None:
-        raise ValueError('Base weapon has no first-person STAT: ' + base.editor_id)
-    report = json.loads((Path(output) / 'weapon.json').read_text(encoding='utf8'))
-    if report['base'] != base.editor_id or report['source']['sha256'] != settings.original_weapon['sha256']:
-        raise ValueError('Original weapon model was built for different settings')
-    description = catalog.label(base, b'DESC') if base.values(b'DESC') else ''
-    return base, static, description, weapon_records(settings, base, static, description, report['bounds'])
+    """Per original weapon: its official sources, records and the values the plugin must carry."""
+    result = []
+    for index, original in enumerate(settings.original_weapons):
+        base = catalog.require(original['base'], b'WEAP')
+        static = catalog.first_person_static(base)
+        if static is None:
+            raise ValueError('Base weapon has no first-person STAT: ' + base.editor_id)
+        report = json.loads((Path(output) / f'{stem(index)}.json').read_text(encoding='utf8'))
+        if report['base'] != base.editor_id or report['source']['sha256'] != original['sha256']:
+            raise ValueError(f'Original weapon {index + 1} model was built for different settings')
+        description = catalog.label(base, b'DESC') if base.values(b'DESC') else ''
+        chosen = None
+        if original['enchantment'] not in ('keep', 'none'):
+            chosen = catalog.weapon_enchantment(original['enchantment'])
+            if enchantment_values(base)[0] == chosen[0] and base.values(b'EAMT'):
+                chosen = enchantment_values(base)  # the base's own charge for its own enchantment
+        result.append({'index': index, 'base': base, 'static': static, 'description': description,
+                       'enchantment': expected_enchantment(original, base, chosen),
+                       'records': weapon_records(settings, base, static, description, report['bounds'], index, chosen)})
+    return result
 
 
-def check_copied(generated, base, static):
-    """The private copies equal their official sources outside the replaced fields."""
+def comparable_fields(record, changed, original=None):
+    """record fields outside changed, with overridden stat bytes zeroed and a changed enchantment dropped."""
+    stats = original['stats'] if original else {}
+    enchantment = original['enchantment'] if original else 'keep'
+    result = []
+    for tag, value in record.fields:
+        if tag in changed or (enchantment != 'keep' and tag in ENCHANTMENT_FIELDS):
+            continue
+        for name in stats:
+            field, offset, layout = STAT_FIELDS[name]
+            if tag == field:
+                value = value[:offset] + bytes(struct.calcsize(layout)) + value[offset + struct.calcsize(layout):]
+        result.append((tag, value))
+    return result
+
+
+def check_copied(generated, base, static, settings=None, index=0):
+    """The private copies equal their official sources outside the replaced fields; settings: the
+    overridden stats and changed enchantment of original weapon index are compared by validate_weapon_records."""
+    original = settings.original_weapons[index] if settings else None
     by_id = {r.form_id: r for r in generated}
-    for record, source, changed in ((by_id.get(WEAPON_ID), base, CHANGED_FIELDS),
-                                    (by_id.get(FIRST_PERSON_ID), static, STATIC_CHANGED_FIELDS)):
+    for record, source, changed in ((by_id.get(weapon_id(index)), base, CHANGED_FIELDS),
+                                    (by_id.get(first_person_id(index)), static, STATIC_CHANGED_FIELDS)):
         if record is None or record.kind != source.kind:
-            raise ValueError('Original weapon record is missing')
-        if [f for f in record.fields if f[0] not in changed] != [f for f in source.fields if f[0] not in changed]:
-            raise ValueError(f'Original weapon {record.kind.decode()} differs from its official source')
+            raise ValueError(f'Original weapon {index + 1} record is missing')
+        extra = original if record.kind == b'WEAP' else None
+        if comparable_fields(record, changed, extra) != comparable_fields(source, changed, extra):
+            raise ValueError(f'Original weapon {index + 1} {record.kind.decode()} differs from its official source')
+
+
+def weapon_reports(npc_report):
+    """Per-weapon entries of npc.json's original_weapon report; a single-weapon report is weapon 0."""
+    if not npc_report:
+        return None
+    return npc_report['weapons'] if 'weapons' in npc_report else [npc_report]
 
 
 def validate_weapon_records(generated, settings, npc_report=None):
-    """Plugin contract for the private WEAP/STAT pair; shared by build and output checks."""
+    """Plugin contract for the private WEAP/STAT pairs; shared by build and output checks."""
     by_id = {r.form_id: r for r in generated}
-    if settings.weapon_mode != 'original':
-        if WEAPON_ID in by_id or FIRST_PERSON_ID in by_id:
+    count = len(settings.original_weapons) if settings.weapon_mode == 'original' else 0
+    reserved = {form_id for i in range(MAX_ORIGINAL_WEAPONS) for form_id in (weapon_id(i), first_person_id(i))}
+    unexpected = sorted(set(by_id) & reserved - {f(i) for i in range(count) for f in (weapon_id, first_person_id)})
+    if unexpected:
+        if not count:
             raise ValueError('Official weapon mode must not contain an original weapon')
+        raise ValueError(f'Unexpected original weapon records: {", ".join(map(hex, unexpected))}')
+    if not count:
         return None
-    weapon, static = by_id.get(WEAPON_ID), by_id.get(FIRST_PERSON_ID)
-    if weapon is None or weapon.kind != b'WEAP' or static is None or static.kind != b'STAT':
-        raise ValueError('Original weapon WEAP/STAT records are missing')
-    path = text(settings.asset_dir.replace('/', '\\') + '\\weapon.nif')
-    if weapon.values(b'MODL') != [path] or static.values(b'MODL') != [path]:
-        raise ValueError('Original weapon and its first-person model must use the same NIF')
-    if weapon.values(b'WNAM') != [struct.pack('<I', FIRST_PERSON_ID)]:
-        raise ValueError('Original weapon does not use its private first-person STAT')
-    if weapon.values(b'MODT') or static.values(b'MODT') or weapon.values(b'CNAM'):
-        raise ValueError('Original weapon retains official model data or a template')
-    if weapon.editor_id != settings.prefix + 'OriginalWeapon' or static.editor_id != settings.prefix + 'OriginalWeapon1stPerson':
-        raise ValueError('Original weapon Editor IDs mismatch')
-    if weapon.values(b'FULL') != [text(settings.original_weapon['name'])]:
-        raise ValueError('Original weapon name was not written as a string')
-    for value in weapon.values(b'DESC'):
-        if not value.endswith(b'\0') or (npc_report and value != text(npc_report['description'])):
-            raise ValueError('Original weapon description is not an inline string')
-    if weapon.values(b'OBND') != static.values(b'OBND') or len(weapon.values(b'OBND')[0]) != 12:
-        raise ValueError('Original weapon bounds mismatch')
+    reports = weapon_reports(npc_report)
+    if reports is not None and len(reports) != count:
+        raise ValueError(f'npc.json reports {len(reports)} original weapons, settings have {count}')
     npc = next(r for r in generated if r.kind == b'NPC_')
     inventory = [struct.unpack_from('<I', v)[0] for v in npc.values(b'CNTO')]
-    if inventory.count(WEAPON_ID) != 1:
-        raise ValueError('Original weapon is not in the follower inventory')
+    result = []
+    for index, original in enumerate(settings.original_weapons):
+        report = reports[index] if reports else None
+        weapon, static = by_id.get(weapon_id(index)), by_id.get(first_person_id(index))
+        if weapon is None or weapon.kind != b'WEAP' or static is None or static.kind != b'STAT':
+            raise ValueError(f'Original weapon {index + 1} WEAP/STAT records are missing')
+        path = model_path(settings, index)
+        if weapon.values(b'MODL') != [path] or static.values(b'MODL') != [path]:
+            raise ValueError(f'Original weapon {index + 1} and its first-person model must use the same NIF')
+        if weapon.values(b'WNAM') != [struct.pack('<I', first_person_id(index))]:
+            raise ValueError(f'Original weapon {index + 1} does not use its private first-person STAT')
+        if weapon.values(b'MODT') or static.values(b'MODT') or weapon.values(b'CNAM'):
+            raise ValueError(f'Original weapon {index + 1} retains official model data or a template')
+        if (weapon.editor_id, static.editor_id) != editor_ids(settings, index):
+            raise ValueError(f'Original weapon {index + 1} Editor IDs mismatch')
+        if weapon.values(b'FULL') != [text(original['name'])]:
+            raise ValueError(f'Original weapon {index + 1} name was not written as a string')
+        for value in weapon.values(b'DESC'):
+            if not value.endswith(b'\0') or (report and value != text(report['description'])):
+                raise ValueError(f'Original weapon {index + 1} description is not an inline string')
+        if weapon.values(b'OBND') != static.values(b'OBND') or len(weapon.values(b'OBND')[0]) != 12:
+            raise ValueError(f'Original weapon {index + 1} bounds mismatch')
+        stats = read_stats(weapon)
+        expected = {**(report.get('base_stats', {}) if report else {}),
+                    **{name: expected_stat(name, value) for name, value in original['stats'].items()}}
+        wrong = [name for name, value in expected.items() if stats[name] != value]
+        if wrong:
+            raise ValueError(f'Original weapon {index + 1} {", ".join(wrong)} differs from the settings')
+        eitm, eamt = enchantment_values(weapon)
+        if original['enchantment'] == 'none' and (eitm is not None or eamt is not None):
+            raise ValueError(f'Original weapon {index + 1} keeps an enchantment the settings remove')
+        if original['enchantment'] not in ('keep', 'none') and (eitm is None or eamt is None):
+            raise ValueError(f'Original weapon {index + 1} lacks the chosen enchantment')
+        if report and 'enchantment' in report:
+            if report['enchantment']['choice'] != original['enchantment'] or (eitm, eamt) != (
+                    report['enchantment']['form_id'], report['enchantment']['amount']):
+                raise ValueError(f'Original weapon {index + 1} enchantment differs from the settings')
+        if inventory.count(weapon_id(index)) != 1:
+            raise ValueError(f'Original weapon {index + 1} is not in the follower inventory')
+        result.append({'weapon': hex(weapon_id(index)), 'first_person': hex(first_person_id(index))})
     if npc_report and npc_report.get('official_weapon_form_id') in inventory:
         raise ValueError('Official starting weapon is still in the follower inventory')
-    return {'weapon': hex(WEAPON_ID), 'first_person': hex(FIRST_PERSON_ID)}
+    return result
 
 
-def validate_weapon_model(output, settings):
+def validate_weapon_model(output, settings, index=0):
     """Read the delivered weapon NIF back: axes, grip origin, length, shapes, textures, collision."""
     from weapon_nif import HULL_COVERAGE, SHEATH_NODES, read_weapon
     output = Path(output)
     mod = (output / 'mod').resolve()
-    report = json.loads((output / 'weapon.json').read_text(encoding='utf8'))
-    weapon = settings.original_weapon
+    report = json.loads((output / f'{stem(index)}.json').read_text(encoding='utf8'))
+    weapon = settings.original_weapons[index]
+    if report['nif'] != f'meshes/{settings.asset_dir}/{stem(index)}.nif':
+        raise ValueError(f"Original weapon {index + 1} NIF is {report['nif']}, not {stem(index)}.nif")
     nif = read_weapon(mod / report['nif'])
     if nif['game'] != 'SKYRIMSE' or nif['root'] != 'BSFadeNode' or not nif['shapes']:
         raise ValueError('Weapon NIF needs a SKYRIMSE BSFadeNode root with shapes')
     if nif['prn'] != [SHEATH_NODES[weapon['kind']]]:
         raise ValueError(f"Weapon NIF sheathes at {nif['prn']}, not {SHEATH_NODES[weapon['kind']]}")
-    shared = {e['path'] for e in validate_shared(output).values()}
+    shared = {e['path'] for e in validate_shared(output, index).values()}
     textures = set()
     for shape in nif['shapes']:
         if shape['block'] != 'BSTriShape' or not 0 < shape['vertices'] <= 65535:
@@ -475,6 +653,8 @@ def validate_weapon_model(output, settings):
             path = (mod / relative).resolve()
             if not path.is_relative_to(mod / 'textures' / settings.asset_dir) or not path.is_file():
                 raise ValueError('Missing or external weapon texture: ' + texture)
+            if path.stem.lower() != stem(index) and not path.stem.lower().startswith(stem(index) + '_'):
+                raise ValueError(f'Original weapon {index + 1} uses another weapon\'s texture: {texture}')
             textures.add(path)
     points = np.concatenate([s['points'] for s in nif['shapes']])
     low, high = points.min(0), points.max(0)
@@ -512,19 +692,28 @@ def validate_weapon_model(output, settings):
     return result, textures
 
 
-def check_bounds(generated, bounds):
+def check_bounds(generated, bounds, index=0):
     """WEAP and first-person STAT OBND equal the measured NIF bounds as weapon_records rounds them."""
     by_id = {r.form_id: r for r in generated}
     expected = [struct.pack('<6h', *object_bounds(bounds))]
-    for form_id in (WEAPON_ID, FIRST_PERSON_ID):
+    for form_id in (weapon_id(index), first_person_id(index)):
         if form_id not in by_id or by_id[form_id].values(b'OBND') != expected:
-            raise ValueError('Original weapon OBND differs from the weapon NIF bounds')
+            raise ValueError(f'Original weapon {index + 1} OBND differs from the weapon NIF bounds')
 
 
-def npc_report(settings, catalog, base, description):
+def npc_report(settings, catalog, built):
+    """npc.json original_weapon: per weapon (catalog_records order) its IDs, base and the values it must carry."""
     official = catalog.by_editor_id.get(settings.weapon) if settings.weapon else None
-    return {'official_weapon_form_id': official.form_id if official else None,
-            'editor_id': settings.prefix + 'OriginalWeapon', 'local_form_id': '0008D0',
-            'first_person_editor_id': settings.prefix + 'OriginalWeapon1stPerson', 'first_person_local_form_id': '0008D1',
-            'base': base.editor_id, 'base_form_id': base.form_id, 'description': description,
-            'name': settings.original_weapon['name']}
+    weapons = []
+    for item in built:
+        index, base = item['index'], item['base']
+        original = settings.original_weapons[index]
+        weapon_editor_id, static_editor_id = editor_ids(settings, index)
+        form_id, amount = item['enchantment']
+        weapons.append({'index': index, 'editor_id': weapon_editor_id, 'local_form_id': f'{weapon_id(index) & 0xFFFFFF:06X}',
+                        'first_person_editor_id': static_editor_id,
+                        'first_person_local_form_id': f'{first_person_id(index) & 0xFFFFFF:06X}',
+                        'base': base.editor_id, 'base_form_id': base.form_id, 'description': item['description'],
+                        'name': original['name'], 'base_stats': read_stats(base), 'stats': original['stats'],
+                        'enchantment': {'choice': original['enchantment'], 'form_id': form_id, 'amount': amount}})
+    return {'official_weapon_form_id': official.form_id if official else None, 'weapons': weapons}
