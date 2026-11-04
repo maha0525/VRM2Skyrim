@@ -41,7 +41,7 @@ def main():
         imported_rigs = [o for o in imported if o.type == 'ARMATURE']
         meshes = [o for o in imported if o.type == 'MESH' and any(m.type == 'ARMATURE' for m in o.modifiers)]
         for obj in list(meshes):
-            if (obj.name.startswith('V2SCollision_Body') or
+            if (obj.name.startswith(('V2SCollision_Body', 'V2SCollision_Spring')) or
                     (clothing and obj.name.startswith('V2SClothingSkin_'))):
                 meshes.remove(obj)
                 bpy.data.objects.remove(obj, do_unlink=True)

@@ -61,6 +61,165 @@ def spring_nodes(document):
     return {f'VRMNode_{i:05}' for i in result}
 
 
+def spring_settings(document):
+    """{node: stiffness, gravity, hit_radius, groups} for both VRM formats; the first declaration wins."""
+    extension = document.get('extensions', {})
+    result = {}
+    for spring in extension.get('VRMC_springBone', {}).get('springs', []):
+        groups = sorted(set(spring.get('colliderGroups', [])))
+        for joint in spring.get('joints', []):
+            result.setdefault(f'VRMNode_{joint["node"]:05}', {
+                'stiffness': float(joint.get('stiffness', 1)), 'gravity': float(joint.get('gravityPower', 0)),
+                'hit_radius': float(joint.get('hitRadius', 0)), 'groups': groups})
+    for group in extension.get('VRM', {}).get('secondaryAnimation', {}).get('boneGroups', []):
+        values = {'stiffness': float(group.get('stiffiness', 1)), 'gravity': float(group.get('gravityPower', 0)),
+                  'hit_radius': float(group.get('hitRadius', 0)),
+                  'groups': sorted(set(group.get('colliderGroups', [])))}
+        stack = list(group.get('bones', []))
+        while stack:
+            index = stack.pop()
+            name = f'VRMNode_{index:05}'
+            if name in result:
+                continue
+            result[name] = values
+            stack.extend(document['nodes'][index].get('children', []))
+    return result
+
+
+def spring_tails(document, worlds):
+    """{node: glTF world point VRM collides with that joint's hitRadius}.
+
+    VRM 1 tests the next listed joint, so the last joint has no tail of its own. VRM 0 has
+    no list: UniVRM takes the first child, or 7 cm past a leaf along its parent's direction.
+    """
+    extension = document.get('extensions', {})
+    nodes = document.get('nodes', [])
+    result = {}
+    for spring in extension.get('VRMC_springBone', {}).get('springs', []):
+        joints = spring.get('joints', [])
+        for joint, tail in zip(joints, joints[1:]):
+            result.setdefault(f'VRMNode_{joint["node"]:05}', worlds[tail['node']][:3, 3])
+    parents = {child: index for index, node in enumerate(nodes) for child in node.get('children', [])}
+    seen = set()
+    for group in extension.get('VRM', {}).get('secondaryAnimation', {}).get('boneGroups', []):
+        stack = list(group.get('bones', []))
+        while stack:
+            index = stack.pop()
+            if index in seen:
+                continue
+            seen.add(index)
+            children = nodes[index].get('children', [])
+            stack.extend(children)
+            name = f'VRMNode_{index:05}'
+            if children:
+                result.setdefault(name, worlds[children[0]][:3, 3])
+            elif index in parents:
+                point = worlds[index][:3, 3]
+                delta = point - worlds[parents[index]][:3, 3]
+                length = np.linalg.norm(delta)
+                if length > 1e-6:
+                    result.setdefault(name, point + delta/length*.07)
+    return result
+
+
+def spring_colliders(document):
+    """{group: [{node, head, tail, radius}]} in glTF node-local coordinates; tail None is a sphere.
+
+    VRM 0 offsets keep a left-handed node frame: x matches glTF, z is negated.
+    On AnimalKawaii_01_Kuro.vrm arm offsets run along the limb unchanged in x, and forearm
+    and thigh offsets lie on the limb only once z is negated.
+    """
+    extension = document.get('extensions', {})
+    result = {}
+    springs = extension.get('VRMC_springBone', {})
+    colliders = springs.get('colliders', [])
+    for index, group in enumerate(springs.get('colliderGroups', [])):
+        for collider in (colliders[i] for i in group.get('colliders', [])):
+            shape = collider.get('shape', {})
+            values = shape.get('capsule') or shape.get('sphere')
+            if values is None:
+                continue
+            tail = [float(n) for n in values.get('tail', [0, 0, 0])] if 'capsule' in shape else None
+            result.setdefault(index, []).append({
+                'node': collider['node'], 'head': [float(n) for n in values.get('offset', [0, 0, 0])],
+                'tail': tail, 'radius': float(values.get('radius', 0))})
+    secondary = extension.get('VRM', {}).get('secondaryAnimation', {})
+    for index, group in enumerate(secondary.get('colliderGroups', [])):
+        for collider in group.get('colliders', []):
+            offset = collider.get('offset', {})
+            result.setdefault(index, []).append({
+                'node': group['node'], 'head': [float(offset.get('x', 0)), float(offset.get('y', 0)),
+                                                -float(offset.get('z', 0))],
+                'tail': None, 'radius': float(collider.get('radius', 0))})
+    return result
+
+
+def inherited_spring(name, parents, settings):
+    """A bone's own spring settings, else those of its nearest ancestor that has them."""
+    while name is not None:
+        if name in settings:
+            return settings[name]
+        name = parents.get(name)
+    return None
+
+
+def node_local_matrix(node):
+    if 'matrix' in node:
+        return np.asarray(node['matrix'], dtype=float).reshape(4, 4).T
+    x, y, z, w = node.get('rotation', [0, 0, 0, 1])
+    rotation = np.array([[1-2*(y*y+z*z), 2*(x*y-z*w), 2*(x*z+y*w)],
+                         [2*(x*y+z*w), 1-2*(x*x+z*z), 2*(y*z-x*w)],
+                         [2*(x*z-y*w), 2*(y*z+x*w), 1-2*(x*x+y*y)]])
+    result = np.eye(4)
+    result[:3, :3] = rotation * np.asarray(node.get('scale', [1, 1, 1]), dtype=float)
+    result[:3, 3] = node.get('translation', [0, 0, 0])
+    return result
+
+
+def node_world_matrices(document):
+    nodes = document['nodes']
+    children = {child for node in nodes for child in node.get('children', [])}
+    stack = [(index, np.eye(4)) for index in range(len(nodes)) if index not in children]
+    result = {}
+    while stack:
+        index, parent = stack.pop()
+        result[index] = parent @ node_local_matrix(nodes[index])
+        stack.extend((child, result[index]) for child in nodes[index].get('children', []))
+    return result
+
+
+def blender_point(point):
+    """The glTF importer's Y-up to Z-up conversion."""
+    x, y, z = point
+    return np.array([x, -z, y])
+
+
+def posed_point(transform, orient, point):
+    """A glTF world point in the custom pose of the bone that carries it."""
+    pose = np.asarray(transform) @ np.asarray(orient)
+    return (pose[:3, :3] @ blender_point(point) + pose[:3, 3]).tolist()
+
+
+def posed_colliders(groups, worlds, node_parents, source_bones, transforms, orient, mapping, fallback):
+    """Colliders in the custom pose, anchored to the NPC bone of their node or nearest skinned ancestor."""
+    result = []
+    for group, colliders in sorted(groups.items()):
+        for collider in colliders:
+            index = collider['node']
+            while index is not None and f'VRMNode_{index:05}' not in source_bones:
+                index = node_parents.get(index)
+            bone = fallback if index is None else f'VRMNode_{index:05}'
+            world = worlds[collider['node']]
+
+            def place(offset):
+                return posed_point(transforms[bone], orient, world[:3, :3] @ np.asarray(offset) + world[:3, 3])
+
+            tail = collider['tail']
+            result.append({'group': group, 'bone': mapping[bone], 'head': place(collider['head']),
+                           'tail': None if tail is None else place(tail), 'radius': collider['radius']*70})
+    return result
+
+
 def unswayable_nodes(settings):
     """Body meshes cut into slot NIFs and clothing skin copies; their bones would span several files."""
     if not settings.armor_support or not settings.skin_partition_enabled:
