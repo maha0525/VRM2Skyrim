@@ -239,8 +239,16 @@ def shader_package(shader_root, output, diagnostic=False, archive_dir=None, lice
 
 
 def avatar_paths(output, settings, manifest):
+    from expressions import load_facial_manifest
     mesh_dir = output/'mod/meshes'/settings.asset_dir
-    return {mesh_dir/c['file'] for c in manifest['components']} | set(mesh_dir.glob('fixed_*.nif'))
+    paths = {mesh_dir/c['file'] for c in manifest['components']} | set(mesh_dir.glob('fixed_*.nif'))
+    facial = load_facial_manifest(output)
+    if facial:
+        mod = output/'mod'
+        paths.add(mod/facial['facegeom'])
+        for part in facial['parts']:
+            paths.add(mod/part['nif'])
+    return paths
 
 
 def prepare_materials(output, strength=.15):
@@ -267,6 +275,25 @@ def prepare_materials(output, strength=.15):
     face_files = {c['file'] for c in manifest['components'] if c.get('id') == 'face'}
     face_nodes = {s['source_node'] for c in manifest['components'] if c.get('id') == 'face'
                   for s in c.get('shapes', []) if 'source_node' in s}
+    from expressions import load_facial_manifest
+    facial = load_facial_manifest(output)
+    facial_files = set()
+    if facial:
+        fg_name = Path(facial['facegeom']).name
+        facial_files.add(fg_name)
+        face_files.add(fg_name)
+        fg_shapes = {}
+        for part in facial['parts']:
+            entry_info = {'name': part['edid'], 'source_node': part['source_node'],
+                          'material_policy': part['material_policy'], 'double_sided': part.get('double_sided', False),
+                          'diffuse': part.get('diffuse')}
+            shapes[part['edid']] = entry_info
+            by_file[part['file']] = {part['edid']: entry_info}
+            fg_shapes[part['edid']] = entry_info
+            facial_files.add(part['file'])
+            face_files.add(part['file'])
+            face_nodes.add(part['source_node'])
+        by_file[fg_name] = fg_shapes
     authored_cache = {}
     paths = avatar_paths(output, settings, manifest)
     reset_originals(output, paths)
@@ -320,10 +347,11 @@ def prepare_materials(output, strength=.15):
                     raise ValueError('Toon marker did not survive NIF export: '+info['name'])
                 if shape.shader.properties.Emissive_Mult != 0:
                     raise ValueError('Toon marker must not illuminate the fallback material')
-            prepared.append({'file': path.name, 'shape': info['name'], 'control': relative,
+            prepared.append({'file': path.name, 'relpath': path.relative_to(mod).as_posix(),
+                             'shape': info['name'], 'control': relative,
                              'parameters': parameters, 'source_material': material.get('name'),
                              'face': path.name in face_files or info.get('source_node') in face_nodes, **extra})
-            if authored:
+            if authored and path.name not in facial_files:
                 with NifFile(str(path.resolve())) as nif:
                     shape = next(s for s in nif.shapes if s.name == info['name'])
                     widths = width_for(document, binary, material, shape.uvs)
@@ -382,7 +410,7 @@ def validate_toon(output):
         if key in seen:
             raise ValueError('Duplicate toon material declaration')
         seen.add(key)
-        path = output/'mod/meshes'/settings.asset_dir/entry['file']
+        path = (output/'mod'/entry['relpath']) if entry.get('relpath') else (output/'mod/meshes'/settings.asset_dir/entry['file'])
         relative = entry['control']
         if not relative.startswith('textures/'+settings.asset_dir+'/toon_') or '..' in relative:
             raise ValueError('Toon control is not private to this follower')

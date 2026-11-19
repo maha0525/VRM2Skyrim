@@ -20,6 +20,8 @@ Guided by a 5-step browser wizard, you can convert your 3D model, set up removab
   Reads the source VRM's MToon material properties (shade color, shading boundary, rim lighting, MatCap, and outlines) and reproduces anime-style shading in Skyrim via a dedicated Community Shaders package.
 - **Custom Weapons from GLB**
   Upload `.glb` weapon models (up to 8, e.g. two one-handed weapons or a sword and a staff), adjust their scale and grip orientation with live previews, optionally change damage, weight, value, speed, reach and the enchantment, and bundle them as your follower's signature weapons.
+- **Facial Expressions, Lip Sync & Blinking**
+  Reads VRM 1.0 (`VRMC_vrm.expressions`) and VRM 0.x (`VRM.blendShapeMaster`) facial morph targets and exports Skyrim SE `HeadPart` (`BSDynamicTriShape`), `FaceGeom`, and `FRTRI003` `.tri` morphs (43 standard phoneme, blink, brow, and dialogue/mood/combat expressions) automatically—no extra runtime mod required. Avatars without facial morphs (or builds with headwear face/hair visibility switching) keep the static head behavior.
 - **Automatic Sitting Height Adjustment**
   Compensates for your avatar's leg length and proportions so they sit at a natural height on chairs and benches.
 
@@ -42,11 +44,11 @@ Basic follower features (recruiting, combat, removable outfits, and custom weapo
 
 | Optional Feature | Required Skyrim Mods | Notes |
 | :--- | :--- | :--- |
-| **Basic Follower, Removable Outfits, Custom Weapon** | None | Runs on vanilla Skyrim SE/AE (plus any official DLC/Creations you select for gear or shouts). |
+| **Basic Follower, Facial Expressions / Lip Sync, Removable Outfits, Custom Weapon** | None | Runs on vanilla Skyrim SE/AE (plus any official DLC/Creations you select for gear or shouts). |
 | **Headwear Face / Hair Visibility Switching** | **SKSE64** | Required when hiding face or hair meshes automatically while wearing helmets or headwear (launch via `skse64_loader.exe`). |
 | **Sitting Height Adjustment** | **SKSE64** | Adjusts seat height via script when sitting on chairs or benches. |
 | **Hair & Cloth Physics** | **SKSE64** + **Faster HDT-SMP** | Required to animate converted VRM Spring Bone chains in-game. |
-| **Toon Shading** | **SKSE64** + **Community Shaders (Bottled Shaders 1.0.22 / DLL 1.9.0.0)** + **Toon Shader ZIP** | The bundled `VRM2Skyrim-Toon-Shader-0.13.0.zip` is built specifically for **Bottled Shaders 1.0.22** (downloadable from STEP 01 or the completion screen). |
+| **Toon Shading** | **SKSE64** + **Community Shaders (Bottled Shaders 1.0.22 / DLL 1.9.0.0)** + **Toon Shader ZIP** | The bundled `VRM2Skyrim-Toon-Shader-0.14.0.zip` is built specifically for **Bottled Shaders 1.0.22** (downloadable from STEP 01 or the completion screen). |
 | **Existing Armor Fitting** | **SKSE64** + **SkyPatcher** | Required when fitting official Skyrim armor/headgear to your follower's body. |
 
 ---

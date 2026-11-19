@@ -174,6 +174,7 @@ def main():
     bpy.ops.preferences.addon_enable(module="io_scene_nifly")
     skel = output / "mod/meshes" / settings.asset_dir / "skeleton.nif"
     from wardrobe import components, original_head_visibility
+    from expressions import load_facial_manifest
     parts = components(settings)
     manifest = json.loads((output/'appearance.json').read_text(encoding='utf8'))['components']
     for part in parts:
@@ -182,6 +183,16 @@ def main():
             # Fitting regenerates split skin components without per-source
             # shape metadata. Their materials are imported from the NIF itself.
             part['shapes'] = original.get('shapes', []) if original.get('partial_source') else original['shapes']
+    facial = load_facial_manifest(output)
+    if facial:
+        parts.append({
+            "id": "facial_headpart",
+            "role": "fixed",
+            "slot": 30,
+            "file": Path(facial["facegeom"]).name,
+            "absolute_nif": str(output / "mod" / facial["facegeom"]),
+            "shapes": [{"name": p["edid"], "material_policy": p["material_policy"]} for p in facial["parts"]],
+        })
     wardrobe = args.wardrobe
     if wardrobe.startswith("armor:"):
         fitting = json.loads((output / "armor-fitting.json").read_text(encoding='utf8'))
@@ -220,7 +231,11 @@ def main():
                 parts = [p for p in parts if p['id'] != name]
     slot_priority = {}
     from equipment_textures import prepare_preview_assets
-    preview_assets = prepare_preview_assets(output, [output/'mod/meshes'/settings.asset_dir/p['file'] for p in parts])
+    preview_assets = prepare_preview_assets(
+        output,
+        [Path(p['absolute_nif']) if p.get('absolute_nif') else (output/'mod/meshes'/settings.asset_dir/p['file'])
+         for p in parts],
+    )
     if preview_assets:
         bpy.context.preferences.filepaths.texture_directory = str(preview_assets)
         bpy.context.preferences.addons['io_scene_nifly'].preferences.sky_texture_path_1 = str(output/'mod')
@@ -253,7 +268,7 @@ def main():
         if settings.armor_support and part["role"] == "garment":
             if (wardrobe.startswith("armor:") and not args.keep_clothes) or wardrobe == "underwear" or wardrobe == "without:" + part["id"] or (wardrobe == "initial" and not part["equipped"]):
                 continue
-        nif = output / "mod/meshes" / settings.asset_dir / part["file"]
+        nif = Path(part["absolute_nif"]) if part.get("absolute_nif") else (output / "mod/meshes" / settings.asset_dir / part["file"])
         nifs.append(str(nif))
         existing = set(bpy.context.scene.objects)
         bpy.ops.object.select_all(action="DESELECT")

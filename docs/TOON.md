@@ -12,13 +12,13 @@ VRM Skyrim Converter は、元の VRM アバターに設定された **MToon 材
 
 1. **SKSE64**（`skse64_loader.exe` からゲームを起動すること）
 2. **Community Shaders（Bottled Shaders 1.0.22 / `CommunityShaders.dll` バージョン `1.9.0.0`）**
-3. **トゥーン描画用シェーダー ZIP**（`VRM2Skyrim-Toon-Shader-0.13.0.zip`）
-   - ウィザードの **STEP 01** または **変換完了画面** にある **「トゥーン描画用シェーダーをダウンロード」** ボタンから保存できます（リポジトリ内の `toon-shader/VRM2Skyrim-Toon-Shader-0.13.0.zip` と同じものです）。
+3. **トゥーン描画用シェーダー ZIP**（`VRM2Skyrim-Toon-Shader-0.14.0.zip`）
+   - ウィザードの **STEP 01** または **変換完了画面** にある **「トゥーン描画用シェーダーをダウンロード」** ボタンから保存できます（リポジトリ内の `toon-shader/VRM2Skyrim-Toon-Shader-0.14.0.zip` と同じものです）。
    - 1 回導入すれば、作成した複数の VRM フォロワーで共通して使えます。
 
 > [!IMPORTANT]
 > **対応する Community Shaders の配布版について**
-> 同梱の `VRM2Skyrim-Toon-Shader-0.13.0.zip` は、Nexus Mods で配布されている **Bottled Shaders 1.0.22**（Mod Organizer 2 等で `Bottled Shaders` として導入される、`CommunityShaders.dll` バージョン `1.9.0.0` のパッケージ）専用です。
+> 同梱の `VRM2Skyrim-Toon-Shader-0.14.0.zip` は、Nexus Mods で配布されている **Bottled Shaders 1.0.22**（Mod Organizer 2 等で `Bottled Shaders` として導入される、`CommunityShaders.dll` バージョン `1.9.0.0` のパッケージ）専用です。
 > 同じ DLL バージョン `1.9.0.0` であっても、`Bottled Shaders 1.0.4` など他の配布版とはシェーダー本体（`Lighting.hlsl` / `DeferredCompositeCS.hlsl`）の内容が異なるため、そのまま重ねて使うことはできません。
 
 > [!NOTE]
@@ -31,13 +31,13 @@ VRM Skyrim Converter は、元の VRM アバターに設定された **MToon 材
 ### 手順 1：ウィザードの STEP 01 でトゥーン描画を有効にする
 
 1. ウィザードの **STEP 01（アバターと制作環境）** にある **「トゥーン描画（Community Shaders 用）」** を確認します（初期状態で **「トゥーン描画を使う」** にチェックが入っています）。
-2. STEP 01 または完了画面の **「トゥーン描画用シェーダーをダウンロード」** から **`VRM2Skyrim-Toon-Shader-0.13.0.zip`** を保存します。
+2. STEP 01 または完了画面の **「トゥーン描画用シェーダーをダウンロード」** から **`VRM2Skyrim-Toon-Shader-0.14.0.zip`** を保存します。
 3. STEP 05 まで進んでフォロワー MOD の ZIP を作成・保存します。
 
 ### 手順 2：Mod Organizer 2 (MO2) で導入する場合
 
 1. **Community Shaders 本体（`Bottled Shaders 1.0.22`）** を導入して有効化します。
-2. **`VRM2Skyrim-Toon-Shader-0.13.0.zip`** を「アーカイブから MOD をインストール」で追加し、左ペインの並び順で **Community Shaders 本体より下（優先度が高い側）** に置いて有効化します。
+2. **`VRM2Skyrim-Toon-Shader-0.14.0.zip`** を「アーカイブから MOD をインストール」で追加し、左ペインの並び順で **Community Shaders 本体より下（優先度が高い側）** に置いて有効化します。
    - `Shaders/Lighting.hlsl` と `Shaders/DeferredCompositeCS.hlsl` が `VRM2Skyrim-Toon-Shader` 側で上書きされる状態にします。
 3. 作成した **フォロワー MOD の ZIP** をインストールして有効化し、右ペインの「プラグイン」タブで `<フォロワー名>.esp` にチェックが入っていることを確認します。
 4. **ゲームを終了した状態で**、Skyrim の `Data/ShaderCache` フォルダ（MO2 の `Overwrite` 内に `ShaderCache` が出力されている場合はそちらも）を別名に退避または削除します。
@@ -45,7 +45,7 @@ VRM Skyrim Converter は、元の VRM アバターに設定された **MToon 材
 
 ### 手順 3：Vortex で導入する場合
 
-1. **Community Shaders 本体（`Bottled Shaders 1.0.22`）**、**`VRM2Skyrim-Toon-Shader-0.13.0.zip`**、および作成した **フォロワー MOD の ZIP** を Vortex に追加して有効化します。
+1. **Community Shaders 本体（`Bottled Shaders 1.0.22`）**、**`VRM2Skyrim-Toon-Shader-0.14.0.zip`**、および作成した **フォロワー MOD の ZIP** を Vortex に追加して有効化します。
 2. ファイル競合のルール確認が表示されたら、`VRM2Skyrim-Toon-Shader-0.13.0` を **Community Shaders 本体より後（After / 優先）** に設定し、**Deploy Mods** を実行します。
 3. 「プラグイン」タブで `<フォロワー名>.esp` が有効になっていることを確認します。
 4. **ゲームを終了した状態で**、`Data/ShaderCache` フォルダを別名に退避または削除してから **`skse64_loader.exe`** で起動します。
@@ -79,10 +79,10 @@ VRM Skyrim Converter は、元の VRM アバターに設定された **MToon 材
 ## 4. 注意点とトラブルシューティング
 
 - **Community Shaders 本体を更新するとき**
-  Community Shaders 本体を新しいバージョンへ更新する際は、先に `VRM2Skyrim-Toon-Shader-0.13.0.zip` を無効化してから更新してください。
+  Community Shaders 本体を新しいバージョンへ更新する際は、先に `VRM2Skyrim-Toon-Shader-0.14.0.zip` を無効化してから更新してください。
 - **フォロワーが通常のリアルな陰影のまま表示される場合**
   1. `skse64_loader.exe` から起動しているか確認してください。
-  2. `Data/Shaders/Lighting.hlsl` と `Data/Shaders/DeferredCompositeCS.hlsl` が `VRM2Skyrim-Toon-Shader-0.13.0.zip` のもので上書きされているか確認してください。
+  2. `Data/Shaders/Lighting.hlsl` と `Data/Shaders/DeferredCompositeCS.hlsl` が `VRM2Skyrim-Toon-Shader-0.14.0.zip` のもので上書きされているか確認してください。
   3. ゲームを一度終了し、`Data/ShaderCache`（および MO2 の `Overwrite/ShaderCache`）を別名に退避してから起動し直してください。古いシェーダーキャッシュが残っていると変更後のシェーダーが読み込まれません。
 
 ---
@@ -94,10 +94,10 @@ VRM Skyrim Converter は、元の VRM アバターに設定された **MToon 材
   - 制御テクスチャの 1 行目（左端 4 ピクセル）には識別マーカー（通常シェイプは `R=18, G=229, B=164, A=255`、背面押し出しの輪郭線シェイプは `R=19, G=229, B=164, A=255`）と、MToon の影色・境界・リムライト・MatCap・法線強度・輪郭線色を記録します。影テクスチャ・リムマスク・MatCap がある場合は、同じアトラス内の縦 3 段（256×768）に連結して格納します。
   - `Shaders/VRM2Skyrim/ToonCommon.hlsli`・`ToonLighting.hlsli`・`ToonComposite.hlsli` が `t6` のマーカーを検査し、一致したピクセルのみ MToon 計算へ分岐させます（マーカーを持たない一般の Glowmap メッシュは `EmissiveMultiple` がそのまま働くため影響を受けません）。
 - **シェーダー ZIP の再ビルド方法**
-  手元に展開した `Bottled Shaders 1.0.22` の `Shaders` フォルダを指定して、以下のコマンドで `toon-shader/VRM2Skyrim-Toon-Shader-0.13.0.zip` を再生成・検証できます：
+  手元に展開した `Bottled Shaders 1.0.22` の `Shaders` フォルダを指定して、以下のコマンドで `toon-shader/VRM2Skyrim-Toon-Shader-0.14.0.zip` を再生成・検証できます：
   ```powershell
   .venv\Scripts\python.exe toon.py --shader-root "<Bottled Shaders 1.0.22 の展開先>\Shaders"
   ```
 - **ライセンス表記**
   - `VRM2Skyrim` 本体のソースコードは [MIT License](../LICENSE) です。
-  - `VRM2Skyrim-Toon-Shader-0.13.0.zip` に含まれる `Shaders/Lighting.hlsl`、`Shaders/DeferredCompositeCS.hlsl`、および `Shaders/VRM2Skyrim/*.hlsli` は Community Shaders（Bottled Shaders 1.0.22）のシェーダーを改変したものであり、**GPL-3.0（Community Shaders Modding Exception および GPL-3.0 Linking Exception 付き）** の下で配布されます。ライセンス全文はシェーダー ZIP 内の `Shaders/VRM2Skyrim/Licenses/` およびリポジトリの [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) に同梱されています。
+  - `VRM2Skyrim-Toon-Shader-0.14.0.zip` に含まれる `Shaders/Lighting.hlsl`、`Shaders/DeferredCompositeCS.hlsl`、および `Shaders/VRM2Skyrim/*.hlsli` は Community Shaders（Bottled Shaders 1.0.22）のシェーダーを改変したものであり、**GPL-3.0（Community Shaders Modding Exception および GPL-3.0 Linking Exception 付き）** の下で配布されます。ライセンス全文はシェーダー ZIP 内の `Shaders/VRM2Skyrim/Licenses/` およびリポジトリの [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) に同梱されています。

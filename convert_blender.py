@@ -151,7 +151,21 @@ def main():
     original_names = {index: node.get("name", "") for index, node in enumerate(document["nodes"])}
     from wardrobe import components, validate_source
     from inspect_vrm import inspect
+    from expressions import (
+        SKYRIM_EXPRESSION_MORPHS,
+        extract_vrm_expressions,
+        facegeom_relative,
+        synthesize_skyrim_morph_deltas,
+        validate_facial_assets,
+    )
     validate_source(settings, inspect(args.source))
+    expr_info = extract_vrm_expressions(document)
+    # Head visibility switching swaps static face NIFs via SKSE; keep static face in that mode.
+    facial_enabled = bool(expr_info["nodes"]) and not settings.head_switch_enabled
+    facial_nodes = set(expr_info["nodes"]) if facial_enabled else set()
+    if facial_enabled:
+        LOG.info("Facial expressions detected (%s): %d expressions on nodes %s",
+                 expr_info["vrm_version"], len(expr_info["expressions"]), sorted(facial_nodes))
     output_parts = components(settings, fitting=False)
     node_parts = {node: part for part in output_parts for node in (part["nodes"] or [])}
     node_parents = {child: index for index, node in enumerate(document["nodes"]) for child in node.get("children", [])}
@@ -185,6 +199,12 @@ def main():
         node = int(obj.name.split("_")[-1].split(".")[0])
         obj["v2s_source_node"] = node
         obj["v2s_part"] = node_parts[node]["id"] if settings.armor_support else "appearance"
+        obj["v2s_facial"] = int(node in facial_nodes and obj.data.shape_keys is not None)
+    # Guard: if every mesh would move into FaceGeom, keep static appearance instead.
+    if facial_enabled and not any(not obj["v2s_facial"] for obj in meshes):
+        facial_enabled = False
+        for obj in meshes:
+            obj["v2s_facial"] = 0
     default_material = bpy.data.materials.new("V2S_DefaultMaterial")
     default_material.use_nodes = True
     source_materials[default_material.name] = {}
@@ -199,8 +219,9 @@ def main():
         world = obj.matrix_world.copy()
         obj.parent = None
         obj.matrix_world = world
-        # Preserve any default morph weights before changing the armature pose.
-        if obj.data.shape_keys:
+        # Preserve any default morph weights before changing the armature pose,
+        # except on facial expression meshes whose shape keys are converted to Skyrim .tri morphs.
+        if obj.data.shape_keys and not obj.get("v2s_facial"):
             modifiers = [mod for mod in obj.modifiers if mod.type == "ARMATURE"]
             for mod in modifiers:
                 mod.show_viewport = False
@@ -432,9 +453,42 @@ def main():
             target_name = mesh_mapping[name]
             for index, weight in pairs:
                 target_weights[index][target_name] = target_weights[index].get(target_name, 0) + weight
+        skyrim_morph_deltas = None
+        if obj.get("v2s_facial") and obj.data.shape_keys and len(obj.data.shape_keys.key_blocks) > 1:
+            node_idx = obj["v2s_source_node"]
+            used_targets = {
+                target_idx
+                for binds in expr_info["expressions"].values()
+                for bind_node, target_idx, _ in binds
+                if bind_node == node_idx
+            }
+            target_deltas = {}
+            kblocks = obj.data.shape_keys.key_blocks
+            for target_idx in sorted(used_targets):
+                if 1 + target_idx >= len(kblocks):
+                    continue
+                raw_k = np.empty(len(obj.data.vertices) * 3, dtype=np.float64)
+                kblocks[1 + target_idx].data.foreach_get("co", raw_k)
+                pts_k = raw_k.reshape((-1, 3)) @ common[:3, :3].T + common[:3, 3]
+                fitted_k = np.zeros_like(pts_k)
+                for name, pairs in weights.items():
+                    indices = np.array([index for index, _ in pairs], dtype=int)
+                    values = np.array([weight for _, weight in pairs])
+                    matrix = np.asarray(transforms[name])
+                    fitted_k[indices] += (pts_k[indices] @ matrix[:3, :3].T + matrix[:3, 3]) * values[:, None]
+                target_deltas[target_idx] = fitted_k - fitted
+            skyrim_morph_deltas = synthesize_skyrim_morph_deltas(
+                fitted, target_deltas, expr_info["expressions"], node_idx
+            )
+            obj.shape_key_clear()
         obj.parent = None
         obj.matrix_world = Matrix.Identity(4)
         obj.data.vertices.foreach_set("co", fitted.reshape(-1))
+        if skyrim_morph_deltas is not None:
+            obj.shape_key_add(name="Basis", from_mix=False)
+            for morph_name in SKYRIM_EXPRESSION_MORPHS:
+                kb = obj.shape_key_add(name=morph_name, from_mix=False)
+                kb.data.foreach_set("co", (fitted + skyrim_morph_deltas[morph_name]).reshape(-1))
         if obj.data.has_custom_normals:
             obj.data.normals_split_custom_set([(0.0, 0.0, 0.0)] * len(obj.data.loops))
         for mod in list(obj.modifiers):
@@ -448,10 +502,13 @@ def main():
                 if name not in groups:
                     groups[name] = obj.vertex_groups.new(name=name)
                 groups[name].add([index], weight / total, "REPLACE")
-        slot = node_parts[obj["v2s_source_node"]]["slot"] if settings.armor_support else 32
-        from wardrobe import nif_partition
-        partition = nif_partition(slot)
-        obj.vertex_groups.new(name=f"SBP_{partition}_" + ("BODY" if slot == 32 else "BODYADDON")).add(list(range(len(points))), 1.0, "REPLACE")
+        if obj.get("v2s_facial"):
+            obj.vertex_groups.new(name="SBP_130_HEAD").add(list(range(len(points))), 1.0, "REPLACE")
+        else:
+            slot = node_parts[obj["v2s_source_node"]]["slot"] if settings.armor_support else 32
+            from wardrobe import nif_partition
+            partition = nif_partition(slot)
+            obj.vertex_groups.new(name=f"SBP_{partition}_" + ("BODY" if slot == 32 else "BODYADDON")).add(list(range(len(points))), 1.0, "REPLACE")
         armature = obj.modifiers.new("Skyrim Skin", "ARMATURE")
         armature.object = target_rig
         obj.data.update()
@@ -476,9 +533,12 @@ def main():
             raise ValueError(f"Mesh exceeds safe NIF shape vertex limit: {obj.name}")
     save_images(meshes, output, settings, source_materials)
     from nif_materials import apply_alpha
+    facial_meshes = sorted([obj for obj in meshes if obj.get("v2s_facial")],
+                           key=lambda obj: len(obj.data.vertices), reverse=True)
+    body_meshes = [obj for obj in meshes if not obj.get("v2s_facial")]
     manifest = []
     for part in output_parts:
-        selected = [obj for obj in meshes if obj["v2s_part"] == part["id"]]
+        selected = [obj for obj in body_meshes if obj["v2s_part"] == part["id"]]
         if not selected:
             raise ValueError(f"Appearance component has no output geometry: {part['id']}")
         nif_path = output / "mod/meshes" / settings.asset_dir / part["file"]
@@ -494,6 +554,78 @@ def main():
                                      "diffuse": obj.material_slots[0].material['V2S_Diffuse_Path'],
                                      "material_policy": source_materials[obj.material_slots[0].material.name]} for obj in selected]})
         LOG.info("Exported component %s: %s shapes, slot %s", part["id"], len(selected), part["slot"])
+    if facial_meshes:
+        facial_parts = []
+        fg_alpha_policies = {}
+        for idx, obj in enumerate(facial_meshes):
+            edid = f"{settings.prefix}FacePart_{idx}"
+            obj.name = edid
+            obj["pynBlockName"] = "BSDynamicTriShape"
+            part_nif = output / "mod/meshes" / settings.asset_dir / f"face_part_{idx}.nif"
+            part_tri = output / "mod/meshes" / settings.asset_dir / f"face_part_{idx}.tri"
+            part_nif.parent.mkdir(parents=True, exist_ok=True)
+            select_only([obj, target_rig], target_rig)
+            bpy.ops.export_scene.pynifly(filepath=str(part_nif), target_game="SKYRIMSE", rename_bones=False,
+                                       blender_xf=False, preserve_hierarchy=True, export_modifiers=False,
+                                       export_animations=False, export_colors=True, write_tris=True,
+                                       intuit_defaults=False)
+            policy = source_materials[obj.material_slots[0].material.name]
+            apply_alpha(part_nif, {edid: policy})
+            fg_alpha_policies[edid] = policy
+            facial_parts.append({
+                "index": idx,
+                "edid": edid,
+                "file": part_nif.name,
+                "nif": part_nif.relative_to(output / "mod").as_posix(),
+                "tri": part_tri.relative_to(output / "mod").as_posix(),
+                "source_node": obj["v2s_source_node"],
+                "double_sided": policy.get("doubleSided", False),
+                "diffuse": obj.material_slots[0].material["V2S_Diffuse_Path"],
+                "material_policy": policy,
+            })
+            LOG.info("Exported facial head part %s: %s + %s", edid, part_nif.name, part_tri.name)
+        fg_root = bpy.data.objects.new("00000800.NIF", None)
+        fg_root["pynRoot"] = True
+        fg_root["pynBlockName"] = "BSFadeNode"
+        bpy.context.scene.collection.objects.link(fg_root)
+        fg_node = bpy.data.objects.new("BSFaceGenNiNodeSkinned", None)
+        fg_node.parent = fg_root
+        bpy.context.scene.collection.objects.link(fg_node)
+        for obj in facial_meshes:
+            obj.parent = fg_node
+        bpy.context.view_layer.update()
+        facegeom_path = output / "mod" / facegeom_relative(settings)
+        facegeom_path.parent.mkdir(parents=True, exist_ok=True)
+        select_only([fg_root, fg_node, *facial_meshes, target_rig], target_rig)
+        bpy.ops.export_scene.pynifly(filepath=str(facegeom_path), target_game="SKYRIMSE", rename_bones=False,
+                                   blender_xf=False, preserve_hierarchy=True, export_modifiers=False,
+                                   export_animations=False, export_colors=True, write_tris=False,
+                                   intuit_defaults=False)
+        apply_alpha(facegeom_path, fg_alpha_policies)
+        from custom_skeleton import NifFile
+        with NifFile(str(facegeom_path)) as fg_nif:
+            fg_nif.root.flags = 0xE
+            if "BSFaceGenNiNodeSkinned" in fg_nif.nodes:
+                fg_nif.nodes["BSFaceGenNiNodeSkinned"].flags = 0xE
+            for shape in fg_nif.shapes:
+                shape.flags = 0xE
+            fg_nif.save()
+        for obj in facial_meshes:
+            obj.parent = None
+        bpy.data.objects.remove(fg_node, do_unlink=True)
+        bpy.data.objects.remove(fg_root, do_unlink=True)
+        facial_manifest = {
+            "enabled": True,
+            "vrm_version": expr_info["vrm_version"],
+            "source_expressions": sorted(expr_info["expressions"].keys()),
+            "facegeom": facegeom_relative(settings),
+            "parts": facial_parts,
+        }
+        (output / "facial-expressions.json").write_text(
+            json.dumps(facial_manifest, ensure_ascii=False, indent=2), encoding="utf8"
+        )
+        validate_facial_assets(output, settings)
+        LOG.info("Exported FaceGeom %s with %d BSDynamicTriShape parts", facegeom_path.name, len(facial_parts))
     (output / "appearance.json").write_text(json.dumps({"components": manifest}, ensure_ascii=False, indent=2), encoding="utf8")
     bpy.ops.wm.save_as_mainfile(filepath=str(output / "converted.blend"))
     if hashlib.sha256(args.source.read_bytes()).hexdigest() != source_hash:

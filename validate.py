@@ -157,12 +157,54 @@ def validate(output, skeleton=None, game_data=None):
                 }
             )
     generated = follower_records(mod / settings.plugin_name)
-    head_visibility = validate_head_visibility(generated, settings)
-    for path in (mod / 'meshes' / settings.asset_dir / 'native_head_empty.nif',
-                 mod / 'meshes/actors/character/facegendata/facegeom' / settings.plugin_name / '00000800.nif'):
-        with NifFile(str(path)) as native_head:
-            if native_head.game != 'SKYRIMSE' or native_head.root.blockname != 'BSFadeNode' or native_head.shapes:
-                raise ValueError('Native head/FaceGen contains renderable geometry or the wrong root')
+    from expressions import load_facial_manifest, validate_facial_assets
+    facial = load_facial_manifest(output)
+    facial_report = None
+    head_visibility = validate_head_visibility(generated, settings, output=output)
+    if facial:
+        facial_report = validate_facial_assets(output, settings)
+        fg_path = mod / facial['facegeom']
+        with NifFile(str(fg_path)) as fg_nif:
+            for shape in fg_nif.shapes:
+                if len(shape.bone_names) > SHAPE_BONE_LIMIT:
+                    raise ValueError(f'{fg_path.name}/{shape.name} has {len(shape.bone_names)} bones')
+                if len(shape.verts) > 65535 or not shape.bone_names:
+                    raise ValueError(f"Invalid skinned facial shape: {shape.name}")
+                if set(shape.bone_names) - bone_set:
+                    raise ValueError(f"Facial bones missing from NPC skeleton: {set(shape.bone_names) - bone_set}")
+                delivered_points.append(np.array(shape.verts))
+                sums = [0.0] * len(shape.verts)
+                counts = [0] * len(shape.verts)
+                for _, pairs in shape.bone_weights.items():
+                    for vertex, weight in pairs:
+                        sums[vertex] += weight
+                        counts[vertex] += 1
+                if any(count == 0 or count > 4 for count in counts):
+                    raise ValueError(f"Invalid bone influence count on facial shape: {shape.name}")
+                if max(abs(value - 1.0) for value in sums) > 0.015:
+                    raise ValueError(f"Unnormalized weights on facial shape: {shape.name}")
+                for texture in shape.shader.textures.values():
+                    relative = texture.replace("\\", "/")
+                    tpath = (mod / relative).resolve()
+                    if not tpath.is_relative_to(mod.resolve()) or not tpath.exists():
+                        raise ValueError(f"Missing or external facial texture: {texture}")
+                    textures.add(tpath)
+                shapes.append({
+                    "name": shape.name,
+                    "vertices": len(shape.verts),
+                    "component": "facial_headpart",
+                    "triangles": len(shape.tris),
+                    "bones": shape.bone_names,
+                    "max_influences": max(counts),
+                    "textures": shape.shader.textures,
+                    "alpha_flags": shape.alpha_property.properties.flags if shape.has_alpha_property else None,
+                })
+    else:
+        for path in (mod / 'meshes' / settings.asset_dir / 'native_head_empty.nif',
+                     mod / 'meshes/actors/character/facegendata/facegeom' / settings.plugin_name / '00000800.nif'):
+            with NifFile(str(path)) as native_head:
+                if native_head.game != 'SKYRIMSE' or native_head.root.blockname != 'BSFadeNode' or native_head.shapes:
+                    raise ValueError('Native head/FaceGen contains renderable geometry or the wrong root')
     local_ids = validate_private_records(generated, settings, output, game_data)
     by_name = {record.editor_id: record for record in generated}
     npc = by_name[settings.prefix + 'NPC']
@@ -326,6 +368,7 @@ def validate(output, skeleton=None, game_data=None):
         "components": component_reports,
         "game_verified": False,
         "head_visibility": head_visibility,
+        "facial_expressions": facial_report,
         'head_models': validate_head_models(output, settings),
         'clothing_skin': validate_clothing_skin(output, settings),
         'original_weapons': weapon_report,

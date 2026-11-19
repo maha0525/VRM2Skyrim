@@ -87,6 +87,83 @@ class FormatTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 read_glb(path)
 
+    def test_extract_vrm_expressions_vrm1_and_vrm0_and_empty(self):
+        from expressions import extract_vrm_expressions
+        vrm1 = {
+            "nodes": [{"name": "Head", "mesh": 0}],
+            "meshes": [{"primitives": [{"targets": [{"POSITION": 0}, {"POSITION": 1}]}]}],
+            "extensions": {"VRMC_vrm": {"expressions": {
+                "preset": {"aa": {"morphTargetBinds": [{"node": 0, "index": 0, "weight": 1.0}]}},
+                "custom": {"brow_angry": {"morphTargetBinds": [{"node": 0, "index": 1, "weight": 0.8}]}},
+            }}},
+        }
+        parsed1 = extract_vrm_expressions(vrm1)
+        self.assertEqual(parsed1["vrm_version"], "1.0")
+        self.assertEqual(parsed1["nodes"], [0])
+        self.assertEqual(parsed1["expressions"]["aa"], [(0, 0, 1.0)])
+        self.assertEqual(parsed1["expressions"]["brow_angry"], [(0, 1, 0.8)])
+
+        vrm0 = {
+            "nodes": [{"name": "Head", "mesh": 0}],
+            "meshes": [{"primitives": [{"targets": [{"POSITION": 0}]}]}],
+            "extensions": {"VRM": {"blendShapeMaster": {"blendShapeGroups": [
+                {"name": "Joy", "presetName": "joy", "binds": [{"mesh": 0, "index": 0, "weight": 100}]}
+            ]}}},
+        }
+        parsed0 = extract_vrm_expressions(vrm0)
+        self.assertEqual(parsed0["vrm_version"], "0.x")
+        self.assertEqual(parsed0["expressions"]["happy"], [(0, 0, 1.0)])
+
+        empty = {"nodes": [{"name": "Body", "mesh": 0}], "meshes": [{"primitives": [{}]}]}
+        self.assertEqual(extract_vrm_expressions(empty)["nodes"], [])
+
+    def test_synthesize_skyrim_morph_deltas_lr_split(self):
+        from expressions import SKYRIM_EXPRESSION_MORPHS, synthesize_skyrim_morph_deltas
+        # Skyrim actor space: -X = actor left, +X = actor right.
+        basis = np.array([[-2.0, 0.0, 100.0], [2.0, 0.0, 100.0]])
+        deltas = {0: np.array([[0.0, 0.0, -1.0], [0.0, 0.0, -1.0]])}
+        exprs = {"blink": [(0, 0, 1.0)], "aa": [(0, 0, 1.0)]}
+        out = synthesize_skyrim_morph_deltas(basis, deltas, exprs, 0)
+        self.assertEqual(tuple(out.keys()), SKYRIM_EXPRESSION_MORPHS)
+        self.assertAlmostEqual(out["BlinkLeft"][0, 2], -1.0, places=5)
+        self.assertAlmostEqual(out["BlinkLeft"][1, 2], 0.0, places=5)
+        self.assertAlmostEqual(out["BlinkRight"][0, 2], 0.0, places=5)
+        self.assertAlmostEqual(out["BlinkRight"][1, 2], -1.0, places=5)
+        self.assertAlmostEqual(out["BigAah"][0, 2], -1.0, places=5)
+        self.assertAlmostEqual(out["Aah"][0, 2], -0.85, places=5)
+
+    def test_facial_head_records_and_remap(self):
+        from expressions import EXTRA_HDPT_BASE_ID
+        from follower_plugin import remap
+        from head_visibility import EMPTY_HEAD_ID, head_records
+        from settings import FollowerSettings
+        settings = FollowerSettings(npc_name="Test", mod_name="TestFollower")
+        facial = {"enabled": True, "parts": [
+            {"edid": settings.prefix + "FacePart_0", "nif": f"meshes/{settings.asset_dir}/face_part_0.nif",
+             "tri": f"meshes/{settings.asset_dir}/face_part_0.tri"},
+            {"edid": settings.prefix + "FacePart_1", "nif": f"meshes/{settings.asset_dir}/face_part_1.nif",
+             "tri": f"meshes/{settings.asset_dir}/face_part_1.tri"},
+        ]}
+        recs = head_records(settings, 0x01000804, facial=facial)
+        by_id = {r.form_id: r for r in recs}
+        primary = by_id[EMPTY_HEAD_ID]
+        extra = by_id[EXTRA_HDPT_BASE_ID]
+        self.assertEqual(primary.values(b"NAM0"), [struct.pack("<I", 1)])
+        self.assertEqual(primary.values(b"HNAM"), [struct.pack("<I", EXTRA_HDPT_BASE_ID)])
+        self.assertEqual(extra.values(b"DATA"), [b"\x0E"])
+        self.assertEqual(extra.values(b"PNAM"), [struct.pack("<I", 0)])
+        remapped = remap(primary, {1: 3})
+        self.assertEqual(remapped.form_id, (3 << 24) | (EMPTY_HEAD_ID & 0xFFFFFF))
+        self.assertEqual(remapped.values(b"HNAM"), [struct.pack("<I", (3 << 24) | (EXTRA_HDPT_BASE_ID & 0xFFFFFF))])
+        from build_npc import ARMOR_ID, appearance_records
+        armor_recs, _ = appearance_records(settings, None, facial=facial)
+        armor = next(r for r in armor_recs if r.form_id == ARMOR_ID)
+        bod2_mask = struct.unpack_from("<I", armor.values(b"BOD2")[0], 0)[0]
+        self.assertEqual(bod2_mask & 1, 0)  # Slot 30 (HEAD) must not be occupied when facial HeadParts are active
+        static_recs, _ = appearance_records(settings, None, facial=None)
+        static_armor = next(r for r in static_recs if r.form_id == ARMOR_ID)
+        self.assertEqual(struct.unpack_from("<I", static_armor.values(b"BOD2")[0], 0)[0] & 1, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

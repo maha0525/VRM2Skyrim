@@ -43,14 +43,18 @@ def after(record, tag, additions):
     record.fields[index + 1:index + 1] = additions
 
 
-def appearance_records(settings, catalog):
+def appearance_records(settings, catalog, facial=None):
     """Build either the original fixed appearance or independent skin/clothes."""
     path = settings.asset_dir.replace("/", "\\")
     if not settings.armor_support:
         # The fixed NIF uses only partition 32. Advertising every occupied
         # inventory slot here attaches the same model/FSMP system ten times.
         # Keep the wider exclusion mask on ARMO, not on its model's ARMA.
+        # When VRM facial HeadParts are active (SBP_130_HEAD), never occupy
+        # slot 30 (HEAD) on the always-worn ARMO, or the engine hides the face.
         model_mask = 1 << (32 - 30)
+        armor_slots = tuple(s for s in SLOTS if s != 30) if facial else SLOTS
+        armor_mask = sum(1 << (slot - 30) for slot in armor_slots)
         addon = Record(b"ARMA", ADDON_ID, 0, [
             (b"EDID", text(settings.prefix + "AppearanceAA")),
             (b"BOD2", struct.pack("<II", model_mask, 2)), (b"RNAM", uint(RACE_ID)),
@@ -59,10 +63,10 @@ def appearance_records(settings, catalog):
         armor = Record(b"ARMO", ARMOR_ID, 4, [
             (b"EDID", text(settings.prefix + "Appearance")), (b"OBND", bytes(12)),
             (b"FULL", text(settings.npc_name + " - Original Appearance")),
-            (b"BOD2", struct.pack("<II", SLOT_MASK, 2)), (b"RNAM", uint(RACE_ID)),
+            (b"BOD2", struct.pack("<II", armor_mask, 2)), (b"RNAM", uint(RACE_ID)),
             (b"MODL", uint(ADDON_ID)), (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<i", 0))])
         outfit = Record(b"OTFT", OUTFIT_ID, 0, [(b"EDID", text(settings.prefix + "Outfit")), (b"INAM", uint(ARMOR_ID))])
-        logging.info('Fixed appearance: one model attachment at slot 32; inventory exclusion slots %s', SLOTS)
+        logging.info('Fixed appearance: one model attachment at slot 32; inventory exclusion slots %s', armor_slots)
         return [addon, armor, outfit], []
     skin_ids = {"body": ADDON_ID, "underwear": 0x01000807, "fixed": 0x01000808,
                 "hands": 0x01000809, "feet": 0x0100080A, 'face': 0x01000850, 'hair': 0x01000851}
@@ -209,7 +213,9 @@ def build_npc(game_data, output, settings=None, catalog=None):
     struct.pack_into("<I", data, 32, struct.unpack_from("<I", data, 32)[0] & ~1)
     struct.pack_into("<ff", data, 16, 1., 1.)
     race.replace(b"DATA", bytes(data))
-    appearance, inventory = appearance_records(settings, catalog)
+    from expressions import load_facial_manifest
+    facial = load_facial_manifest(output)
+    appearance, inventory = appearance_records(settings, catalog, facial=facial)
     fitting = json.loads((output / "armor-fitting.json").read_text()) if settings.fitting_enabled else None
     from shouts import official_references
     # Footsteps and shouts share one master order, so both are numbered against it.
@@ -241,8 +247,8 @@ def build_npc(game_data, output, settings=None, catalog=None):
         style = private_style(settings, catalog)
         appearance.append(style)
         npc.replace(b'ZNAM', uint(style.form_id))
-    configure_native_head(npc, race)
-    appearance += head_records(settings, RACE_ID)
+    configure_native_head(npc, race, facial=facial)
+    appearance += head_records(settings, RACE_ID, facial=facial)
     script_data = None
     if settings.armor_support:
         appearance += runtime_records(settings, profile=fitting if settings.fitting_enabled else None)
