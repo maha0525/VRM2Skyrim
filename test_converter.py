@@ -149,12 +149,10 @@ class FormatTests(unittest.TestCase):
         primary = by_id[EMPTY_HEAD_ID]
         extra = by_id[EXTRA_HDPT_BASE_ID]
         self.assertEqual(primary.values(b"NAM0"), [struct.pack("<I", 1)])
-        self.assertEqual(primary.values(b"HNAM"), [struct.pack("<I", EXTRA_HDPT_BASE_ID)])
-        self.assertEqual(extra.values(b"DATA"), [b"\x0E"])
+        self.assertEqual(extra.values(b"DATA"), [b"\x06"])
         self.assertEqual(extra.values(b"PNAM"), [struct.pack("<I", 0)])
         remapped = remap(primary, {1: 3})
         self.assertEqual(remapped.form_id, (3 << 24) | (EMPTY_HEAD_ID & 0xFFFFFF))
-        self.assertEqual(remapped.values(b"HNAM"), [struct.pack("<I", (3 << 24) | (EXTRA_HDPT_BASE_ID & 0xFFFFFF))])
         from build_npc import ARMOR_ID, appearance_records
         armor_recs, _ = appearance_records(settings, None, facial=facial)
         armor = next(r for r in armor_recs if r.form_id == ARMOR_ID)

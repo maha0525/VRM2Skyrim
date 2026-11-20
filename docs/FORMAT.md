@@ -32,7 +32,7 @@
 | `0x880`–`0x8BF` | `ARMA` | 旧仕様の体型合わせアドオン領域（過去のプロファイル読み込み時のみ認識, `armor_patch.py`） |
 | `0x8D0`–`0x8DF` | `WEAP` / `STAT` | オリジナル武器（最大 8 本：WEAP `0x8D0 + 2n`, 1 人称モデルの STAT `0x8D1 + 2n`, `weapon.weapon_id` / `weapon.first_person_id`, `settings.MAX_ORIGINAL_WEAPONS`）。1 本目は `0x8D0` / `0x8D1` |
 | `0x8E0`–`0x8FF` | （予約領域） | 未使用 |
-| `0x900` 以降 | `HDPT` | 表情有効時の追加顔パーツ（マルチマテリアル等の 2 つ目以降の `BSDynamicTriShape`, `expressions.EXTRA_HDPT_BASE_ID`, プライマリ `HDPT` の `HNAM` から参照） |
+| `0x900` 以降 | `HDPT` | 表情有効時の追加顔パーツ（マルチマテリアル等の 2 つ目以降の `BSDynamicTriShape`, `expressions.EXTRA_HDPT_BASE_ID`, `NPC_` `PNAM` と `RACE` `HEAD` に直接登録） |
 | `0x1000` 以降 | `ARMA` | 体型合わせ済みの公式装備アドオン（元アドオンごとに 1 件, `armor_fitting.py`） |
 
 ---
@@ -64,7 +64,7 @@
 - **FaceGen ヘッドと VRM 表情モーフ (`expressions.py`, `head_visibility.py`)**
   - **表情モーフが無い VRM（または `head_switch_enabled=True`）**: 専用種族（`RACE` `0x804`）の `DATA` フラグから `FaceGen Head` ビット（`0x2`）を落とし、空の `HDPT`（`0x80C`）とメッシュなしの `FaceGeom` を配置することで、装備を着脱してもバニラの人間頭部が重ならないようにしています。
   - **表情モーフを持つ VRM（VRM 1.0 `VRMC_vrm.expressions` / VRM 0.x `VRM.blendShapeMaster`）**: 顔メッシュを `avatar.nif` から分離し、Skyrim SE 標準の 43 表情モーフ（リップシンク音素・瞬き・眉・感情/戦闘）を焼き込んだ `face_part_<n>.nif`（`BSDynamicTriShape`）＋ `face_part_<n>.tri`（`FRTRI003`）、および `meshes/actors/character/facegendata/facegeom/<plugin_name>/00000800.nif`（`BSFadeNode` → `BSFaceGenNiNodeSkinned` → 各 `BSDynamicTriShape`、ノードフラグ `0xE`、パーティション `SBP_130_HEAD`）を生成します。
-  - 専用種族の `FaceGen Head` ビット（`0x2`）を有効化し、プライマリ `HDPT`（`0x80C`, `PNAM=1`, `NAM0=1` で `.tri` 紐付け）と追加パーツ `HDPT`（`0x900`〜, `DATA=0x0E`, `PNAM=0`, プライマリ `HNAM` 経由で紐付け）のみを `RACE`/`NPC_` へ設定します。固定外観 `ARMO`（`0x801`）の `BOD2` スロットマスクからは Slot `30`（`HEAD`）を除外し、`SBP_130_HEAD` が常時装備で非表示になるのを防ぎます。
+  - 専用種族の `FaceGen Head` ビット（`0x2`）を有効化し、プライマリ `HDPT`（`0x80C`, `PNAM=1`, `NAM0=1` で `.tri` 紐付け）と追加パーツ `HDPT`（`0x900`〜, `DATA=0x06`, `PNAM=0`）のみを `RACE`（`HEAD`）と `NPC_`（`PNAM`）へ直接設定します。固定外観 `ARMO`（`0x801`）の `BOD2` スロットマスクからは Slot `30`（`HEAD`）を除外し、`SBP_130_HEAD` が常時装備で非表示になるのを防ぎます。
 - **マテリアルと両面描画フラグ (`doubleSided`)**
   - glTF / VRM の ` OPAQUE`、`MASK`、`BLEND` に応じて `NiAlphaProperty` を設定し、テクスチャを BC7 / BC1 DDS に変換します。
   - 元のマテリアルの `doubleSided` 設定（初期値 `false`）をそのまま `BSLightingShaderProperty` の `SLSF2_Double_Sided` に反映します。片面マテリアルに強制的に両面描画フラグを立てないことで、まつ毛や目の裏面ポリゴンが白目を覆ってしまう現象を防いでいます。

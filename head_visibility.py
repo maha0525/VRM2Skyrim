@@ -52,7 +52,6 @@ def head_records(settings, race_id, facial=None):
         (b'MODL', _mesh_relative(primary['nif'])),
         (b'DATA', b'\x06'),  # Male | Female, non-playable
         (b'PNAM', struct.pack('<I', 1)),  # Face
-        *[(b'HNAM', struct.pack('<I', fid)) for fid in extra_ids],
         (b'NAM0', struct.pack('<I', 1)),  # Expression / phoneme / blink TRI
         (b'NAM1', _mesh_relative(primary['tri'])),
         (b'RNAM', struct.pack('<I', HEAD_RACES_ID)),
@@ -62,8 +61,8 @@ def head_records(settings, race_id, facial=None):
         records.append(Record(b'HDPT', extra_id, 4, [
             (b'EDID', (part['edid'] + '\0').encode('utf8')),
             (b'MODL', _mesh_relative(part['nif'])),
-            (b'DATA', b'\x0E'),  # Male | Female | IsExtraPart
-            (b'PNAM', struct.pack('<I', 0)),  # Misc (vanilla extra parts)
+            (b'DATA', b'\x06'),  # Male | Female, standalone Misc part (like vanilla Mouth)
+            (b'PNAM', struct.pack('<I', 0)),  # Misc
             (b'NAM0', struct.pack('<I', 1)),  # Expression / phoneme / blink TRI
             (b'NAM1', _mesh_relative(part['tri'])),
             (b'RNAM', struct.pack('<I', HEAD_RACES_ID)),
@@ -78,14 +77,18 @@ def configure_native_head(npc, race, facial=None):
     struct.pack_into('<I', data, 32, new_flags)
     race.replace(b'DATA', bytes(data))
     npc.remove(b'PNAM', b'NAM9', b'NAMA', b'TINI', b'TINC', b'TINV', b'TIRS', b'FTST')
-    npc.replace(b'PNAM', struct.pack('<I', EMPTY_HEAD_ID))
+    head_ids = [EMPTY_HEAD_ID, *facial_extra_ids(facial)] if facial else [EMPTY_HEAD_ID]
+    for fid in head_ids:
+        npc.fields.append((b'PNAM', struct.pack('<I', fid)))
     # NAM0 starts the final, sex-specific Head Data section of a TES5 RACE.
     start = next(i for i, (tag, data) in enumerate(race.fields) if tag == b'NAM0' and not data)
+    head_entries = []
+    for idx, fid in enumerate(head_ids):
+        head_entries.append((b'INDX', struct.pack('<I', idx)))
+        head_entries.append((b'HEAD', struct.pack('<I', fid)))
     race.fields = race.fields[:start] + [
-        (b'NAM0', b''), (b'MNAM', b''), (b'INDX', struct.pack('<I', 0)),
-        (b'HEAD', struct.pack('<I', EMPTY_HEAD_ID)),
-        (b'NAM0', b''), (b'FNAM', b''), (b'INDX', struct.pack('<I', 0)),
-        (b'HEAD', struct.pack('<I', EMPTY_HEAD_ID)),
+        (b'NAM0', b''), (b'MNAM', b''), *head_entries,
+        (b'NAM0', b''), (b'FNAM', b''), *head_entries,
     ]
 
 
@@ -117,10 +120,12 @@ def validate_head_visibility(generated, settings, output=None):
     npc, race = (by_name[settings.prefix + name] for name in ('NPC', 'Race'))
     facial = load_facial_manifest(output) if output is not None else None
     has_facegen = bool(struct.unpack_from('<I', race.values(b'DATA')[0], 32)[0] & FACEGEN_HEAD_FLAG)
-    if npc.values(b'PNAM') != [struct.pack('<I', EMPTY_HEAD_ID)]:
-        raise ValueError('NPC still uses native human head parts')
-    if race.values(b'HEAD') != [struct.pack('<I', EMPTY_HEAD_ID)] * 2:
-        raise ValueError('Race still supplies native human head parts')
+    expected_head_ids = [EMPTY_HEAD_ID, *facial_extra_ids(facial)] if facial else [EMPTY_HEAD_ID]
+    expected_pnam = [struct.pack('<I', fid) for fid in expected_head_ids]
+    if npc.values(b'PNAM') != expected_pnam:
+        raise ValueError('NPC head parts do not match expected private facial/empty head parts')
+    if race.values(b'HEAD') != expected_pnam * 2:
+        raise ValueError('Race head parts do not match expected private facial/empty head parts')
     if by_id[HEAD_RACES_ID].values(b'LNAM') != [struct.pack('<I', race.form_id)]:
         raise ValueError('Head race list must belong only to this private race')
     head = by_id.get(EMPTY_HEAD_ID)
@@ -153,13 +158,11 @@ def validate_head_visibility(generated, settings, output=None):
         raise ValueError('Primary facial HDPT MODL path mismatch')
     if head.values(b'NAM0') != [struct.pack('<I', 1)] or head.values(b'NAM1') != [_mesh_relative(parts[0]['tri'])]:
         raise ValueError('Primary facial HDPT must bind expression TRI with NAM0=1')
-    if head.values(b'HNAM') != [struct.pack('<I', fid) for fid in extra_ids]:
-        raise ValueError('Primary facial HDPT HNAM extra-part list mismatch')
     for extra_id, part in zip(extra_ids, parts[1:]):
         extra = by_id.get(extra_id)
         if extra is None or extra.kind != b'HDPT' or extra.editor_id != part['edid']:
             raise ValueError(f"Extra facial HDPT missing or EDID mismatch: {part['edid']}")
-        if extra.values(b'DATA') != [b'\x0E'] or extra.values(b'PNAM') != [struct.pack('<I', 0)]:
+        if extra.values(b'DATA') != [b'\x06'] or extra.values(b'PNAM') != [struct.pack('<I', 0)]:
             raise ValueError(f"Extra facial HDPT flags/type mismatch: {part['edid']}")
         if extra.values(b'MODL') != [_mesh_relative(part['nif'])]:
             raise ValueError(f"Extra facial HDPT MODL mismatch: {part['edid']}")

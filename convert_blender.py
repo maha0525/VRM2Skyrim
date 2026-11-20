@@ -526,8 +526,19 @@ def main():
               and any(mod.type == "ARMATURE" and mod.object == target_rig for mod in obj.modifiers)]
     from export_names import stabilize_mesh_names
     stabilize_mesh_names(meshes)
-    from blender_meshes import partition_shape
-    meshes = [part for obj in meshes for part in partition_shape(obj)]
+    from blender_meshes import partition_shape, skin_bones
+    from nif_limits import SHAPE_BONE_LIMIT
+    partitioned = []
+    for obj in meshes:
+        if obj.get("v2s_facial"):
+            # BSDynamicTriShape supports up to 65,535 verts/tris in one shape; avoid
+            # splitting a single-material face at 20k triangles (60k loops) unnecessarily.
+            bone_count = len(set().union(*skin_bones(obj))) if len(obj.data.vertices) else 0
+            if len(obj.data.vertices) <= 45000 and len(obj.data.polygons) <= 60000 and bone_count <= SHAPE_BONE_LIMIT:
+                partitioned.append(obj)
+                continue
+        partitioned.extend(partition_shape(obj))
+    meshes = partitioned
     for obj in meshes:
         if len(obj.data.vertices) > 60000:
             raise ValueError(f"Mesh exceeds safe NIF shape vertex limit: {obj.name}")
