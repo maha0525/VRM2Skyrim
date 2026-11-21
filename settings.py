@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import struct
 
-VERSION = "0.14.1"
+VERSION = "0.14.2"
 
 
 def identifier(name):
@@ -17,11 +17,43 @@ def identifier(name):
     return ascii_name if ascii_name[0].isalpha() else "Avatar_" + ascii_name
 
 
+def bump_minor_version(version: str) -> str:
+    """Increment the minor version component (e.g. 1.0 -> 1.1, 1.2.3 -> 1.3.0, v1.0 -> v1.1)."""
+    text = (version or "").strip()
+    if not text:
+        return "1.0"
+    m = re.match(r"^([^0-9]*)(\d+)(?:\.(\d+))?(?:\.(\d+))?(.*)$", text)
+    if not m:
+        return text
+    prefix, major, minor, patch, suffix = m.groups()
+    if minor is not None:
+        next_minor = int(minor) + 1
+        if patch is not None:
+            return f"{prefix}{major}.{next_minor}.0{suffix}"
+        return f"{prefix}{major}.{next_minor}{suffix}"
+    return f"{prefix}{major}.1{suffix}"
+
+
+def machine_version(version: str) -> str:
+    """Return a dot-separated numeric version for FOMOD info.xml MachineVersion."""
+    nums = re.findall(r"\d+", version or "")
+    if not nums:
+        return "1.0.0"
+    parts = (nums + ["0", "0"])[:3]
+    return ".".join(str(int(n)) for n in parts)
+
+
+def archive_filename(settings) -> str:
+    safe_ver = re.sub(r"[^A-Za-z0-9._-]", "_", (settings.mod_version or "1.0").strip()).strip("._-") or "1.0"
+    return f"{settings.mod_id}-{safe_ver}.zip"
+
+
 @dataclass
 class FollowerSettings:
     npc_name: str = "Avatar"
     mod_name: str = "AvatarFollower"
     mod_id: str = ""  # stable ASCII ID; different IDs can coexist in the game
+    mod_version: str = "1.0"
     author: str = ""
     sex: str = "female"
     voice: str = "FemaleEvenToned"
@@ -76,8 +108,11 @@ class FollowerSettings:
     toon_enabled: bool = True
 
     def __post_init__(self):
-        if not isinstance(self.mod_id, str) or not isinstance(self.author, str):
-            raise ValueError("MOD ID and author must be strings")
+        if not isinstance(self.mod_id, str) or not isinstance(self.author, str) or not isinstance(self.mod_version, str):
+            raise ValueError("MOD ID, version and author must be strings")
+        self.mod_version = self.mod_version.strip() or "1.0"
+        if len(self.mod_version) > 64 or any(ord(c) < 32 for c in self.mod_version):
+            raise ValueError("Invalid mod_version")
         self.mod_id = self.mod_id or identifier(self.mod_name)
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", self.mod_id):
             raise ValueError("MOD ID must start with an ASCII letter and contain letters, numbers or underscores (1–64)")

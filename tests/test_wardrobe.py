@@ -253,8 +253,8 @@ class WardrobeIntegrationTests(unittest.TestCase):
                             (boots, ['ArmorHeavy', 'VendorItemArmor', 'ArmorBoots'])):
             self.assertEqual(item.values(b'KSIZ'), [struct.pack('<I', len(names))])
             self.assertEqual(item.values(b'KWDA'), [b''.join(struct.pack('<I', self.catalog.require(n,b'KYWD').form_id) for n in names)])
-        self.assertEqual(by_name[settings.prefix + "Outfit"].values(b"INAM"), [b''])
-        self.assertIn(struct.pack('<Ii', coat.form_id, 1), by_name[settings.prefix+'NPC'].values(b'CNTO'))
+        self.assertEqual(by_name[settings.prefix + "Outfit"].values(b"INAM"), [struct.pack("<I", coat.form_id)])
+        self.assertNotIn(struct.pack('<Ii', coat.form_id, 1), by_name[settings.prefix+'NPC'].values(b'CNTO'))
         validate_head_visibility(parsed, settings)
         self.assertEqual(struct.unpack("<i", boots.values(b"DNAM")[0])[0], 1250)
         self.assertIn(struct.pack("<Ii", boots.form_id, 1), by_name[settings.prefix + "NPC"].values(b"CNTO"))

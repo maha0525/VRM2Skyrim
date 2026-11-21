@@ -91,7 +91,10 @@ class OriginalHeadwearTests(unittest.TestCase):
                 addon = by_id[0x01000814]
                 self.assertEqual(struct.unpack('<II', hat.values(b'BOD2')[0]), (1, 2))
                 self.assertEqual(struct.unpack('<II', addon.values(b'BOD2')[0]), (1, 2))
-                self.assertIn(struct.pack('<Ii', hat.form_id, 1), by_id[NPC_ID].values(b'CNTO'))
+                from build_npc import OUTFIT_ID
+                outfit_inam = by_id[OUTFIT_ID].values(b'INAM')[0]
+                outfit_ids = [struct.unpack_from('<I', outfit_inam, i)[0] for i in range(0, len(outfit_inam), 4)]
+                self.assertIn(hat.form_id, outfit_ids)
                 vanilla = {r.editor_id: r for r in records(find_game()/'Data/Skyrim.esm', {b'KYWD', b'ARMO'})}
                 self.assertIn(struct.pack('<I', vanilla['ClothingHead'].form_id), hat.values(b'KWDA')[0])
                 self.assertEqual(hat.values(b'MOD2'), vanilla['ClothesFarmHat01'].values(b'MOD2'))

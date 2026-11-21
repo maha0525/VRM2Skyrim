@@ -141,6 +141,37 @@ class WizardApplication:
             raise ValueError('Completed output is outside the wizard workspace')
         (output/'wizard-job.json').write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding='utf8')
 
+    def suggest_mod_version(self, mod_name="", mod_id=""):
+        from settings import bump_minor_version
+        target_name = (mod_name or "").strip()
+        target_id = (mod_id or "").strip()
+        if not target_name and not target_id:
+            return {"mod_version": "1.0", "previous_version": None}
+        candidates = []
+        for path in self.workspace.glob("*/settings.json"):
+            try:
+                job_file = path.parent / "wizard-job.json"
+                if job_file.is_file():
+                    job = json.loads(job_file.read_text(encoding="utf8"))
+                    if job.get("status") != "complete":
+                        continue
+                data = json.loads(path.read_text(encoding="utf8"))
+            except (ValueError, OSError):
+                continue
+            same_name = bool(target_name) and data.get("mod_name") == target_name
+            same_id = bool(target_id) and data.get("mod_id") == target_id
+            if same_name or same_id:
+                try:
+                    mtime = path.stat().st_mtime_ns
+                except OSError:
+                    mtime = 0
+                candidates.append((mtime, data.get("mod_version") or "1.0"))
+        if not candidates:
+            return {"mod_version": "1.0", "previous_version": None}
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        prev = candidates[0][1]
+        return {"mod_version": bump_minor_version(prev), "previous_version": prev}
+
     @staticmethod
     def master(game):
         path = Path(game).resolve() / 'Data/Skyrim.esm'
@@ -507,6 +538,12 @@ def handler_for(app):
                     with app.lock:
                         return self.reply({'jobs': [dict(job) for job in app.jobs.values()
                                                    if job['status'] == 'complete' and job.get('plugin_name')]})
+                if url.path == '/api/suggest-version':
+                    query = parse_qs(url.query)
+                    return self.reply(app.suggest_mod_version(
+                        query.get('mod_name', [''])[0],
+                        query.get('mod_id', [''])[0],
+                    ))
                 if url.path == '/api/patch-status':
                     query = parse_qs(url.query)
                     job = app.snapshot(query.get('job', [''])[0])

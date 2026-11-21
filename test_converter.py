@@ -249,6 +249,37 @@ class FormatTests(unittest.TestCase):
             self.assertEqual(mask & 1, expect_slot30, name)
             self.assertEqual(bool(mask & (1 << 30)), bool(expect_slot60), name)
 
+    def test_mod_version_bump_and_wizard_history_suggestion(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from settings import FollowerSettings, archive_filename, bump_minor_version, machine_version
+        from wizard import WizardApplication
+
+        self.assertEqual(bump_minor_version("1.0"), "1.1")
+        self.assertEqual(bump_minor_version("1.9"), "1.10")
+        self.assertEqual(bump_minor_version("1.2.3"), "1.3.0")
+        self.assertEqual(bump_minor_version("v1.0"), "v1.1")
+        self.assertEqual(bump_minor_version("2"), "2.1")
+        self.assertEqual(machine_version("1.2"), "1.2.0")
+        self.assertEqual(machine_version("v2.3.4"), "2.3.4")
+        self.assertEqual(archive_filename(FollowerSettings(mod_id="LuciaMod", mod_version="1.1")), "LuciaMod-1.1.zip")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            app = WizardApplication(workspace=tmp)
+            try:
+                self.assertEqual(app.suggest_mod_version("ルシアFollower", "Lucia_SAIVerse_Follower"),
+                                 {"mod_version": "1.0", "previous_version": None})
+                run_dir = Path(tmp) / "Lucia_SAIVerse_Follower_20261121_000000_abcd1234"
+                run_dir.mkdir()
+                FollowerSettings(mod_name="ルシアFollower", mod_id="Lucia_SAIVerse_Follower",
+                                 mod_version="1.2").save(run_dir / "settings.json")
+                (run_dir / "wizard-job.json").write_text(json.dumps({"status": "complete"}), encoding="utf8")
+                self.assertEqual(app.suggest_mod_version("ルシアFollower", "Lucia_SAIVerse_Follower"),
+                                 {"mod_version": "1.3", "previous_version": "1.2"})
+            finally:
+                app.close()
+
 
 if __name__ == "__main__":
     unittest.main()

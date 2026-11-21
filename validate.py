@@ -271,11 +271,15 @@ def validate(output, skeleton=None, game_data=None):
             ):
                 raise ValueError("Garment armor rating mismatch")
             npc = by_name[settings.prefix + 'NPC']
-            if struct.pack('<Ii', item.form_id, 1) not in npc.values(b'CNTO'):
-                raise ValueError('Garment missing from ordinary follower inventory')
+            if garment["equipped"]:
+                expected_outfit.add(item.form_id)
+                if struct.pack('<Ii', item.form_id, 1) in npc.values(b'CNTO'):
+                    raise ValueError('Equipped initial garment duplicated in ordinary follower inventory')
+            elif struct.pack('<Ii', item.form_id, 1) not in npc.values(b'CNTO'):
+                raise ValueError('Unequipped garment missing from ordinary follower inventory')
         if outfit_ids != expected_outfit or skin.form_id in outfit_ids:
             raise ValueError(
-                "Wardrobe default outfit must be empty, with clothes in ordinary inventory"
+                "Wardrobe default outfit must contain equipped initial garments only"
             )
         expected_vmad = vmad(settings)
         if settings.sitting_enabled:

@@ -79,7 +79,7 @@ def appearance_records(settings, catalog, facial=None):
         *[(tag, data) for tag, data in inventory_fields if tag == b"ETYP"],
         (b"BOD2", struct.pack("<II", 0, 2)), (b"RNAM", uint(RACE_ID)),
         (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<i", 0))])
-    result, skin_addons, skin_mask, inventory = [head_cover], [], 0, []
+    result, skin_addons, skin_mask, inventory, outfit_items = [head_cover], [], 0, [], []
     garment_index = 0
     for part in [*skin_components(settings, facial), *[p for p in components(settings) if p['role'] == 'garment']]:
         wearable = part["role"] == "garment"
@@ -113,7 +113,10 @@ def appearance_records(settings, catalog, facial=None):
             (b"KSIZ", uint(len(keywords))), (b"KWDA", b''.join(uint(k) for k in keywords)), (b"MODL", uint(addon_id)),
             (b"DATA", struct.pack("<If", part["value"], part["weight"])),
             (b"DNAM", struct.pack("<i", round(part["armor_rating"] * 100)))]))
-        inventory.append((b"CNTO", uint(armor_id) + struct.pack("<i", 1)))
+        if part["equipped"]:
+            outfit_items.append(armor_id)
+        else:
+            inventory.append((b"CNTO", uint(armor_id) + struct.pack("<i", 1)))
         garment_index += 1
     result.append(Record(b"ARMO", ARMOR_ID, 4, [
         (b"EDID", text(settings.prefix + "Appearance")), (b"OBND", bytes(12)),
@@ -122,7 +125,7 @@ def appearance_records(settings, catalog, facial=None):
         *[(b"MODL", uint(form_id)) for form_id in skin_addons],
         (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<i", 0))]))
     result.append(Record(b"OTFT", OUTFIT_ID, 0, [(b"EDID", text(settings.prefix + "Outfit")),
-                                              (b"INAM", b"")]))
+                                              (b"INAM", b"".join(uint(fid) for fid in outfit_items))]))
     return result, inventory
 
 

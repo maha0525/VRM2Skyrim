@@ -101,6 +101,8 @@ const englishUI = {
   "MOD名": "Mod name",
   "英数字と_。ほかのMODと異なるIDにしてください。": "Letters, numbers and underscores. Use an ID different from your other mods.",
   "作者名": "Author",
+  "バージョン": "Version",
+  "同じMODの履歴があると、自動で次のマイナーバージョンを提案します。": "Suggests the next minor version automatically when a previous build of the same mod exists.",
   "任意": "Optional",
   "性別": "Sex",
   "女性": "Female",
