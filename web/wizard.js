@@ -1,6 +1,6 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const state = {step:0, source:null, choices:null, defaults:null, job:null, imported:null, pendingSelects:null, perks:new Map(), spells:new Set(), shouts:new Set(), nameDirty:false, idDirty:false, versionDirty:false};
+const state = {step:0, source:null, choices:null, defaults:null, job:null, imported:null, pendingSelects:null, perks:new Map(), spells:new Set(), shouts:new Set(), nameDirty:false, idDirty:false};
 const catalogSelects=['voice','combat_class','combat_style','weapon','ammunition'];
 const skills = ["OneHanded","TwoHanded","Marksman","Block","Smithing","HeavyArmor","LightArmor","Pickpocket","Lockpicking","Sneak","Alchemy","Speechcraft","Alteration","Conjuration","Destruction","Illusion","Restoration","Enchanting"];
 const skillLabels = ["片手武器","両手武器","弓術","防御","鍛冶","重装","軽装","スリ","開錠","隠密","錬金術","話術","変性","召喚","破壊","幻惑","回復","付呪"];
@@ -82,25 +82,12 @@ function collect(options={}) {
   if(settings.weapon_mode==='original'&&!settings.original_weapons.length)settings.weapon_mode='official';
   if(settings.armor_support&&$('fit-enabled').checked&&settings.fit_mode==='selected'&&!settings.fit_armors.length)throw new Error(tr("体型合わせする装備を選んでください")); return settings;
 }
-async function refreshSuggestedVersion(force=false) {
-  if(state.versionDirty&&!force)return;
-  const modName=$('mod_name').value.trim(), modId=$('mod_id').value.trim();
-  if(!modName&&!modId)return;
-  try{
-    const res=await api('/api/suggest-version?mod_name='+encodeURIComponent(modName)+'&mod_id='+encodeURIComponent(modId));
-    if(state.versionDirty&&!force)return;
-    if($('mod_name').value.trim()!==modName||$('mod_id').value.trim()!==modId)return;
-    if(res.previous_version||!$('mod_version').value.trim())$('mod_version').value=res.mod_version;
-  }catch(_e){}
-}
 async function updateId() {
-  if(!state.idDirty){
-    const name=$('mod_name').value; let id=name.replaceAll(' ','_').replace(/[^A-Za-z0-9_]/g,'').slice(0,48);
-    if(!id){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(name)); id='Avatar_'+[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,12);}
-    else if(!/^[A-Za-z]/.test(id))id='Avatar_'+id;
-    $('mod_id').value=id;
-  }
-  await refreshSuggestedVersion();
+  if(state.idDirty)return;
+  const name=$('mod_name').value; let id=name.replaceAll(' ','_').replace(/[^A-Za-z0-9_]/g,'').slice(0,48);
+  if(!id){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(name)); id='Avatar_'+[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,12);}
+  else if(!/^[A-Za-z]/.test(id))id='Avatar_'+id;
+  $('mod_id').value=id;
 }
 async function upload(file) {
   if(!file)return; error(); state.sourceLoading=true;$('next').disabled=true; $('source-status').textContent=tr("VRMを読み込んでいます…");
@@ -349,7 +336,7 @@ function showStep(step) {
 function summarize(settings) {
   state.reviewSettings=settings;
   const voice=state.choices.voices.find(item=>item.id===settings.voice);
-  const rows=[[tr("アバター"),state.source.filename],[tr("NPC名"),settings.npc_name],['MOD',settings.mod_name+' ('+settings.mod_version+') / '+settings.mod_id+'.esp'],[tr("ボイス"),recordLabel(voice)||settings.voice],[tr("戦闘"),settings.combat_class+' / '+settings.combat_style],[tr("レベル"),settings.level_mode==='player'?tr("プレイヤー×{0}（{1}〜{2}）", settings.level_multiplier, settings.min_level, settings.max_level):String(settings.level)],[tr("生存"),{'protected':tr("保護"),'essential':tr("不死"),'mortal':tr("通常")}[settings.protection]],[tr("体力 / マジカ / スタミナ"),`${settings.health} / ${settings.magicka} / ${settings.stamina}${settings.auto_calculate?tr("（自動成長の補正に使用）"):''}`],[tr("Perk / 魔法"),`${settings.perks.length} / ${settings.spells.length}`],[tr("初期配置"),tr("ホワイトラン · キナレス聖堂")]];
+  const rows=[[tr("アバター"),state.source.filename],[tr("NPC名"),settings.npc_name],['MOD',settings.mod_name+' / '+settings.mod_id+'.esp'],[tr("ボイス"),recordLabel(voice)||settings.voice],[tr("戦闘"),settings.combat_class+' / '+settings.combat_style],[tr("レベル"),settings.level_mode==='player'?tr("プレイヤー×{0}（{1}〜{2}）", settings.level_multiplier, settings.min_level, settings.max_level):String(settings.level)],[tr("生存"),{'protected':tr("保護"),'essential':tr("不死"),'mortal':tr("通常")}[settings.protection]],[tr("体力 / マジカ / スタミナ"),`${settings.health} / ${settings.magicka} / ${settings.stamina}${settings.auto_calculate?tr("（自動成長の補正に使用）"):''}`],[tr("Perk / 魔法"),`${settings.perks.length} / ${settings.spells.length}`],[tr("初期配置"),tr("ホワイトラン · キナレス聖堂")]];
   rows.push([tr("衣服"),settings.armor_support?tr("{0}品を着脱可能（初期装備{1}品）", settings.appearance_parts.garments.length, settings.appearance_parts.garments.filter(g=>g.equipped).length):tr("元の衣服を着脱しない")]);
   rows.push([tr("シャウト"),settings.shouts.length?settings.shouts.map(shoutName).join(i18n.language==='en'?', ':'、'):tr("なし")]);
   rows.push([tr("トゥーン描画"),settings.toon_enabled?tr("有効"):tr("無効")]);
@@ -438,13 +425,13 @@ async function init() {
   $('combat_class').onchange=updateRoleDetails;$('combat_style').onchange=updateRoleDetails;
   $('all-styles').onchange=()=>{const selected=$('combat_style').value;const item=state.choices.styles.find(item=>item.id===selected);updateStyles(!$('all-styles').checked&&!item?.humanoid?state.defaults.combat_style:selected);};
   $('use-manual-skills').onclick=()=>{$('auto_calculate').value='false';$('manual-skills').open=true;updateLevel();};
-  $('mod_name').oninput=()=>{state.nameDirty=true;updateId();};$('npc_name').oninput=()=>state.nameDirty=true;$('mod_id').oninput=()=>{state.idDirty=true;refreshSuggestedVersion();};$('mod_version').oninput=()=>state.versionDirty=true;
+  $('mod_name').oninput=()=>{state.nameDirty=true;updateId();};$('npc_name').oninput=()=>state.nameDirty=true;$('mod_id').oninput=()=>state.idDirty=true;
   $('sex').onchange=async()=>{const sex=$('sex').value;$('voice').value=sex==='male'?'MaleNord':'FemaleEvenToned';updateMarriage();if(state.choices){try{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));await loadCatalog();}catch(e){error(e.message);}}};$('voice').onchange=updateMarriage;
   $('perk-search').oninput=renderChoices;$('spell-search').oninput=renderChoices;
   $('perk-category').onchange=renderChoices;$('spell-category').onchange=renderChoices;
   $('export-settings').onclick=()=>download($('mod_id').value+'-settings.json',collect());
-  $('import-settings').onchange=async()=>{try{state.imported=JSON.parse(await $('import-settings').files[0].text());applySettings(state.imported);state.nameDirty=true;state.idDirty=true;state.versionDirty=false;await refreshSuggestedVersion(true);$('import-status').textContent=tr("設定を読み込みました");}catch(e){error(e.message);}};
-  $('again').onclick=async()=>{state.completedJob=null;$('result').hidden=true;$('equipment-edit').hidden=true;$('wizard').hidden=false;state.source=null;state.imported=null;state.pendingSelects=null;loadPhysics({});state.nameDirty=false;state.idDirty=false;state.versionDirty=false;$('mod_version').value=state.defaults.mod_version||'1.0';$('source').value='';$('source-status').textContent=tr("次のVRMを選択してください");wardrobeLoad(null);showStep(0);try{await refreshSavedResults(state.resultJob);}catch(e){error(tr("前に作ったフォロワーの一覧を更新できませんでした：")+e.message);}};
+  $('import-settings').onchange=async()=>{try{state.imported=JSON.parse(await $('import-settings').files[0].text());applySettings(state.imported);state.nameDirty=true;state.idDirty=true;$('import-status').textContent=tr("設定を読み込みました");}catch(e){error(e.message);}};
+  $('again').onclick=async()=>{state.completedJob=null;$('result').hidden=true;$('equipment-edit').hidden=true;$('wizard').hidden=false;state.source=null;state.imported=null;state.pendingSelects=null;loadPhysics({});state.nameDirty=false;state.idDirty=false;$('source').value='';$('source-status').textContent=tr("次のVRMを選択してください");wardrobeLoad(null);showStep(0);try{await refreshSavedResults(state.resultJob);}catch(e){error(tr("前に作ったフォロワーの一覧を更新できませんでした：")+e.message);}};
 }
 document.addEventListener('languagechange',()=>{
   for(const option of $('physics_stiffness').options)if(!['0.3','1','3'].includes(option.value))option.textContent=tr('指定値 ')+option.value;

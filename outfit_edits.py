@@ -155,7 +155,7 @@ def apply_edit(output, mesh_key, edited, blender):
     """Update the current MOD transactionally, as well as future conversions."""
     from armor_validation import validate_fitting
     from converter import package, run_blender
-    from settings import archive_filename
+    from settings import VERSION
     output = Path(output).resolve()
     settings = load_settings(output)
     profile = json.loads((output/'armor-fitting.json').read_text())
@@ -167,7 +167,7 @@ def apply_edit(output, mesh_key, edited, blender):
              override_path(settings.appearance_source_sha256, mesh_key),
              output/'armor-fitting.json', output/'mod'/settings.asset_dir/'armor-fitting.json',
              output/'armor-validation.json', output/'package-manifest.json',
-             output/archive_filename(settings), output/'OutfitStudio-EditKit.zip']
+             output/f'{settings.mod_id}-VRM2Skyrim-{VERSION}.zip', output/'OutfitStudio-EditKit.zip']
     with tempfile.TemporaryDirectory(prefix='finishing-backup-', dir=output) as directory:
         backup = Path(directory)
         existed = {p for p in files if p.is_file()}
