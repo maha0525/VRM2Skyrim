@@ -48,7 +48,7 @@ Basic follower features (recruiting, combat, removable outfits, and custom weapo
 | **Headwear Face / Hair Visibility Switching** | **SKSE64** | Required when hiding face or hair meshes automatically while wearing helmets or headwear (launch via `skse64_loader.exe`). |
 | **Sitting Height Adjustment** | **SKSE64** | Adjusts seat height via script when sitting on chairs or benches. |
 | **Hair & Cloth Physics** | **SKSE64** + **Faster HDT-SMP** | Required to animate converted VRM Spring Bone chains in-game. |
-| **Toon Shading** | **SKSE64** + **Community Shaders (Bottled Shaders 1.0.22 / DLL 1.9.0.0)** + **Toon Shader ZIP** | The bundled `VRM2Skyrim-Toon-Shader-0.14.0.zip` is built specifically for **Bottled Shaders 1.0.22** (downloadable from STEP 01 or the completion screen). |
+| **Toon Shading** | **SKSE64** + **Community Shaders (Bottled Shaders 1.0.22 / DLL 1.9.0.0)** + **Toon Shader ZIP** | The bundled `VRM2Skyrim-Toon-Shader-0.14.1.zip` is built specifically for **Bottled Shaders 1.0.22** (downloadable from STEP 01 or the completion screen). |
 | **Existing Armor Fitting** | **SKSE64** + **SkyPatcher** | Required when fitting official Skyrim armor/headgear to your follower's body. |
 
 ---

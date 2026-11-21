@@ -98,11 +98,19 @@ def validate_parts(parts):
     return seen
 
 
-def equip_slots(garment):
+def effective_garment_slot(garment, facial=None):
+    """Avoid slot 30 (HEAD) on non-face-hiding headwear when facial FaceGeom is active."""
+    slot = garment['slot']
+    if facial and slot == 30 and not garment.get('hide_face', False):
+        return 42
+    return slot
+
+
+def equip_slots(garment, facial=None):
     """Inventory mutual exclusion, distinct from ARMA skin coverage."""
     if garment['slot'] == 32 and item_kind(garment) == 'full':
         return [32, 33, 37]
-    return [garment['slot']]
+    return [effective_garment_slot(garment, facial)]
 
 
 def is_headwear(garment):
@@ -212,13 +220,27 @@ def keyword_names(garment):
     return result
 
 
-def skin_components(settings):
+def skin_components(settings, facial=None):
     """Use one fixed-layer addon per skin to avoid multiple models competing at slot 60."""
+    from expressions import facial_source_nodes
+    facial_nodes = facial_source_nodes(facial)
     parts = [p for p in components(settings) if p['role'] != 'garment']
     if settings.head_switch_enabled:
         parts = [p for p in parts if p['id'] not in ('fixed', 'face', 'hair')]
-        parts.append({'id': 'fixed', 'role': 'fixed', 'file': 'fixed_full.nif',
-                      'slot': FIXED_SLOT, 'nodes': settings.appearance_parts['fixed']})
+        fixed_nodes = [n for n in settings.appearance_parts['fixed'] if n not in facial_nodes]
+        if fixed_nodes:
+            parts.append({'id': 'fixed', 'role': 'fixed', 'file': 'fixed_full.nif',
+                          'slot': FIXED_SLOT, 'nodes': fixed_nodes})
+    elif facial_nodes:
+        filtered = []
+        for p in parts:
+            if p['role'] == 'fixed' and p.get('nodes'):
+                remaining = [n for n in p['nodes'] if n not in facial_nodes]
+                if not remaining:
+                    continue
+                p = {**p, 'nodes': remaining}
+            filtered.append(p)
+        parts = filtered
     return parts
 
 

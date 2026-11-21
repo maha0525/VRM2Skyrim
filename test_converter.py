@@ -162,6 +162,93 @@ class FormatTests(unittest.TestCase):
         static_armor = next(r for r in static_recs if r.form_id == ARMOR_ID)
         self.assertEqual(struct.unpack_from("<I", static_armor.values(b"BOD2")[0], 0)[0] & 1, 1)
 
+    def test_facial_with_head_switch_and_headwear_slot(self):
+        from gear_head_runtime import IDS, head_skin_records, head_variants
+        from plugin import Record
+        from settings import FollowerSettings
+        from wardrobe import effective_garment_slot, equip_slots, skin_components
+
+        settings = FollowerSettings(
+            mod_id="LuciaTest",
+            npc_name="ルシア",
+            armor_support=True,
+            fit_mode="all_official",
+            appearance_source_sha256="a" * 64,
+            appearance_parts={
+                "body": [276],
+                "underwear": [],
+                "fixed": [278, 277],
+                "garments": [
+                    {
+                        "id": "feather",
+                        "name": "銀羽根飾り",
+                        "nodes": [279],
+                        "slot": 30,
+                        "armor_type": "light",
+                        "armor_rating": 10,
+                        "weight": 0,
+                        "value": 0,
+                        "equipped": True,
+                        "item_kind": "head",
+                        "hide_face": False,
+                        "hide_hair": False,
+                    },
+                    {
+                        "id": "mask",
+                        "name": "仮面",
+                        "nodes": [280],
+                        "slot": 30,
+                        "armor_type": "light",
+                        "armor_rating": 10,
+                        "weight": 0,
+                        "value": 0,
+                        "equipped": False,
+                        "item_kind": "head",
+                        "hide_face": True,
+                        "hide_hair": False,
+                    },
+                ],
+            },
+            appearance_heads={"face": [277], "hair": [278]},
+        )
+        facial = {
+            "enabled": True,
+            "facegeom": "meshes/actors/character/facegendata/facegeom/LuciaTest.esp/00000800.nif",
+            "parts": [{"index": 0, "edid": "V2S_LuciaTestFacePart_0", "source_node": 277}],
+        }
+        # Non-face-hiding headwear at slot 30 moves to slot 42 so FaceGeom is not hidden
+        self.assertEqual(effective_garment_slot(settings.appearance_parts["garments"][0], facial), 42)
+        self.assertEqual(equip_slots(settings.appearance_parts["garments"][0], facial), [42])
+        # Face-hiding headwear keeps slot 30
+        self.assertEqual(effective_garment_slot(settings.appearance_parts["garments"][1], facial), 30)
+        # Fixed skin excludes facial node 277 so only hair 278 remains
+        skin_parts = skin_components(settings, facial)
+        fixed_part = next(p for p in skin_parts if p["id"] == "fixed")
+        self.assertEqual(fixed_part["nodes"], [278])
+        variants = {v["name"]: v["nodes"] for v in head_variants(settings, facial)}
+        self.assertEqual(variants, {"FaceHiddenSkin": [278], "HairHiddenSkin": [], "BothHiddenSkin": []})
+        # FaceHiddenSkin and BothHiddenSkin set slot 30 (bit 0) to hide SBP_130_HEAD FaceGeom
+        skin_mask = (1 << (32 - 30)) | (1 << (60 - 30))
+        base_skin = Record(b"ARMO", 0x01000801, 4, [
+            (b"EDID", b"V2S_LuciaTestAppearance\0"),
+            (b"BOD2", struct.pack("<II", skin_mask, 2)),
+            (b"MODL", struct.pack("<I", 0x01000808)),
+        ])
+        fixed_addon = Record(b"ARMA", 0x01000808, 0, [
+            (b"EDID", b"V2S_LuciaTestFixedAA\0"),
+            (b"MOD2", b"vrm2skyrim\\luciatest\\fixed_full.nif\0"),
+            (b"MOD3", b"vrm2skyrim\\luciatest\\fixed_full.nif\0"),
+        ])
+        head_recs = {r.form_id: r for r in head_skin_records(settings, base_skin, None, fixed_addon, facial=facial)}
+        for name, expect_slot30, expect_slot60 in (
+            ("FaceHiddenSkin", 1, 1),
+            ("HairHiddenSkin", 0, 0),
+            ("BothHiddenSkin", 1, 0),
+        ):
+            mask = struct.unpack_from("<I", head_recs[IDS[name]].values(b"BOD2")[0], 0)[0]
+            self.assertEqual(mask & 1, expect_slot30, name)
+            self.assertEqual(bool(mask & (1 << 30)), bool(expect_slot60), name)
+
 
 if __name__ == "__main__":
     unittest.main()

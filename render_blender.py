@@ -173,9 +173,17 @@ def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.preferences.addon_enable(module="io_scene_nifly")
     skel = output / "mod/meshes" / settings.asset_dir / "skeleton.nif"
-    from wardrobe import components, original_head_visibility
-    from expressions import load_facial_manifest
-    parts = components(settings)
+    from wardrobe import components, effective_garment_slot, original_head_visibility
+    from expressions import facial_source_nodes, load_facial_manifest
+    facial = load_facial_manifest(output)
+    facial_nodes = facial_source_nodes(facial)
+    parts = []
+    for part in components(settings):
+        if facial_nodes and part['role'] == 'fixed' and part.get('nodes') and set(part['nodes']).issubset(facial_nodes):
+            continue
+        if part['role'] == 'garment':
+            part = {**part, 'slot': effective_garment_slot(part, facial)}
+        parts.append(part)
     manifest = json.loads((output/'appearance.json').read_text(encoding='utf8'))['components']
     for part in parts:
         original = next((p for p in manifest if p['id'] == part['id']), None)
@@ -183,7 +191,6 @@ def main():
             # Fitting regenerates split skin components without per-source
             # shape metadata. Their materials are imported from the NIF itself.
             part['shapes'] = original.get('shapes', []) if original.get('partial_source') else original['shapes']
-    facial = load_facial_manifest(output)
     if facial:
         parts.append({
             "id": "facial_headpart",
@@ -215,7 +222,7 @@ def main():
                     occupied.update(slots)
             selected = compatible
         if args.hide_face if args.hide_face is not None else any(p.get('hide_face') for p in selected):
-            parts = [p for p in parts if p['id'] != 'face']
+            parts = [p for p in parts if p['id'] not in ('face', 'facial_headpart')]
         if args.hide_hair if args.hide_hair is not None else any(p.get('hide_hair') for p in selected):
             parts = [p for p in parts if p['id'] != 'hair']
         parts += [{**p, "role": "equipment", "slot": p["slots"][0]} for p in selected]
@@ -228,7 +235,8 @@ def main():
         policy = original_head_visibility([p for p in parts if p['role'] == 'garment'])
         for name in ('face', 'hair'):
             if policy['hide_' + name]:
-                parts = [p for p in parts if p['id'] != name]
+                hidden = ('face', 'facial_headpart') if name == 'face' else (name,)
+                parts = [p for p in parts if p['id'] not in hidden]
     slot_priority = {}
     from equipment_textures import prepare_preview_assets
     preview_assets = prepare_preview_assets(

@@ -21,7 +21,11 @@ def main():
     bpy.ops.preferences.addon_enable(module='io_scene_nifly')
     bpy.ops.wm.open_mainfile(filepath=str(output/'converted.blend'))
     from export_names import stabilize_mesh_names
+    from expressions import facial_source_nodes, load_facial_manifest
+    facial = load_facial_manifest(output)
+    facial_nodes = facial_source_nodes(facial)
     stabilize_mesh_names([o for o in bpy.context.scene.objects if o.type == 'MESH'
+                          and not o.get('v2s_facial')
                           and o.get('v2s_part') in ('fixed', 'face', 'hair')])
     from gear_head_runtime import head_variants
     from convert_blender import select_only
@@ -30,12 +34,16 @@ def main():
     from custom_skeleton import NifFile
     document, _ = read_glb(output/'source.glb')
     materials = {m['name']: m for m in document['materials']}
-    variants = [{'file': 'fixed_full.nif', 'nodes': settings.appearance_parts['fixed']}, *head_variants(settings)]
+    full_nodes = [n for n in settings.appearance_parts['fixed'] if n not in facial_nodes]
+    variants = [{'file': 'fixed_full.nif', 'nodes': full_nodes}, *head_variants(settings, facial)]
     for variant in variants:
         if not variant['nodes']:
             continue
         meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH' and
+                  not o.get('v2s_facial') and
                   o.get('v2s_source_node') in variant['nodes'] and o.get('v2s_part') in ('fixed', 'face', 'hair')]
+        if not meshes:
+            continue
         rig = next(m.object for o in meshes for m in o.modifiers if m.type == 'ARMATURE')
         select_only(meshes+[rig], rig)
         path = output/'mod/meshes'/settings.asset_dir/variant['file']

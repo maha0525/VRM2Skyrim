@@ -149,7 +149,7 @@ def main():
     normalize_material_colors(document)
     humanoid = humanoid_map(document)
     original_names = {index: node.get("name", "") for index, node in enumerate(document["nodes"])}
-    from wardrobe import components, validate_source
+    from wardrobe import components, effective_garment_slot, validate_source
     from inspect_vrm import inspect
     from expressions import (
         SKYRIM_EXPRESSION_MORPHS,
@@ -160,8 +160,7 @@ def main():
     )
     validate_source(settings, inspect(args.source))
     expr_info = extract_vrm_expressions(document)
-    # Head visibility switching swaps static face NIFs via SKSE; keep static face in that mode.
-    facial_enabled = bool(expr_info["nodes"]) and not settings.head_switch_enabled
+    facial_enabled = bool(expr_info["nodes"])
     facial_nodes = set(expr_info["nodes"]) if facial_enabled else set()
     if facial_enabled:
         LOG.info("Facial expressions detected (%s): %d expressions on nodes %s",
@@ -505,7 +504,13 @@ def main():
         if obj.get("v2s_facial"):
             obj.vertex_groups.new(name="SBP_130_HEAD").add(list(range(len(points))), 1.0, "REPLACE")
         else:
-            slot = node_parts[obj["v2s_source_node"]]["slot"] if settings.armor_support else 32
+            part = node_parts[obj["v2s_source_node"]] if settings.armor_support else None
+            if part is None:
+                slot = 32
+            elif part["role"] == "garment":
+                slot = effective_garment_slot(part, facial=facial_enabled)
+            else:
+                slot = part["slot"]
             from wardrobe import nif_partition
             partition = nif_partition(slot)
             obj.vertex_groups.new(name=f"SBP_{partition}_" + ("BODY" if slot == 32 else "BODYADDON")).add(list(range(len(points))), 1.0, "REPLACE")
@@ -551,7 +556,11 @@ def main():
     for part in output_parts:
         selected = [obj for obj in body_meshes if obj["v2s_part"] == part["id"]]
         if not selected:
+            if facial_nodes and part.get("nodes") and set(part["nodes"]).issubset(facial_nodes):
+                LOG.info("Skipping component %s: all nodes moved to facial HeadPart/FaceGeom", part["id"])
+                continue
             raise ValueError(f"Appearance component has no output geometry: {part['id']}")
+        part_slot = effective_garment_slot(part, facial=facial_enabled) if part["role"] == "garment" else part["slot"]
         nif_path = output / "mod/meshes" / settings.asset_dir / part["file"]
         nif_path.parent.mkdir(parents=True, exist_ok=True)
         select_only(selected + [target_rig], target_rig)
@@ -559,12 +568,12 @@ def main():
                                    blender_xf=False, preserve_hierarchy=True, export_modifiers=False,
                                    export_animations=False, export_colors=True, intuit_defaults=False)
         apply_alpha(nif_path, {obj.name: source_materials[obj.material_slots[0].material.name] for obj in selected})
-        manifest.append({**part, "nif": nif_path.relative_to(output / "mod").as_posix(),
+        manifest.append({**part, "slot": part_slot, "nif": nif_path.relative_to(output / "mod").as_posix(),
                          "shapes": [{"name": obj.name, "source_node": obj["v2s_source_node"],
                                      "double_sided": source_materials[obj.material_slots[0].material.name].get('doubleSided', False),
                                      "diffuse": obj.material_slots[0].material['V2S_Diffuse_Path'],
                                      "material_policy": source_materials[obj.material_slots[0].material.name]} for obj in selected]})
-        LOG.info("Exported component %s: %s shapes, slot %s", part["id"], len(selected), part["slot"])
+        LOG.info("Exported component %s: %s shapes, slot %s", part["id"], len(selected), part_slot)
     if facial_meshes:
         facial_parts = []
         fg_alpha_policies = {}

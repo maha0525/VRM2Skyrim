@@ -117,6 +117,11 @@ def fit(output, game_data, blender, skin_only=False, reuse_body=False):
         head_source = mesh_data(extract(f'actors/character/character assets/{prefix}head.nif'))
         target_head_path = original_body.parent / 'face.nif'
         if not target_head_path.is_file():
+            from expressions import load_facial_manifest
+            facial = load_facial_manifest(output)
+            if facial:
+                target_head_path = output / 'mod' / facial['facegeom']
+        if not target_head_path.is_file():
             raise ValueError('Headgear requires classification of the VRM face mesh')
         head_target = mesh_data(target_head_path)
         head_src, _, _, head_src_weights = combine(head_source, parents)

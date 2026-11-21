@@ -228,7 +228,7 @@ def validate(output, skeleton=None, game_data=None):
         by_id = {r.form_id: r for r in generated}
         keyword_manifest = json.loads((output/'npc.json').read_text(encoding='utf8'))['garment_keywords']
         skin = by_name[settings.prefix + "Appearance"]
-        expected_skin = skin_components(settings)
+        expected_skin = skin_components(settings, facial)
         if len(skin.values(b"MODL")) != len(expected_skin):
             raise ValueError(
                 "Skin does not contain all permanent appearance components"
@@ -259,7 +259,7 @@ def validate(output, skeleton=None, game_data=None):
             ]:
                 raise ValueError("Garment is not a named wearable item")
             mask, kind = struct.unpack("<II", item.values(b"BOD2")[0])
-            garment_slots = equip_slots(garment)
+            garment_slots = equip_slots(garment, facial)
             if (
                 mask != sum(1 << (slot - 30) for slot in garment_slots)
                 or kind

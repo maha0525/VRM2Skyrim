@@ -48,7 +48,7 @@
 | **頭装備による顔・髪の表示切替** | **SKSE64** | 兜や帽子を着けたときに顔や髪を自動で隠す場合に必要です（`skse64_loader.exe` から起動）。 |
 | **着席時の高さ調整** | **SKSE64** | 椅子やベンチに座ったときの高さをスクリプトで補正します。 |
 | **髪や服の揺れもの（物理演算）** | **SKSE64** + **Faster HDT-SMP** | VRM の Spring Bone をゲーム内で揺らすために必要です。 |
-| **トゥーン描画（アニメ調の陰影・輪郭線）** | **SKSE64** + **Community Shaders（Bottled Shaders 1.0.22 / DLL 1.9.0.0）** + **トゥーン描画用シェーダー ZIP** | 同梱の `VRM2Skyrim-Toon-Shader-0.14.0.zip` は **Bottled Shaders 1.0.22** 専用です（STEP 01 または完了画面から保存できます）。 |
+| **トゥーン描画（アニメ調の陰影・輪郭線）** | **SKSE64** + **Community Shaders（Bottled Shaders 1.0.22 / DLL 1.9.0.0）** + **トゥーン描画用シェーダー ZIP** | 同梱の `VRM2Skyrim-Toon-Shader-0.14.1.zip` は **Bottled Shaders 1.0.22** 専用です（STEP 01 または完了画面から保存できます）。 |
 | **ゲーム内の既存防具の体型合わせ** | **SKSE64** + **SkyPatcher** | 既存の鎧や兜をフォロワーの体型に合わせて着せる場合に使います。 |
 
 ---

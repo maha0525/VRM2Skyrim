@@ -284,6 +284,13 @@ def load_facial_manifest(output):
     return data if data.get("enabled") and data.get("parts") else None
 
 
+def facial_source_nodes(facial) -> set[int]:
+    """Return VRM source node indices moved into facial HeadPart/FaceGeom."""
+    if not facial:
+        return set()
+    return {int(p["source_node"]) for p in facial.get("parts", []) if "source_node" in p}
+
+
 def read_tri(path):
     """Read an FRTRI003 .tri file using PyNifly's standalone TriFile reader."""
     tri_dir = str(ROOT / "dependencies/io_scene_nifly/tri")

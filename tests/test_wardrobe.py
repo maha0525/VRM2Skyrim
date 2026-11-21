@@ -149,11 +149,11 @@ class WardrobeTests(unittest.TestCase):
             outfit.replace(b"INAM", b"")
             self.assertEqual(validate_head_visibility(generated, settings)['native_head_geometry'], 'empty')
             npc.replace(b'PNAM', struct.pack('<I', 0x51176))
-            with self.assertRaisesRegex(ValueError, 'NPC still uses native human'):
+            with self.assertRaisesRegex(ValueError, 'NPC head parts do not match'):
                 validate_head_visibility(generated, settings)
             npc.replace(b'PNAM', struct.pack('<I', EMPTY_HEAD_ID))
             race.replace(b'HEAD', struct.pack('<I', 0x51176))
-            with self.assertRaisesRegex(ValueError, 'Race still supplies native human'):
+            with self.assertRaisesRegex(ValueError, 'Race head parts do not match'):
                 validate_head_visibility(generated, settings)
 
     def test_secondary_rigs_need_names_geometry_and_unique_matches(self):

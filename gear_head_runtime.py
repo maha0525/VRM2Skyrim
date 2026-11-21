@@ -29,8 +29,10 @@ def binding(settings):
     return data
 
 
-def head_variants(settings):
-    fixed = set(settings.appearance_parts['fixed'])
+def head_variants(settings, facial=None):
+    from expressions import facial_source_nodes
+    facial_nodes = facial_source_nodes(facial)
+    fixed = set(settings.appearance_parts['fixed']) - facial_nodes
     heads = settings.appearance_heads
     return [{'name': name, 'addon_id': 0x01000860+i, 'file': 'fixed_'+suffix+'.nif',
              'nodes': sorted(fixed-set(sum((heads[k] for k in remove), [])))}
@@ -38,9 +40,9 @@ def head_variants(settings):
                  ('HairHiddenSkin', 'no_hair', ('hair',)), ('BothHiddenSkin', 'no_face_hair', ('face', 'hair'))))]
 
 
-def head_skin_records(settings, skin, profile, fixed_addon):
+def head_skin_records(settings, skin, profile, fixed_addon, facial=None):
     result = []
-    for variant in head_variants(settings):
+    for variant in head_variants(settings, facial):
         name = variant['name']
         record = copy.deepcopy(skin)
         record.form_id = IDS[name]
@@ -54,12 +56,18 @@ def head_skin_records(settings, skin, profile, fixed_addon):
                 fields.append((tag, blob))
         record.fields = fields
         # Layer 60 is still occupied if a permanent accessory or either head component remains.
+        # When facial HeadParts (SBP_130_HEAD) are active, occupying slot 30 (HEAD) on
+        # FaceHiddenSkin / BothHiddenSkin hides the FaceGeom natively via the engine.
+        bod2_data = bytearray(record.values(b'BOD2')[0])
+        bod2_mask = struct.unpack_from('<I', bod2_data, 0)[0]
         if not variant['nodes']:
-            data = bytearray(record.values(b'BOD2')[0])
-            struct.pack_into('<I', data, 0, struct.unpack_from('<I', data)[0] & ~(1 << 30))
-            record.replace(b'BOD2', bytes(data))
+            bod2_mask &= ~(1 << 30)
+        if facial and name in ('FaceHiddenSkin', 'BothHiddenSkin'):
+            bod2_mask |= 1  # Slot 30 (HEAD) hides SBP_130_HEAD facial FaceGeom
+        struct.pack_into('<I', bod2_data, 0, bod2_mask)
+        record.replace(b'BOD2', bytes(bod2_data))
         result.append(record)
-        if variant['nodes']:
+        if variant['nodes'] and fixed_addon is not None:
             addon = copy.deepcopy(fixed_addon)
             addon.form_id = variant['addon_id']
             addon.replace(b'EDID', (settings.prefix+name+'AA\0').encode())
@@ -123,10 +131,20 @@ def validate_head_models(output, settings):
                 result[digest.hexdigest()] += 1
         return result
 
-    parts = [p for p in components(settings) if p['role'] == 'fixed']
+    from expressions import facial_source_nodes, load_facial_manifest
+    facial = load_facial_manifest(output)
+    facial_nodes = facial_source_nodes(facial)
+    parts = []
+    for p in components(settings):
+        if p['role'] != 'fixed':
+            continue
+        remaining = [n for n in p['nodes'] if n not in facial_nodes]
+        if remaining and (root / p['file']).is_file():
+            parts.append({**p, 'nodes': remaining})
     sources = {p['id']: signatures(root/p['file']) for p in parts}
+    full_nodes = [n for n in settings.appearance_parts['fixed'] if n not in facial_nodes]
     result = []
-    for variant in [{'file': 'fixed_full.nif', 'nodes': settings.appearance_parts['fixed']}, *head_variants(settings)]:
+    for variant in [{'file': 'fixed_full.nif', 'nodes': full_nodes}, *head_variants(settings, facial)]:
         expected = Counter()
         for part in parts:
             if set(part['nodes']).issubset(variant['nodes']):

@@ -18,21 +18,21 @@ def validate_private_records(generated, settings, output, game_data=None):
     local_ids = {
         record.form_id for record in generated if record.kind not in (b"TES4", b"CELL")
     }
+    from expressions import load_facial_manifest
+    facial = load_facial_manifest(output)
     expected_records = (
         9
         if not settings.armor_support
         else 9 + len(PROPERTIES)
-        + len(skin_components(settings))
+        + len(skin_components(settings, facial))
         + 2 * len(settings.appearance_parts["garments"])
         + (len({i['addon_local_id'] for i in json.loads((output/'armor-fitting.json').read_text())['equipment']})
            if settings.fitting_enabled else 0)
-        + ((5 + sum(bool(p['nodes']) for p in head_variants(settings))) if settings.head_switch_enabled else 0)
+        + ((5 + sum(bool(p['nodes']) for p in head_variants(settings, facial))) if settings.head_switch_enabled else 0)
     )
     expected_records += int(settings.sitting_enabled) + int(settings.combat_style_mode == 'custom')
     # A private WEAP + first-person STAT per original weapon
     expected_records += 2 * len(settings.original_weapons) * (settings.weapon_mode == 'original')
-    from expressions import load_facial_manifest
-    facial = load_facial_manifest(output)
     if facial:
         expected_records += max(0, len(facial['parts']) - 1)
     if len(local_ids) != expected_records:

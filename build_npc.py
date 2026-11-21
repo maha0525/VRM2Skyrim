@@ -12,7 +12,7 @@ from equipment_runtime import runtime_records, vmad, write_runtime
 from plugin import Record
 from follower_plugin import follower_records, write_follower
 from settings import SKILLS, load_settings
-from wardrobe import components, equip_slots, keyword_names, skin_components, is_headwear
+from wardrobe import components, effective_garment_slot, equip_slots, keyword_names, skin_components, is_headwear
 
 NPC_ID = 0x01000800
 ARMOR_ID = 0x01000801
@@ -81,12 +81,15 @@ def appearance_records(settings, catalog, facial=None):
         (b"DATA", struct.pack("<If", 0, 0.)), (b"DNAM", struct.pack("<i", 0))])
     result, skin_addons, skin_mask, inventory = [head_cover], [], 0, []
     garment_index = 0
-    for part in [*skin_components(settings), *[p for p in components(settings) if p['role'] == 'garment']]:
+    for part in [*skin_components(settings, facial), *[p for p in components(settings) if p['role'] == 'garment']]:
         wearable = part["role"] == "garment"
         addon_id = 0x01000810 + part.get('record_index', garment_index) * 2 if wearable else skin_ids[part["id"]]
         armor_id = addon_id + 1
         item_name = settings.prefix + ("Garment_" + part["id"] if wearable else part["id"].title())
-        mask = sum(1 << (slot - 30) for slot in part.get("slots", [part["slot"]]))
+        part_slots = part.get("slots")
+        if part_slots is None:
+            part_slots = [effective_garment_slot(part, facial) if wearable else part["slot"]]
+        mask = sum(1 << (slot - 30) for slot in part_slots)
         armor_type = {"light": 0, "heavy": 1, "clothing": 2}[part.get("armor_type", "clothing")]
         result.append(Record(b"ARMA", addon_id, 0, [
             (b"EDID", text(item_name + "AA")), (b"BOD2", struct.pack("<II", mask, armor_type)),
@@ -102,7 +105,7 @@ def appearance_records(settings, catalog, facial=None):
             hat_template = catalog.require('ClothesFarmHat01', b'ARMO')
             worn_inventory_fields = [(tag, data) for tag, data in hat_template.fields
                                     if tag in {b'MOD2', b'MOD4', b'YNAM', b'ZNAM', b'ETYP'}]
-        wear_mask = sum(1 << (slot - 30) for slot in equip_slots(part))
+        wear_mask = sum(1 << (slot - 30) for slot in equip_slots(part, facial))
         result.append(Record(b"ARMO", armor_id, 0, [
             (b"EDID", text(item_name)), (b"OBND", bytes(12)), (b"FULL", text(part["name"])),
             *worn_inventory_fields,
@@ -255,8 +258,8 @@ def build_npc(game_data, output, settings=None, catalog=None):
         if settings.head_switch_enabled:
             from gear_head_runtime import head_skin_records
             skin = next(r for r in appearance if r.form_id == ARMOR_ID)
-            fixed = next(r for r in appearance if r.form_id == 0x01000808)
-            appearance += head_skin_records(settings, skin, fitting if settings.fitting_enabled else None, fixed)
+            fixed = next((r for r in appearance if r.form_id == 0x01000808), None)
+            appearance += head_skin_records(settings, skin, fitting if settings.fitting_enabled else None, fixed, facial=facial)
         script_data = vmad(settings)
     seated = output / 'seating.json'
     if settings.sitting_enabled and seated.exists():

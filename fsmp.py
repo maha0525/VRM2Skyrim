@@ -322,7 +322,7 @@ def skin_co_influences(nif):
     return groups
 
 
-def collision_hulls(mesh_dir, appearance, globals_, body_nodes=()):
+def collision_hulls(mesh_dir, appearance, globals_, body_nodes=(), facial_nif=None):
     points = {}
     for part in appearance['components']:
         combined = part['id'] == 'appearance'
@@ -333,6 +333,11 @@ def collision_hulls(mesh_dir, appearance, globals_, body_nodes=()):
                 return not combined or any(shape.name.startswith(f'VRMNode_{n:05}') for n in body_nodes)
 
             for name, values in weighted_points(nif, is_body, minimum_weight=.2).items():
+                if name.startswith('NPC '):
+                    points.setdefault(name, []).extend(values)
+    if facial_nif and Path(facial_nif).is_file():
+        with NifFile(str(facial_nif)) as nif:
+            for name, values in weighted_points(nif, lambda _shape: True, minimum_weight=.2).items():
                 if name.startswith('NPC '):
                     points.setdefault(name, []).extend(values)
     result = {}
@@ -880,7 +885,10 @@ def build_physics(output):
     source = json.loads((output/'source.json').read_text(encoding='utf8'))
     body_nodes = [p['node'] for p in source['parts'] if p['suggested_role'] == 'body' or
                   ('face' in p['name'].lower() and 'hair' not in p['name'].lower())]
-    hulls = collision_hulls(mesh_dir, appearance, globals_, body_nodes)
+    from expressions import load_facial_manifest
+    facial = load_facial_manifest(output)
+    facial_nif = (output / 'mod' / facial['facegeom']) if facial else None
+    hulls = collision_hulls(mesh_dir, appearance, globals_, body_nodes, facial_nif=facial_nif)
     body_surface = None
     if hulls:
         body_surface = body_mesh(hulls, globals_)[:2]
