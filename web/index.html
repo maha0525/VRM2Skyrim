@@ -174,7 +174,7 @@
         </div>
 
         <div class="import-row">
-          <label class="link-button">保存した設定を読み込む<input type="file" id="import-settings" accept=".json" hidden></label>
+          <label class="link-button file-drop-target">保存した設定を読み込む<input type="file" id="import-settings" accept=".json" hidden></label>
           <span id="import-status"></span>
         </div>
       </section>
@@ -193,7 +193,71 @@
               <option value="male">男性</option>
             </select>
           </label>
-          <label>ボイス<select id="voice"></select><small>バニラのフォロワー勧誘・同行セリフに対応しているボイスから選べます。</small></label>
+          <label>ボイス方式
+            <select id="voice_mode">
+              <option value="official">公式ボイスを使う</option>
+              <option value="custom">専用ボイスを作る（自作セリフ・音声）</option>
+            </select>
+          </label>
+          <label>ボイス（専用ボイス時は見本の参照元）<select id="voice"></select><small>バニラのフォロワー勧誘・同行セリフに対応しているボイスから選べます。</small></label>
+        </div>
+        <div id="custom-voice-panel" class="custom-voice-panel" hidden>
+          <h3>専用セリフ・ボイス設定</h3>
+          <p id="voice-tools-status" class="hint"></p>
+          <p id="voice-summary-bar" class="hint"></p>
+
+          <div class="voice-step">
+            <h4>1. AIで台本を作る（手入力する場合はスキップ）</h4>
+            <div class="grid voice-persona-fields">
+              <label>性格・口調（任意）<input id="voice-persona-style" type="text" maxlength="200" placeholder="例：勝気で生意気／丁寧で穏やか（AI側に既に人格設定がある場合は空欄でOK）"></label>
+              <label>一人称・プレイヤーの呼び方（任意）<input id="voice-persona-pronouns" type="text" maxlength="120" placeholder="例：私・あんた／僕・きみ"></label>
+            </div>
+            <div class="voice-toolbar">
+              <button type="button" id="voice-copy-prompt" class="secondary">AI / ペルソナ用プロンプトをコピー</button>
+            </div>
+            <details id="voice-prompt-box">
+              <summary>AI用プロンプトのプレビュー</summary>
+              <textarea id="voice-prompt-preview" rows="8" readonly></textarea>
+            </details>
+          </div>
+
+          <div class="voice-step">
+            <h4>2. 台本を取り込む</h4>
+            <p class="hint">AIが生成したJSONを貼り付けて反映するか、保存済みのセリフJSONを読み込みます。</p>
+            <textarea id="voice-paste-json" rows="4" placeholder='AIが生成したJSONをここに貼り付け（例：{ "recruit_accept": [ { "id": "01", "text": "いいわ、行くよ。" } ] }）'></textarea>
+            <div class="voice-toolbar">
+              <button type="button" id="voice-paste-apply" class="secondary">貼り付けたJSONを反映</button>
+              <label class="secondary voice-file-btn file-drop-target">セリフJSONをファイルから読み込み<input id="voice-import-json" type="file" accept=".json" hidden></label>
+              <button type="button" id="voice-export-json" class="secondary">セリフJSONをファイルに書き出し</button>
+            </div>
+          </div>
+
+          <div class="voice-step">
+            <h4>3. 音声を作って読み込む（音声なしならスキップ可）</h4>
+            <p class="hint">取り込んだ台本をTTS一括合成用のJSON形式で出力し、合成した音声ZIPをまとめて読み込めます。</p>
+            <div class="voice-toolbar">
+              <button type="button" id="voice-copy-tts-json" class="secondary">TTS用JSONをコピー</button>
+              <button type="button" id="voice-export-tts-json" class="secondary">TTS用JSONをファイルに書き出し</button>
+              <label class="secondary voice-file-btn file-drop-target">音声ZIPを一括読み込み<input id="voice-zip-upload" type="file" accept=".zip" hidden></label>
+            </div>
+            <details id="voice-tts-box">
+              <summary>TTS一括合成用JSONのプレビュー（[{"filename", "text"}]形式）</summary>
+              <label class="checkbox"><input id="voice-tts-unmatched-only" type="checkbox">音声が未割当のセリフだけ含める</label>
+              <textarea id="voice-tts-preview" rows="8" readonly></textarea>
+            </details>
+          </div>
+
+          <p id="voice-status" class="voice-status" role="status"></p>
+
+          <div class="voice-step">
+            <h4>4. セリフ・音声の確認と編集</h4>
+            <div class="voice-tier-tabs">
+              <button type="button" data-voice-tier="required" class="secondary active">必須</button>
+              <button type="button" data-voice-tier="recommended" class="secondary">推奨</button>
+              <button type="button" data-voice-tier="optional" class="secondary">任意</button>
+            </div>
+            <div id="voice-scenes-list"></div>
+          </div>
         </div>
         <div class="note">NPC名とMOD名には日本語もそのまま使えます（MOD ID は半角英数字で自動生成されます）。</div>
       </section>
@@ -438,7 +502,7 @@
       <h3>Outfit Studioで形を仕上げる</h3>
       <a id="edit-kit-download" class="secondary" download>身体・骨格・編集用装備を保存</a>
       <label>仕上げた装備を戻す<select id="edit-mesh"></select></label>
-      <label>編集済みNIF<input id="edit-nif" type="file" accept=".nif"></label>
+      <label class="file-drop-target">編集済みNIF<input id="edit-nif" type="file" accept=".nif"></label>
       <button id="import-edit" type="button" class="secondary">形を取り込み、MOD ZIPを更新</button>
       <p class="hint">形の変更に対応します。編集手順はZIP内のREADME.txtを参照してください。</p>
       <p id="edit-status" role="status"></p>
@@ -450,6 +514,7 @@
 <script src="wardrobe.js"></script>
 <script src="combat-style.js"></script>
 <script src="weapon.js"></script>
+<script src="voice.js"></script>
 <script src="wizard.js"></script>
 </body>
 </html>

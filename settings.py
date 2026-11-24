@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import struct
 
-VERSION = "0.14.2"
+VERSION = "0.15.0"
 
 
 def identifier(name):
@@ -25,6 +25,8 @@ class FollowerSettings:
     author: str = ""
     sex: str = "female"
     voice: str = "FemaleEvenToned"
+    voice_mode: str = "official"  # 'official' | 'custom'
+    custom_voice_lines: dict = field(default_factory=dict)
     combat_class: str = "CombatWarrior1H"
     combat_style: str = "csHumanMeleeLvl1"
     combat_preset: str = "warrior"  # Wizard selection only; never reapplies game settings on import.
@@ -86,11 +88,17 @@ class FollowerSettings:
             if not isinstance(value, str) or not value.strip() or len(value) > 128 or any(ord(c) < 32 for c in value):
                 raise ValueError(f"Invalid {name}")
         choices = {"sex": ("female", "male"), "level_mode": ("player", "fixed"),
+                   "voice_mode": ("official", "custom"),
                    "combat_preset": ("warrior", "twohand", "archer", "mage", "conjurer", "custom"),
                    "protection": ("protected", "essential", "mortal")}
         for name, options in choices.items():
             if getattr(self, name) not in options:
                 raise ValueError(f"Invalid {name}")
+        if not isinstance(self.custom_voice_lines, dict):
+            raise ValueError("Invalid custom_voice_lines")
+        if self.voice_mode == "custom" and self.custom_voice_lines:
+            from custom_voice import normalize_voice_lines
+            self.custom_voice_lines = normalize_voice_lines(self.custom_voice_lines)
         from combat_style import validate_custom
         validate_custom(self.combat_style_custom)
         if self.combat_style_mode not in ('existing', 'custom'):

@@ -31,6 +31,7 @@ function applySettings(settings) {
   loadPhysics(settings);
   if(state.choices)updateStyles(settings.combat_style);
   loadWeapon(settings);
+  loadCustomVoiceSettings(settings);
   updateLevel(); updateMarriage(); renderChoices(); renderToonShader();
 }
 // The shipped shader ZIP targets the Community Shaders of one Bottled Shaders
@@ -76,6 +77,8 @@ function collect(options={}) {
   if(settings.fit_mode==='all_official')settings.fit_armors=[];
   settings.physics_nodes=[...(state.physicsNodes||[])];
   settings.physics_source_sha256=state.physicsHash||'';
+  settings.voice_mode=$('voice_mode').value||'official';
+  settings.custom_voice_lines=settings.voice_mode==='custom'?collectCustomVoiceLines():{};
   // Original weapons are chosen in STEP 03; earlier steps send them only when complete (as check_weapon).
   settings.original_weapons=originalWeaponSettings(settings.weapon_mode==='original'&&(state.step>=2||!!options.weaponCard),
     options.weaponCard?[options.weaponCard]:undefined);
@@ -336,7 +339,18 @@ function showStep(step) {
 function summarize(settings) {
   state.reviewSettings=settings;
   const voice=state.choices.voices.find(item=>item.id===settings.voice);
-  const rows=[[tr("アバター"),state.source.filename],[tr("NPC名"),settings.npc_name],['MOD',settings.mod_name+' / '+settings.mod_id+'.esp'],[tr("ボイス"),recordLabel(voice)||settings.voice],[tr("戦闘"),settings.combat_class+' / '+settings.combat_style],[tr("レベル"),settings.level_mode==='player'?tr("プレイヤー×{0}（{1}〜{2}）", settings.level_multiplier, settings.min_level, settings.max_level):String(settings.level)],[tr("生存"),{'protected':tr("保護"),'essential':tr("不死"),'mortal':tr("通常")}[settings.protection]],[tr("体力 / マジカ / スタミナ"),`${settings.health} / ${settings.magicka} / ${settings.stamina}${settings.auto_calculate?tr("（自動成長の補正に使用）"):''}`],[tr("Perk / 魔法"),`${settings.perks.length} / ${settings.spells.length}`],[tr("初期配置"),tr("ホワイトラン · キナレス聖堂")]];
+  let voiceLabel = recordLabel(voice) || settings.voice;
+  if (settings.voice_mode === 'custom') {
+    let total = 0, matched = 0;
+    for (const [sid, list] of Object.entries(settings.custom_voice_lines || {})) {
+      for (const line of list || []) {
+        total++;
+        if (typeof matchedAudioFilename === 'function' && matchedAudioFilename(sid, line)) matched++;
+      }
+    }
+    voiceLabel = tr("専用ボイス（全{0}本 · 音声あり{1}本 · 無音{2}本）", total, matched, total - matched);
+  }
+  const rows=[[tr("アバター"),state.source.filename],[tr("NPC名"),settings.npc_name],['MOD',settings.mod_name+' / '+settings.mod_id+'.esp'],[tr("ボイス"),voiceLabel],[tr("戦闘"),settings.combat_class+' / '+settings.combat_style],[tr("レベル"),settings.level_mode==='player'?tr("プレイヤー×{0}（{1}〜{2}）", settings.level_multiplier, settings.min_level, settings.max_level):String(settings.level)],[tr("生存"),{'protected':tr("保護"),'essential':tr("不死"),'mortal':tr("通常")}[settings.protection]],[tr("体力 / マジカ / スタミナ"),`${settings.health} / ${settings.magicka} / ${settings.stamina}${settings.auto_calculate?tr("（自動成長の補正に使用）"):''}`],[tr("Perk / 魔法"),`${settings.perks.length} / ${settings.spells.length}`],[tr("初期配置"),tr("ホワイトラン · キナレス聖堂")]];
   rows.push([tr("衣服"),settings.armor_support?tr("{0}品を着脱可能（初期装備{1}品）", settings.appearance_parts.garments.length, settings.appearance_parts.garments.filter(g=>g.equipped).length):tr("元の衣服を着脱しない")]);
   rows.push([tr("シャウト"),settings.shouts.length?settings.shouts.map(shoutName).join(i18n.language==='en'?', ':'、'):tr("なし")]);
   rows.push([tr("トゥーン描画"),settings.toon_enabled?tr("有効"):tr("無効")]);
@@ -354,7 +368,7 @@ async function next() {
   state.navigationLoading=true;$('next').disabled=true;
   try {
     if(state.step===0){if(!state.source)throw new Error(tr("VRMファイルを選択してください"));const result=await loadCatalog();$('checks').replaceChildren();for(const [key,value]of Object.entries(result.checks)){const badge=document.createElement('span');badge.textContent=key+(value?' ✓':tr(" 未準備"));badge.className=value?'':'missing';$('checks').append(badge);}if(Object.values(result.checks).some(value=>!value))throw new Error(tr("環境が未準備です。パスを確認し、初回はSetup.cmdを実行してください。"));}
-    const result=await api('/api/validate',{source_id:state.source.source_id,game:$('game').value,settings:collect(),weapon_ids:weaponIds(),check_weapon:state.step>=2,check_shouts:state.step>=3});if(state.step===3)summarize(result.settings);
+    const result=await api('/api/validate',{source_id:state.source.source_id,game:$('game').value,settings:collect(),weapon_ids:weaponIds(),check_voice:state.step>=1,check_weapon:state.step>=2,check_shouts:state.step>=3});if(state.step===3)summarize(result.settings);
     if(state.step===0&&$('armor_support').value==='true'&&!wardrobeHasHair()&&!window.confirm(tr("「髪」に分類したメッシュがありません。身体や衣服に髪が含まれていると、鎧で髪が消えたり、兜を髪が突き抜けたりします。このまま進みますか？")))return;
     showStep(state.step+1);
   }catch(e){error(e.message);}finally{state.navigationLoading=false;renderCatalogStatus();}
@@ -400,7 +414,7 @@ async function refreshSavedResults(preferred=$('saved-job').value) {
   $('saved-results').hidden=saved.jobs.length===0;
 }
 async function init() {
-  initCombatStyle();initWeapon();
+  initCombatStyle();initWeapon();initCustomVoice();
   for(let i=0;i<skills.length;i++){const label=document.createElement('label');label.textContent=tr(skillLabels[i]);const input=document.createElement('input');input.id='skill-'+skills[i];input.type='number';input.min='0';input.max='100';input.value='20';label.append(input);$('skills').append(label);}
   const env=await api('/api/environment');
   const expected=document.querySelector('meta[name="converter-version"]').content;
@@ -426,12 +440,39 @@ async function init() {
   $('all-styles').onchange=()=>{const selected=$('combat_style').value;const item=state.choices.styles.find(item=>item.id===selected);updateStyles(!$('all-styles').checked&&!item?.humanoid?state.defaults.combat_style:selected);};
   $('use-manual-skills').onclick=()=>{$('auto_calculate').value='false';$('manual-skills').open=true;updateLevel();};
   $('mod_name').oninput=()=>{state.nameDirty=true;updateId();};$('npc_name').oninput=()=>state.nameDirty=true;$('mod_id').oninput=()=>state.idDirty=true;
-  $('sex').onchange=async()=>{const sex=$('sex').value;$('voice').value=sex==='male'?'MaleNord':'FemaleEvenToned';updateMarriage();if(state.choices){try{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));await loadCatalog();}catch(e){error(e.message);}}};$('voice').onchange=updateMarriage;
+  $('sex').onchange=async()=>{const sex=$('sex').value;$('voice').value=sex==='male'?'MaleNord':'FemaleEvenToned';updateMarriage();if($('voice_mode').value==='custom')ensureVoiceScenesLoaded(true);if(state.choices){try{state.fitArmors=new Set([...$('fit-armors').selectedOptions].map(o=>o.value));await loadCatalog();}catch(e){error(e.message);}}};$('voice').onchange=updateMarriage;
   $('perk-search').oninput=renderChoices;$('spell-search').oninput=renderChoices;
   $('perk-category').onchange=renderChoices;$('spell-category').onchange=renderChoices;
   $('export-settings').onclick=()=>download($('mod_id').value+'-settings.json',collect());
-  $('import-settings').onchange=async()=>{try{state.imported=JSON.parse(await $('import-settings').files[0].text());applySettings(state.imported);state.nameDirty=true;state.idDirty=true;$('import-status').textContent=tr("設定を読み込みました");}catch(e){error(e.message);}};
+  $('import-settings').onchange=()=>importSettingsFile($('import-settings').files[0]);
+  bindFileDrop($('import-settings').closest('label'), importSettingsFile);
+  bindFileDrop($('edit-nif')?.closest('label'), file=>{const dt=new DataTransfer();dt.items.add(file);$('edit-nif').files=dt.files;$('edit-status').textContent=file.name;});
   $('again').onclick=async()=>{state.completedJob=null;$('result').hidden=true;$('equipment-edit').hidden=true;$('wizard').hidden=false;state.source=null;state.imported=null;state.pendingSelects=null;loadPhysics({});state.nameDirty=false;state.idDirty=false;$('source').value='';$('source-status').textContent=tr("次のVRMを選択してください");wardrobeLoad(null);showStep(0);try{await refreshSavedResults(state.resultJob);}catch(e){error(tr("前に作ったフォロワーの一覧を更新できませんでした：")+e.message);}};
+}
+function bindFileDrop(el, onFile) {
+  if (!el) return;
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drag'); });
+  el.addEventListener('dragleave', () => el.classList.remove('drag'));
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    el.classList.remove('drag');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) onFile(file);
+  });
+}
+async function importSettingsFile(file) {
+  if (!file) return;
+  try {
+    state.imported = JSON.parse(await file.text());
+    applySettings(state.imported);
+    state.nameDirty = true;
+    state.idDirty = true;
+    $('import-status').textContent = tr("設定を読み込みました");
+  } catch (e) {
+    error(e.message);
+  } finally {
+    $('import-settings').value = '';
+  }
 }
 document.addEventListener('languagechange',()=>{
   for(const option of $('physics_stiffness').options)if(!['0.3','1','3'].includes(option.value))option.textContent=tr('指定値 ')+option.value;

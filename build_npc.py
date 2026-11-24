@@ -138,7 +138,11 @@ def configure_actor(npc, settings, catalog, base_stats, shouts=()):
     npc.replace(b"SHRT", text(settings.npc_name))
     npc.replace(b"RNAM", uint(RACE_ID))
     npc.replace(b"DOFT", uint(OUTFIT_ID))
-    npc.replace(b"VTCK", uint(catalog.require(settings.voice, b"VTYP").form_id))
+    if settings.voice_mode == "custom":
+        from custom_voice import CUSTOM_VOICE_ID
+        npc.replace(b"VTCK", uint(CUSTOM_VOICE_ID))
+    else:
+        npc.replace(b"VTCK", uint(catalog.require(settings.voice, b"VTYP").form_id))
     npc.replace(b"CNAM", uint(catalog.require(settings.combat_class, b"CLAS").form_id))
     npc.replace(b"ZNAM", uint(catalog.require(settings.combat_style, b"CSTY").form_id))
     npc.replace(b"NAM6", struct.pack("<f", settings.height_scale))
@@ -199,7 +203,7 @@ def configure_actor(npc, settings, catalog, base_stats, shouts=()):
     return factions
 
 
-def build_npc(game_data, output, settings=None, catalog=None):
+def build_npc(game_data, output, settings=None, catalog=None, voice_audio=None):
     output = Path(output)
     settings = settings or load_settings(output)
     catalog = catalog or GameCatalog(game_data)
@@ -293,6 +297,15 @@ def build_npc(game_data, output, settings=None, catalog=None):
         (b"EDID", text(settings.prefix + "FollowerREF")), (b"NAME", uint(NPC_ID)),
         (b"DATA", struct.pack("<6f", *location))])
     plugin_path = output / "mod" / settings.plugin_name
+    dialogue_topics = None
+    voice_report = None
+    if settings.voice_mode == "custom":
+        from custom_voice import build_voice_assets, validate_custom_voice_settings, voice_records, write_voice_runtime
+        validate_custom_voice_settings(settings)
+        voice_flat, dialogue_topics, audio_manifest = voice_records(game_data, settings)
+        appearance += voice_flat
+        write_voice_runtime(output, settings)
+        voice_report = build_voice_assets(output, Path(game_data).parent, settings, audio_manifest, audio_files=voice_audio)
     items = [race, *appearance, npc, relation]
     weapon_report = None
     if settings.weapon_mode == 'original':
@@ -301,12 +314,16 @@ def build_npc(game_data, output, settings=None, catalog=None):
         items += [record for item in weapons for record in item['records']]
         weapon_report = npc_report(settings, catalog, weapons)
     write_follower(plugin_path, items, author=settings.author or "VRM2Skyrim",
-                   placement=(cell, actor), extra_masters=extra_masters)
+                   placement=(cell, actor), extra_masters=extra_masters, dialogue_topics=dialogue_topics)
+    if settings.voice_mode == "custom":
+        from custom_voice import write_voice_seq
+        write_voice_seq(output, settings, master_count=1 + len(extra_masters))
     write_runtime(output, settings)
     from gear_head_runtime import write_runtime as write_head_runtime
     write_head_runtime(output, settings)
     generated = follower_records(plugin_path)
-    if len(generated) != len(items) + 3 or len({r.form_id for r in generated}) != len(generated):
+    topic_record_count = sum(1 + len(infos) for _, infos in (dialogue_topics or ()))
+    if len(generated) != len(items) + topic_record_count + 3 or len({r.form_id for r in generated}) != len(generated):
         raise RuntimeError("Follower plugin record count mismatch")
     reference = next(r for r in generated if r.kind == b"ACHR")
     if (uint(cell.form_id), 6) not in reference.groups or reference.groups[-1] != (uint(cell.form_id), 8):

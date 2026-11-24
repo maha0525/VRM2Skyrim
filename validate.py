@@ -314,6 +314,9 @@ def validate(output, skeleton=None, game_data=None):
     if settings.sitting_enabled:
         from seating import validate_runtime
         validate_runtime(output, settings, npc, {r.form_id: r for r in generated})
+    if settings.voice_mode == "custom":
+        from custom_voice import validate_voice_assets
+        validate_voice_assets(output, settings)
     if npc.form_id != NPC_ID or race.form_id != RACE_ID:
         raise ValueError("Wrong follower/race IDs")
     if npc.values(b"FULL") != [settings.npc_name.encode("utf8") + b"\0"]:

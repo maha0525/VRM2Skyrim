@@ -16,7 +16,8 @@ def validate_private_records(generated, settings, output, game_data=None):
     game_data: the game's Data folder; without it the shout/footstep check uses npc.json's record."""
     output = Path(output)
     local_ids = {
-        record.form_id for record in generated if record.kind not in (b"TES4", b"CELL")
+        record.form_id for record in generated
+        if record.kind not in (b"TES4", b"CELL") and not (record.kind == b"DIAL" and record.form_id >> 24 == 0)
     }
     from expressions import load_facial_manifest
     facial = load_facial_manifest(output)
@@ -35,6 +36,13 @@ def validate_private_records(generated, settings, output, game_data=None):
     expected_records += 2 * len(settings.original_weapons) * (settings.weapon_mode == 'original')
     if facial:
         expected_records += max(0, len(facial['parts']) - 1)
+    if settings.voice_mode == "custom":
+        from custom_voice import RECRUIT_VANILLA_DIAL_ID, SCENE_BY_ID, resolved_voice_lines
+        vlines = resolved_voice_lines(settings.custom_voice_lines)
+        private_dials = sum(1 for sid in vlines if SCENE_BY_ID[sid]["mode"] == "private_dial")
+        has_recruit = any(SCENE_BY_ID[sid].get("vanilla_dial_id") == RECRUIT_VANILLA_DIAL_ID for sid in vlines)
+        total_infos = sum(len(entries) for _, entries in vlines.values())
+        expected_records += 2 + (2 if has_recruit else 0) + private_dials + total_infos  # VTYP + QUST + (DLBR + recruit DIAL) + private DIALs + INFOs
     if len(local_ids) != expected_records:
         raise ValueError(f"Expected {expected_records} private follower records, found {len(local_ids)} "
                          f"(combat style: {settings.combat_style_mode})")

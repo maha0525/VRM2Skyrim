@@ -121,6 +121,8 @@ class WizardApplication:
         self.source_reports = {}
         self.weapons = {}  # weapon_id -> {'path', 'report'}; the path never enters settings
         self.weapon_bases = {}
+        self.voice_audio = {}  # filename.lower() -> Path for custom voice uploads
+        self._restore_voice_audio()
         self.jobs = {}
         self.catalogs = {}
         self.lock = threading.Lock()
@@ -134,6 +136,22 @@ class WizardApplication:
                     self.jobs[job['id']] = job
             except (ValueError, OSError, KeyError, TypeError):
                 logging.warning('Could not restore completed wizard result: %s', path)
+
+    def _restore_voice_audio(self):
+        """Restore previously uploaded custom voice audio files from workspace/voice-inputs."""
+        import re
+        voice_dir = self.workspace / "voice-inputs"
+        if not voice_dir.is_dir():
+            return
+        allowed = {".wav", ".ogg", ".mp3", ".flac", ".m4a"}
+        files = sorted(
+            (p for p in voice_dir.iterdir() if p.is_file() and p.suffix.lower() in allowed),
+            key=lambda p: p.stat().st_mtime,
+        )
+        for path in files:
+            m = re.match(r"^[0-9a-f]{12}_(.+)$", path.name)
+            orig = m.group(1) if m else path.name
+            self.voice_audio[orig.lower()] = path
 
     def remember_job(self, job):
         output = Path(job['output']).resolve()
@@ -217,6 +235,74 @@ class WizardApplication:
             self.weapon_bases[key] = base_dimensions(self.workspace, data, self.catalog(game), base)
         return self.weapon_bases[key]
 
+    def upload_voice_audio(self, name, blob):
+        fname = Path(name).name
+        if Path(fname).suffix.lower() not in {".wav", ".ogg", ".mp3", ".flac", ".m4a"}:
+            raise ValueError("音声ファイル（.wav / .ogg / .mp3 / .flac / .m4a）を選んでください")
+        dest_dir = self.workspace / "voice-inputs"
+        dest_dir.mkdir(exist_ok=True)
+        path = dest_dir / f"{uuid.uuid4().hex[:12]}_{fname}"
+        path.write_bytes(blob)
+        with self.lock:
+            self.voice_audio[fname.lower()] = path
+            files = sorted(self.voice_audio.keys())
+        return {"filename": fname, "size": len(blob), "files": files}
+
+    def upload_voice_zip(self, blob):
+        import io, zipfile
+        allowed = {".wav", ".ogg", ".mp3", ".flac", ".m4a"}
+        dest_dir = self.workspace / "voice-inputs"
+        dest_dir.mkdir(exist_ok=True)
+        added = []
+        with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                fname = Path(info.filename).name
+                if not fname or fname.startswith(".") or Path(fname).suffix.lower() not in allowed:
+                    continue
+                data = zf.read(info)
+                path = dest_dir / f"{uuid.uuid4().hex[:12]}_{fname}"
+                path.write_bytes(data)
+                with self.lock:
+                    self.voice_audio[fname.lower()] = path
+                added.append(fname)
+        if not added:
+            raise ValueError("ZIP内に音声ファイル（.wav / .ogg / .mp3）が見つかりませんでした")
+        with self.lock:
+            files = sorted(self.voice_audio.keys())
+        return {"added": sorted(added), "count": len(added), "files": files}
+
+    def voice_scenes(self, game, base_voice="FemaleEvenToned"):
+        from custom_voice import VOICE_SCENES, default_voice_lines, extract_sample_lines, voice_tools_status
+        game_path = Path(game) if game else None
+        samples = extract_sample_lines(game_path / "Data", base_voice) if game_path and (game_path / "Data/Skyrim.esm").is_file() else {}
+        scenes = [{
+            "id": s["id"],
+            "tier": s["tier"],
+            "group": s["group"],
+            "label_ja": s["label_ja"],
+            "label_en": s["label_en"],
+            "context_ja": s["context_ja"],
+            "context_en": s["context_en"],
+            "samples": samples.get(s["id"], {"ja": s.get("default_lines_ja", []), "en": []}),
+        } for s in VOICE_SCENES]
+        with self.lock:
+            uploaded = sorted(self.voice_audio.keys())
+        defaults = {}
+        for s in VOICE_SCENES:
+            if s["tier"] == "optional":
+                continue
+            sample_ja = samples.get(s["id"], {}).get("ja") or s.get("default_lines_ja") or []
+            if sample_ja:
+                defaults[s["id"]] = [{"id": f"{i + 1:02d}", "text": txt} for i, txt in enumerate(sample_ja[:2])]
+        return {
+            "scenes": scenes,
+            "defaults": defaults,
+            "tools": voice_tools_status(game_path),
+            "uploaded_files": uploaded,
+        }
+
     def start(self, request):
         source = self.sources.get(request.get("source_id"))
         if source is None:
@@ -226,7 +312,12 @@ class WizardApplication:
         validate_physics(settings, self.source_reports[request["source_id"]])
         game, blender = Path(request["game"]), Path(request["blender"])
         self.catalog(game).validate_settings(settings)
+        if settings.voice_mode == "custom":
+            from custom_voice import validate_custom_voice_settings
+            validate_custom_voice_settings(settings)
         weapon_glbs = self.weapon_sources(request, settings)
+        with self.lock:
+            voice_audio = dict(self.voice_audio) if settings.voice_mode == "custom" else None
         checks = doctor(game, blender)
         if not all(checks.values()):
             raise ValueError("必要な環境が未設定です: " + ", ".join(key for key, value in checks.items() if not value))
@@ -246,7 +337,7 @@ class WizardApplication:
             job["weapon_mode"] = settings.weapon_mode
             job["toon_enabled"] = settings.toon_enabled
             self.jobs[job_id] = job
-        self.executor.submit(self._run, job, source, game, blender, output, settings, weapon_glbs)
+        self.executor.submit(self._run, job, source, game, blender, output, settings, weapon_glbs, voice_audio)
         return {"job_id": job_id}
 
     def start_weapon_preview(self, request):
@@ -417,7 +508,7 @@ class WizardApplication:
             with self.lock:
                 job.update(status="failed", error=str(error))
 
-    def _run(self, job, source, game, blender, output, settings, weapon_glbs=None):
+    def _run(self, job, source, game, blender, output, settings, weapon_glbs=None, voice_audio=None):
         job["status"] = "running"
 
         def progress(name):
@@ -426,7 +517,10 @@ class WizardApplication:
                 job["events"].append(name)
 
         try:
-            archive = convert(source, game, blender, output, settings, progress, weapon_glbs=weapon_glbs)
+            kwargs = {"weapon_glbs": weapon_glbs}
+            if settings.voice_mode == "custom":
+                kwargs["voice_audio"] = voice_audio
+            archive = convert(source, game, blender, output, settings, progress, **kwargs)
             with self.lock:
                 job.update(status="complete", archive=archive.name,
                            previews=sorted(path.relative_to(output).as_posix() for path in (output / "previews").glob("*.png")),
@@ -514,6 +608,9 @@ def handler_for(app):
                     return self.reply(installation_status(Path(query.get('game', [''])[0])/'Data', job.get('plugin_name'), job['output']))
                 if url.path == '/api/toon-shader-status':
                     return self.reply(toon_shader_status(parse_qs(url.query).get('game', [''])[0]))
+                if url.path == '/api/voice-scenes':
+                    query = parse_qs(url.query)
+                    return self.reply(app.voice_scenes(query.get('game', [''])[0], query.get('voice', ['FemaleEvenToned'])[0]))
                 if url.path == '/api/toon-shader':
                     if not SHIPPED_SHADER.is_file():
                         return self.reply({'error': f'Toon shader ZIP not found: {SHIPPED_SHADER}'}, 404)
@@ -546,7 +643,7 @@ def handler_for(app):
                     return self.reply({'error': '更新を反映するため、ウィザードのターミナルで Ctrl+C を押し、Launch.cmd を開き直してください。',
                                        'restart_required': True}, 409)
                 size = int(self.headers.get("Content-Length", "0"))
-                limit = 512 * 1024 * 1024 if self.path in ('/api/source', '/api/equipment-edit', '/api/weapon-glb') else 1024 * 1024
+                limit = 512 * 1024 * 1024 if self.path in ('/api/source', '/api/equipment-edit', '/api/weapon-glb', '/api/voice-audio', '/api/voice-zip') else 1024 * 1024
                 if not 0 < size <= limit:
                     raise ValueError("File/request exceeds size limit")
                 blob = self.rfile.read(size)
@@ -559,7 +656,24 @@ def handler_for(app):
                     return self.reply(app.upload(unquote(self.headers.get("X-Filename", "avatar.vrm")), blob))
                 if self.path == '/api/weapon-glb':
                     return self.reply(app.upload_weapon(unquote(self.headers.get('X-Filename', 'weapon.glb')), blob))
+                if self.path == '/api/voice-audio':
+                    return self.reply(app.upload_voice_audio(unquote(self.headers.get('X-Filename', 'line.wav')), blob))
+                if self.path == '/api/voice-zip':
+                    return self.reply(app.upload_voice_zip(blob))
                 request = json.loads(blob)
+                if self.path == '/api/voice-prompt':
+                    from custom_voice import build_ai_prompt, extract_sample_lines
+                    game_path = Path(request.get('game', '')) if request.get('game') else None
+                    samples = extract_sample_lines(game_path / 'Data', request.get('voice', 'FemaleEvenToned')) if game_path and (game_path / 'Data/Skyrim.esm').is_file() else {}
+                    prompt = build_ai_prompt(
+                        request.get('npc_name', ''),
+                        samples,
+                        lang=request.get('lang', 'ja'),
+                        sex=request.get('sex', 'female'),
+                        style=request.get('style', ''),
+                        pronouns=request.get('pronouns', ''),
+                    )
+                    return self.reply({'prompt': prompt})
                 if self.path == "/api/catalog":
                     catalog = app.catalog(request["game"])
                     return self.reply({"choices": catalog.json_choices(request.get('sex', 'female')), "checks": doctor(request["game"], request["blender"])})
@@ -577,6 +691,9 @@ def handler_for(app):
                             validate_source(settings, app.source_reports[source_id])
                         validate_physics(settings, app.source_reports[source_id])
                     app.catalog(request["game"]).validate_settings(settings)
+                    if request.get('check_voice', False) and settings.voice_mode == 'custom':
+                        from custom_voice import validate_custom_voice_settings
+                        validate_custom_voice_settings(settings)
                     if request.get('check_weapon', True):  # the GLBs are chosen in STEP 03
                         app.weapon_sources(request, settings)
                     return self.reply({"settings": asdict(settings)})

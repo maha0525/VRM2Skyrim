@@ -315,7 +315,7 @@ def convert_appearance(source, game, blender, output, settings, progress):
     convert_textures(output)
 
 
-def convert(source, game, blender, output, settings, progress=None, weapon_glbs=None):
+def convert(source, game, blender, output, settings, progress=None, weapon_glbs=None, voice_audio=None):
     """weapon_glbs: one GLB per settings.original_weapons entry, in its order (weapon_mode 'original' only)."""
     def stage(name):
         logging.info("Stage: %s", name)
@@ -381,7 +381,7 @@ def convert(source, game, blender, output, settings, progress=None, weapon_glbs=
                 run["weapon_sha256"].append(convert_weapon(glb, Path(game) / "Data", blender, output, settings,
                                                            catalog, index=index)["source"]["sha256"])
         stage("フォロワーと初期配置の作成")
-        build_npc(Path(game) / "Data", output, settings, catalog)
+        build_npc(Path(game) / "Data", output, settings, catalog, voice_audio=voice_audio)
         from head_visibility import write_head_assets
         write_head_assets(output, settings)
         if settings.toon_enabled:

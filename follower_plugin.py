@@ -10,7 +10,7 @@ from plugin import records, write_plugin
 # On disk all masters precede the follower. Never remap numeric/material payloads.
 REFS = {
     # SPLO: spells stay index 0; DLC shouts use 2+ like SNDD.
-    b"NPC_": {b"RNAM", b"WNAM", b"DOFT", b"PNAM", b"ZNAM", b"SPLO"},
+    b"NPC_": {b"RNAM", b"WNAM", b"DOFT", b"PNAM", b"ZNAM", b"SPLO", b"VTCK"},
     b"RACE": {b"WNAM", b"HEAD"},
     b"ARMO": {b"RNAM", b"MODL"},
     b"ARMA": {b"RNAM", b"MODL", b"SNDD"},
@@ -20,7 +20,13 @@ REFS = {
     b"ACHR": {b"NAME"},
     # WEAP/STAT MODL is a path string, unlike ARMO MODL; only WNAM is a FormID.
     b"WEAP": {b"WNAM"},
+    b"DLBR": {b"QNAM", b"SNAM"},
+    b"DIAL": {b"QNAM", b"BNAM"},
+    b"INFO": {b"PNAM", b"TCLT"},
 }
+
+# Condition functions whose first 4-byte parameter (CTDA offset 12..16) is a FormID.
+CTDA_FORMID_FUNCS = {426}  # GetIsVoiceType
 
 
 def remap(record, mapping):
@@ -41,7 +47,7 @@ def remap(record, mapping):
                 struct.pack("<I", resolve(n))
                 for (n,) in struct.iter_unpack("<I", payload)
             )
-        elif tag == b"VMAD":
+        elif tag == b"VMAD" and result.kind != b"INFO":
             from official_catalog import vmad_refs
 
             payload = vmad_refs(payload, resolve)
@@ -58,12 +64,17 @@ def remap(record, mapping):
                 struct.pack("<I", resolve(struct.unpack_from("<I", payload)[0]))
                 + payload[4:]
             )
+        elif tag == b"CTDA" and len(payload) >= 16:
+            fn = struct.unpack_from("<H", payload, 8)[0]
+            if fn in CTDA_FORMID_FUNCS:
+                p1 = struct.unpack_from("<I", payload, 12)[0]
+                payload = payload[:12] + struct.pack("<I", resolve(p1)) + payload[16:]
         fields.append((tag, payload))
     result.fields = fields
     result.groups = tuple(
         (
             struct.pack("<I", resolve(struct.unpack("<I", label)[0]))
-            if kind in (6, 8, 9)
+            if kind in (6, 7, 8, 9)
             else label,
             kind,
         )
@@ -72,15 +83,21 @@ def remap(record, mapping):
     return result
 
 
-def write_follower(path, items, *, author, placement, extra_masters=()):
+def write_follower(path, items, *, author, placement, extra_masters=(), dialogue_topics=None):
     masters = ["Skyrim.esm", *extra_masters]
     mapping = {1: len(masters), **{i + 2: i + 1 for i in range(len(extra_masters))}}
+    remapped_topics = (
+        [(remap(dial, mapping), [remap(info, mapping) for info in infos]) for dial, infos in dialogue_topics]
+        if dialogue_topics
+        else None
+    )
     write_plugin(
         path,
         [remap(r, mapping) for r in items],
         author=author,
         placement=tuple(remap(r, mapping) for r in placement),
         masters=masters,
+        dialogue_topics=remapped_topics,
     )
 
 
